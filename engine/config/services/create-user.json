@@ -1,0 +1,49 @@
+{
+  "id": "create-user",
+  "input": "new-user",
+  "output": "user-ref",
+  "target": {
+    "baseUrl": "https://gorest.co.in",
+    "method": "POST",
+    "path": "/public/v2/users"
+  },
+  "auth": {
+    "type": "bearer"
+  },
+  "request": {
+    "links": [
+      {
+        "from": "nu-name",
+        "to": "body.name"
+      },
+      {
+        "from": "nu-email",
+        "to": "body.email"
+      },
+      {
+        "from": "nu-gender",
+        "to": "body.gender"
+      },
+      {
+        "from": "nu-status",
+        "to": "body.status"
+      }
+    ]
+  },
+  "response": {
+    "links": [
+      {
+        "from": "id",
+        "to": "ur-id"
+      },
+      {
+        "from": "name",
+        "to": "ur-name"
+      },
+      {
+        "from": "status",
+        "to": "ur-status"
+      }
+    ]
+  }
+}

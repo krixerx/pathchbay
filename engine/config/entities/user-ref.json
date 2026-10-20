@@ -1,0 +1,9 @@
+{
+  "id": "user-ref",
+  "name": "User reference",
+  "fields": [
+    { "id": "ur-id", "name": "userId", "type": "integer" },
+    { "id": "ur-name", "name": "fullName", "type": "text" },
+    { "id": "ur-status", "name": "status", "type": "text" }
+  ]
+}

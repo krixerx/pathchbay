@@ -1,0 +1,96 @@
+{
+  "version" : "1.0.0",
+  "publishedAt" : "2026-10-20T17:03:13.627886100Z",
+  "service" : {
+    "id" : "create-book",
+    "version" : "1.0.0",
+    "input" : "new-book",
+    "output" : "book-ref",
+    "target" : {
+      "baseUrl" : "https://fakerestapi.azurewebsites.net",
+      "method" : "POST",
+      "path" : "/api/v1/Books"
+    },
+    "request" : {
+      "links" : [ {
+        "from" : "nb-title",
+        "to" : "body.title"
+      }, {
+        "from" : "nb-summary",
+        "to" : "body.description"
+      }, {
+        "from" : "nb-pages",
+        "to" : "body.pageCount"
+      }, {
+        "from" : "nb-published",
+        "to" : "body.publishDate"
+      }, {
+        "from" : "nb-source",
+        "to" : "body.excerpt"
+      } ]
+    },
+    "response" : {
+      "links" : [ {
+        "from" : "id",
+        "to" : "br-bookId"
+      }, {
+        "from" : "title",
+        "to" : "br-title"
+      }, {
+        "from" : "pageCount",
+        "to" : "br-pages"
+      } ]
+    }
+  },
+  "input" : {
+    "id" : "new-book",
+    "name" : "New book",
+    "fields" : [ {
+      "id" : "nb-title",
+      "name" : "title",
+      "type" : "text",
+      "required" : true
+    }, {
+      "id" : "nb-summary",
+      "name" : "summary",
+      "type" : "text",
+      "required" : false
+    }, {
+      "id" : "nb-pages",
+      "name" : "pages",
+      "type" : "integer",
+      "required" : true
+    }, {
+      "id" : "nb-published",
+      "name" : "published",
+      "type" : "datetime",
+      "required" : false
+    }, {
+      "id" : "nb-source",
+      "name" : "source",
+      "type" : "text",
+      "required" : false,
+      "value" : "Created by Integration Mapper"
+    } ]
+  },
+  "output" : {
+    "id" : "book-ref",
+    "name" : "Book reference",
+    "fields" : [ {
+      "id" : "br-bookId",
+      "name" : "bookId",
+      "type" : "integer",
+      "required" : true
+    }, {
+      "id" : "br-title",
+      "name" : "title",
+      "type" : "text",
+      "required" : false
+    }, {
+      "id" : "br-pages",
+      "name" : "pages",
+      "type" : "integer",
+      "required" : false
+    } ]
+  }
+}

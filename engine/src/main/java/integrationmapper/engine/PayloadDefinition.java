@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
@@ -23,6 +25,7 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
      * @param fields children of an {@code object}
      * @param items  item shape of a {@code list} (its id and name are not used)
      */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Field(String id, String name, String type, boolean required, String format, JsonNode value,
             List<Field> fields, Field items) {
 
@@ -113,6 +116,7 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
     }
 
     /** True when every field a caller sends is simple, so the definition can travel as query parameters (R1, D16). */
+    @JsonIgnore
     public boolean isFlat() {
         for (Field f : fields == null ? List.<Field>of() : fields) {
             boolean simpleList = "list".equals(f.type()) && f.items() != null && SIMPLE.contains(f.items().type());

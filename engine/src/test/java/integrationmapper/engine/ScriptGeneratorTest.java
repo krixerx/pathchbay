@@ -36,8 +36,8 @@ class ScriptGeneratorTest {
     }
 
     static CompiledIntegration compile(List<ServiceDefinition.Link> request, List<ServiceDefinition.Link> response) {
-        return CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", "in", "out",
-                new ServiceDefinition.Target("http://x", "POST", "/"),
+        return CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", null, "in", "out",
+                new ServiceDefinition.Target("http://x", "POST", "/"), null,
                 new ServiceDefinition.Mapping(request), new ServiceDefinition.Mapping(response)), IN, OUT);
     }
 

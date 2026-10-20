@@ -1,6 +1,6 @@
-# Integration Mapper engine (walking skeleton)
+# Integration Mapper engine
 
-Spring Boot 4.1.1, Apache Camel 4.23.0, Java 21. Plan: `../docs/slice-plan.md` (Next Step 3). No console yet: integrations are hand-written JSON files.
+Spring Boot 4.1.1, Apache Camel 4.23.0, Java 21. Plan: `../docs/slice-plan.md` (tasks E1–E5 done). No console yet: integrations are JSON files, published with admin calls.
 
 ## Run it locally
 
@@ -10,7 +10,7 @@ mvn package
 java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config
 ```
 
-Startup loads the payload library `config/entities/*.json`, then publishes every `config/services/*.json`. The two examples call the public [FakeRESTApi](https://fakerestapi.azurewebsites.net/index.html):
+Startup loads the payload library `config/entities/*.json`, then serves the **active version** of every `config/services/*.json` from its version file. A draft that was never published is not served. The three book examples are already published (version 1.0.0) and call the public [FakeRESTApi](https://fakerestapi.azurewebsites.net/index.html):
 
 ```bash
 # What is live
@@ -34,9 +34,52 @@ curl -i -X POST localhost:8080/api/v1/integrations/create-book \
   -H 'Content-Type: application/json' -d '{"pages":"many"}'          # 400 listing every problem; FakeRESTApi is not called
 ```
 
+## Publish, versions and rollback
+
+The service file `config/services/<slug>.json` is the draft you edit; its `activeVersion` says which version is live. Publishing takes the current draft and writes an immutable, self-contained version file `config/services/<slug>.versions/<version>.json` with copies of the Input and Output definitions, so later edits to the draft or the library never change a published version, also after a restart.
+
+```bash
+curl -X POST localhost:8080/admin/integrations/get-book/publish                    # next minor: 1.0.0, 1.1.0, …
+curl localhost:8080/admin/integrations/get-book/versions                           # stored versions and the live one
+curl -X POST localhost:8080/admin/integrations/get-book/versions/1.0.0/activate    # make an older version live again
+```
+
+Order of a publish (R9): build and compile first; only if that works, write the version file, set `activeVersion`, swap the route. A publish that fails (broken link, missing secret, …) answers 400 with every problem and changes nothing. At startup an integration whose files are broken is skipped and listed under `broken` in `/admin/integrations`; the others start (R10). Every file is saved through a temp file and a rename, retried if Windows holds a lock, so a crash never leaves a half-written file (R4).
+
+When editing a draft by hand, keep its `activeVersion` line: without it the integration is treated as never published at the next start.
+
+## Outbound auth and secrets
+
+A service can authenticate to the external system:
+
+```json
+"auth": { "type": "bearer" }
+"auth": { "type": "apiKey", "in": "header", "name": "X-Api-Key" }
+"auth": { "type": "apiKey", "in": "query",  "name": "api_key" }
+```
+
+The secret is never stored in service or version files. It is read, in this order, from the environment variable `MAPPER_SECRET_<SLUG>` (slug in capitals, other characters as `_`), then from `config/secrets/<slug>.json` (`{"value": "..."}`, git-ignored). Publishing without a secret fails with a message naming both places.
+
+The `create-user` example calls [GoREST](https://gorest.co.in) with a bearer token and is an unpublished draft. With your own GoREST token:
+
+```bash
+MAPPER_SECRET_CREATE_USER=<your token> java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config
+curl -X POST localhost:8080/admin/integrations/create-user/publish
+curl -X POST localhost:8080/api/v1/integrations/create-user -H 'Content-Type: application/json' \
+  -d '{"fullName":"Mari Tamm","email":"mari.tamm.12345@example.com","gender":"female"}'
+```
+
+External calls time out after 10 seconds (`--mapper.outbound-timeout-ms` to change) and answer 504.
+
+## Known behavior (by decision)
+
+- **One editor at a time** (R3): two people or two tabs editing the same files is not supported; the last save wins.
+- **Short gap while publishing** (R2, R7): while one integration's route is replaced (a few milliseconds), its callers get `503` with `Retry-After: 2`. Other integrations are never affected.
+- **Shared payload definitions reach callers on republish** (R12): editing a definition in the library changes nothing live, but the next publish of *any* integration that uses it takes the new shape, without a warning.
+
 ## Tests
 
-`mvn test` runs the routes end to end against a local fake of the Books API (no internet needed) and checks request/response mapping, input validation, constants, typed query parameters, header stripping, 400/415 errors, remote 404 pass-through, 502 when the remote is unreachable, that a version that doesn't compile never replaces the live one, and that a library edit doesn't change a live version until it is republished.
+`mvn test` runs the routes end to end against a local fake of the Books API (no internet needed) and checks request/response mapping, input validation, constants, typed query parameters, lists, the shared link rules, header stripping, 400/415 errors, remote 404 pass-through, 502 when the remote is unreachable, 504 on timeout, publish/rollback with real version files, restart from version files, skipping broken files, secrets from env or file never being stored, and crash-safe saves.
 
 ## Payload definitions (`config/entities/*.json`)
 
@@ -96,4 +139,4 @@ Any broken link (unknown field id) or link that breaks these rules stops the ver
 
 ## Not in the engine yet
 
-Outbound auth and secrets, version files and rollback, outbound timeout setting (task E4), the console, Docker image.
+The console (publishing and editing are files plus the admin calls above), the Docker image, JSON ↔ XML (TODO-T4), extra outbound headers (TODO-T3), transforms and conditions (TODO-T1).

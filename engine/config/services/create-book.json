@@ -1,27 +1,41 @@
 {
-  "id": "create-book",
-  "version": "1.0.0",
-  "input": "new-book",
-  "output": "book-ref",
-  "target": {
-    "baseUrl": "https://fakerestapi.azurewebsites.net",
-    "method": "POST",
-    "path": "/api/v1/Books"
+  "id" : "create-book",
+  "input" : "new-book",
+  "output" : "book-ref",
+  "target" : {
+    "baseUrl" : "https://fakerestapi.azurewebsites.net",
+    "method" : "POST",
+    "path" : "/api/v1/Books"
   },
-  "request": {
-    "links": [
-      { "from": "nb-title", "to": "body.title" },
-      { "from": "nb-summary", "to": "body.description" },
-      { "from": "nb-pages", "to": "body.pageCount" },
-      { "from": "nb-published", "to": "body.publishDate" },
-      { "from": "nb-source", "to": "body.excerpt" }
-    ]
+  "request" : {
+    "links" : [ {
+      "from" : "nb-title",
+      "to" : "body.title"
+    }, {
+      "from" : "nb-summary",
+      "to" : "body.description"
+    }, {
+      "from" : "nb-pages",
+      "to" : "body.pageCount"
+    }, {
+      "from" : "nb-published",
+      "to" : "body.publishDate"
+    }, {
+      "from" : "nb-source",
+      "to" : "body.excerpt"
+    } ]
   },
-  "response": {
-    "links": [
-      { "from": "id", "to": "br-bookId" },
-      { "from": "title", "to": "br-title" },
-      { "from": "pageCount", "to": "br-pages" }
-    ]
-  }
+  "response" : {
+    "links" : [ {
+      "from" : "id",
+      "to" : "br-bookId"
+    }, {
+      "from" : "title",
+      "to" : "br-title"
+    }, {
+      "from" : "pageCount",
+      "to" : "br-pages"
+    } ]
+  },
+  "activeVersion" : "1.0.0"
 }

@@ -1,0 +1,10 @@
+{
+  "id": "new-user",
+  "name": "New user",
+  "fields": [
+    { "id": "nu-name", "name": "fullName", "type": "text", "required": true },
+    { "id": "nu-email", "name": "email", "type": "text", "required": true },
+    { "id": "nu-gender", "name": "gender", "type": "text", "required": true },
+    { "id": "nu-status", "name": "status", "type": "text", "value": "active" }
+  ]
+}

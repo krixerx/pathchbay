@@ -62,15 +62,26 @@ public class IntegrationProcessors {
         msg.setHeader(Exchange.HTTP_METHOD, target.method());
         msg.setHeader(Exchange.HTTP_URI, stripTrailingSlash(target.baseUrl()) + fillPath(target.path(), mapped.path("path")));
         String query = toQuery(mapped.path("query"));
-        if (!query.isEmpty()) {
-            msg.setHeader(Exchange.HTTP_QUERY, query);
-        }
         msg.setHeader("Accept", "application/json");
         mapped.path("headers").properties().forEach(h -> {
             if (!h.getValue().isNull()) {
                 msg.setHeader(h.getKey(), h.getValue().asText());
             }
         });
+        ServiceDefinition.Auth auth = ci.definition().auth();
+        if (auth != null) {
+            if ("bearer".equals(auth.type())) {
+                msg.setHeader("Authorization", "Bearer " + ci.secret());
+            } else if ("header".equals(auth.in())) {
+                msg.setHeader(auth.name(), ci.secret());
+            } else {
+                String param = encode(auth.name()) + "=" + encode(ci.secret());
+                query = query.isEmpty() ? param : query + "&" + param;
+            }
+        }
+        if (!query.isEmpty()) {
+            msg.setHeader(Exchange.HTTP_QUERY, query);
+        }
         if (BODY_METHODS.contains(target.method())) {
             msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
             msg.setBody(Json.MAPPER.writeValueAsString(mapped.path("body")));

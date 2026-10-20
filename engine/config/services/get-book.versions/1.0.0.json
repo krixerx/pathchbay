@@ -1,0 +1,89 @@
+{
+  "version" : "1.0.0",
+  "publishedAt" : "2026-10-20T17:03:14.639695300Z",
+  "service" : {
+    "id" : "get-book",
+    "version" : "1.0.0",
+    "input" : "book-ref",
+    "output" : "book-details",
+    "target" : {
+      "baseUrl" : "https://fakerestapi.azurewebsites.net",
+      "method" : "GET",
+      "path" : "/api/v1/Books/{id}"
+    },
+    "request" : {
+      "links" : [ {
+        "from" : "br-bookId",
+        "to" : "path.id"
+      } ]
+    },
+    "response" : {
+      "links" : [ {
+        "from" : "id",
+        "to" : "bd-bookId"
+      }, {
+        "from" : "title",
+        "to" : "bd-title"
+      }, {
+        "from" : "description",
+        "to" : "bd-summary"
+      }, {
+        "from" : "pageCount",
+        "to" : "bd-pages"
+      }, {
+        "from" : "publishDate",
+        "to" : "bd-published"
+      } ]
+    }
+  },
+  "input" : {
+    "id" : "book-ref",
+    "name" : "Book reference",
+    "fields" : [ {
+      "id" : "br-bookId",
+      "name" : "bookId",
+      "type" : "integer",
+      "required" : true
+    }, {
+      "id" : "br-title",
+      "name" : "title",
+      "type" : "text",
+      "required" : false
+    }, {
+      "id" : "br-pages",
+      "name" : "pages",
+      "type" : "integer",
+      "required" : false
+    } ]
+  },
+  "output" : {
+    "id" : "book-details",
+    "name" : "Book details",
+    "fields" : [ {
+      "id" : "bd-bookId",
+      "name" : "bookId",
+      "type" : "integer",
+      "required" : false
+    }, {
+      "id" : "bd-title",
+      "name" : "title",
+      "type" : "text",
+      "required" : false
+    }, {
+      "id" : "bd-summary",
+      "name" : "summary",
+      "type" : "text",
+      "required" : false
+    }, {
+      "id" : "bd-pages",
+      "name" : "pages",
+      "type" : "integer",
+      "required" : false
+    }, {
+      "id" : "bd-published",
+      "name" : "published",
+      "type" : "datetime",
+      "required" : false
+    } ]
+  }
+}

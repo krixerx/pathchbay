@@ -1,0 +1,68 @@
+{
+  "version" : "1.0.0",
+  "publishedAt" : "2026-10-20T17:03:14.739500400Z",
+  "service" : {
+    "id" : "list-books",
+    "version" : "1.0.0",
+    "input" : "no-input",
+    "output" : "book-list",
+    "target" : {
+      "baseUrl" : "https://fakerestapi.azurewebsites.net",
+      "method" : "GET",
+      "path" : "/api/v1/Books"
+    },
+    "request" : {
+      "links" : [ ]
+    },
+    "response" : {
+      "links" : [ {
+        "from" : "[]",
+        "to" : "bl-books"
+      }, {
+        "from" : "[].id",
+        "to" : "bl-bookId"
+      }, {
+        "from" : "[].title",
+        "to" : "bl-title"
+      }, {
+        "from" : "[].pageCount",
+        "to" : "bl-pages"
+      } ]
+    }
+  },
+  "input" : {
+    "id" : "no-input",
+    "name" : "No input",
+    "fields" : [ ]
+  },
+  "output" : {
+    "id" : "book-list",
+    "name" : "Book list",
+    "fields" : [ {
+      "id" : "bl-books",
+      "name" : "books",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "id" : "bl-bookId",
+          "name" : "bookId",
+          "type" : "integer",
+          "required" : false
+        }, {
+          "id" : "bl-title",
+          "name" : "title",
+          "type" : "text",
+          "required" : false
+        }, {
+          "id" : "bl-pages",
+          "name" : "pages",
+          "type" : "integer",
+          "required" : false
+        } ]
+      }
+    } ]
+  }
+}

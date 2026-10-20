@@ -25,8 +25,27 @@ class FakeBooksApi {
         lastRequest.put("body", body);
         lastRequest.put("headers", headers);
         JsonNode in = Json.MAPPER.readTree(body);
+        var out = Json.MAPPER.createObjectNode().put("id", 99);
+        out.set("title", in.get("title"));
+        out.set("pageCount", in.get("pageCount"));
+        out.put("extra", "x");
         return ResponseEntity.ok().header("Content-Type", "application/json").header("X-Vendor-Secret", "leak-me-not")
-                .body("{\"id\":99,\"title\":" + in.path("title") + ",\"pageCount\":" + in.path("pageCount") + ",\"extra\":\"x\"}");
+                .body(out.toString());
+    }
+
+    /** Echoes nothing useful; records headers and query string so tests can see what auth reached the vendor. */
+    @GetMapping("/fake/secure")
+    ResponseEntity<String> secure(@RequestHeader HttpHeaders headers, jakarta.servlet.http.HttpServletRequest request) {
+        lastRequest.put("headers", headers);
+        lastRequest.put("query", request.getQueryString() == null ? "" : request.getQueryString());
+        return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1,\"title\":\"secure\"}");
+    }
+
+    /** Answers after 1.5 s, longer than the timeout the version tests configure. */
+    @GetMapping("/fake/slow")
+    ResponseEntity<String> slow() throws InterruptedException {
+        Thread.sleep(1500);
+        return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1}");
     }
 
     @GetMapping("/fake/api/v1/Books/{id}")

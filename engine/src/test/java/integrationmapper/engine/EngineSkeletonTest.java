@@ -64,16 +64,16 @@ class EngineSkeletonTest {
     }
 
     ServiceDefinition createBook(String version, String baseUrl) {
-        return new ServiceDefinition("create-book", version, "new-book", "book-ref",
-                new ServiceDefinition.Target(baseUrl, "POST", "/api/v1/Books"),
+        return new ServiceDefinition("create-book", version, null, "new-book", "book-ref",
+                new ServiceDefinition.Target(baseUrl, "POST", "/api/v1/Books"), null,
                 new ServiceDefinition.Mapping(List.of(link("nb-title", "body.title"), link("nb-pages", "body.pageCount"),
                         link("nb-source", "body.excerpt"))),
                 new ServiceDefinition.Mapping(List.of(link("id", "br-bookId"), link("title", "br-title"))));
     }
 
     ServiceDefinition getBook() {
-        return new ServiceDefinition("get-book", "1.0.0", "book-ref", "book-ref",
-                new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/{id}"),
+        return new ServiceDefinition("get-book", "1.0.0", null, "book-ref", "book-ref",
+                new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/{id}"), null,
                 new ServiceDefinition.Mapping(List.of(link("br-bookId", "path.id"))),
                 new ServiceDefinition.Mapping(List.of(link("id", "br-bookId"), link("pageCount", "br-pages"))));
     }
@@ -192,8 +192,8 @@ class EngineSkeletonTest {
         publisher.publish(createBook("1.1.0", base()));
         assertThat(registry.activeVersions()).containsEntry("create-book", "1.1.0");
 
-        ServiceDefinition broken = new ServiceDefinition("create-book", "1.2.0", "new-book", "book-ref",
-                new ServiceDefinition.Target(base(), "POST", "/api/v1/Books"),
+        ServiceDefinition broken = new ServiceDefinition("create-book", "1.2.0", null, "new-book", "book-ref",
+                new ServiceDefinition.Target(base(), "POST", "/api/v1/Books"), null,
                 new ServiceDefinition.Mapping(List.of(link("no-such-field", "body.title"))),
                 new ServiceDefinition.Mapping(List.of()));
         assertThatThrownBy(() -> publisher.publish(broken)).isInstanceOf(IllegalArgumentException.class)
@@ -221,8 +221,8 @@ class EngineSkeletonTest {
         library.put(definition("""
                 {"id":"nested","fields":[{"id":"n-a","name":"a","type":"object","fields":[
                   {"id":"n-b","name":"b","type":"text"}]}]}"""));
-        ServiceDefinition def = new ServiceDefinition("nested-get", "1.0.0", "nested", "book-ref",
-                new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/1"),
+        ServiceDefinition def = new ServiceDefinition("nested-get", "1.0.0", null, "nested", "book-ref",
+                new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/1"), null,
                 new ServiceDefinition.Mapping(List.of()), new ServiceDefinition.Mapping(List.of()));
         assertThatThrownBy(() -> publisher.publish(def)).hasMessageContaining("only have simple fields");
     }

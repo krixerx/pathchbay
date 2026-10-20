@@ -1,0 +1,247 @@
+package integrationmapper.engine;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import com.fasterxml.jackson.databind.JsonNode;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+
+/** E4: version files, rollback, restart, secrets and timeouts, against a real config folder. */
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
+class VersionLifecycleTest {
+
+    static final Path CONFIG;
+    static final int PORT;
+
+    static {
+        try (ServerSocket s = new ServerSocket(0)) {
+            PORT = s.getLocalPort();
+            CONFIG = Files.createTempDirectory("mapper-config");
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    @DynamicPropertySource
+    static void properties(DynamicPropertyRegistry r) {
+        r.add("server.port", () -> PORT);
+        r.add("mapper.config-dir", CONFIG::toString);
+        r.add("mapper.outbound-timeout-ms", () -> 1000);
+        r.add("MAPPER_SECRET_SECURE_BOOK", () -> "tok-123");
+        r.add("MAPPER_SECRET_KEYED_BOOK", () -> "key-456");
+    }
+
+    @Autowired
+    IntegrationPublisher publisher;
+
+    @Autowired
+    IntegrationRegistry registry;
+
+    @Autowired
+    ConfigLoader loader;
+
+    @Autowired
+    ConfigStore store;
+
+    @Autowired
+    FakeBooksApi fake;
+
+    final HttpClient http = HttpClient.newHttpClient();
+
+    static final String NEW_BOOK = """
+            {"id":"new-book","fields":[
+              {"id":"nb-title","name":"title","type":"text","required":true},
+              {"id":"nb-pages","name":"pages","type":"integer"}]}""";
+    static final String BOOK_REF = """
+            {"id":"book-ref","fields":[{"id":"br-bookId","name":"bookId","type":"integer"},{"id":"br-title","name":"title","type":"text"}]}""";
+    static final String NO_INPUT = """
+            {"id":"no-input","fields":[]}""";
+
+    static void write(String relative, String content) throws IOException {
+        Path p = CONFIG.resolve(relative);
+        Files.createDirectories(p.getParent());
+        Files.writeString(p, content);
+    }
+
+    static String service(String slug, String method, String path, String requestTo, String auth) {
+        return """
+                {"id":"%s","input":"%s","output":"book-ref",
+                 "target":{"baseUrl":"http://localhost:%d/fake","method":"%s","path":"%s"},%s
+                 "request":{"links":[%s]},
+                 "response":{"links":[{"from":"id","to":"br-bookId"},{"from":"title","to":"br-title"}]}}"""
+                .formatted(slug, "POST".equals(method) ? "new-book" : "no-input", PORT, method, path,
+                        auth == null ? "" : "\"auth\":" + auth + ",",
+                        requestTo == null ? "" : "{\"from\":\"nb-title\",\"to\":\"" + requestTo + "\"}");
+    }
+
+    static {
+        try {
+            write("entities/new-book.json", NEW_BOOK);
+            write("entities/book-ref.json", BOOK_REF);
+            write("entities/no-input.json", NO_INPUT);
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    HttpResponse<String> call(String method, String slug, String body) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slug))
+                .header("Content-Type", "application/json");
+        b = body == null ? b.method(method, HttpRequest.BodyPublishers.noBody()) : b.method(method, HttpRequest.BodyPublishers.ofString(body));
+        return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    JsonNode read(Path p) throws IOException {
+        return Json.MAPPER.readTree(p.toFile());
+    }
+
+    @Test
+    void publishWritesASelfContainedVersionAndRollbackReusesIt() throws Exception {
+        write("services/draft-book.json", service("draft-book", "POST", "/api/v1/Books", "body.title", null));
+
+        assertThat(publisher.publishDraft("draft-book")).isEqualTo("1.0.0");
+        JsonNode v1 = read(store.version("draft-book", "1.0.0"));
+        assertThat(v1.path("input").path("fields").toString()).contains("nb-title");
+        assertThat(read(store.service("draft-book")).path("activeVersion").asText()).isEqualTo("1.0.0");
+        call("POST", "draft-book", "{\"title\":\"T\"}");
+        assertThat(Json.MAPPER.readTree((String) fake.lastRequest.get("body")).has("title")).isTrue();
+
+        // Change the draft: the title now goes to description. Next publish is the next minor.
+        write("services/draft-book.json", service("draft-book", "POST", "/api/v1/Books", "body.description", null));
+        assertThat(publisher.publishDraft("draft-book")).isEqualTo("1.1.0");
+        call("POST", "draft-book", "{\"title\":\"T\"}");
+        assertThat(Json.MAPPER.readTree((String) fake.lastRequest.get("body")).has("description")).isTrue();
+
+        // Rollback: 1.0.0 is live again, no new file.
+        publisher.activateVersion("draft-book", "1.0.0");
+        assertThat(store.versions("draft-book")).containsExactly("1.0.0", "1.1.0");
+        assertThat(registry.activeVersions()).containsEntry("draft-book", "1.0.0");
+        call("POST", "draft-book", "{\"title\":\"T\"}");
+        assertThat(Json.MAPPER.readTree((String) fake.lastRequest.get("body")).has("title")).isTrue();
+    }
+
+    @Test
+    void restartServesTheActiveVersionEvenAfterLibraryEdits() throws Exception {
+        write("services/stable-book.json", service("stable-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("stable-book");
+
+        // Rename "title" in the library, then reload everything as a restart would.
+        write("entities/new-book.json", NEW_BOOK.replace("\"name\":\"title\"", "\"name\":\"heading\""));
+        try {
+            loader.loadAll();
+            HttpResponse<String> kept = call("POST", "stable-book", "{\"title\":\"Kept\"}");
+            assertThat(kept.statusCode()).as(kept.body()).isEqualTo(200);
+            assertThat(Json.MAPPER.readTree((String) fake.lastRequest.get("body")).path("title").asText()).isEqualTo("Kept");
+        } finally {
+            write("entities/new-book.json", NEW_BOOK);
+            loader.loadAll();
+        }
+    }
+
+    @Test
+    void brokenVersionFileIsSkippedAndOthersStillServe() throws Exception {
+        write("services/ok-book.json", service("ok-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("ok-book");
+        write("services/broken-book.json", service("broken-book", "POST", "/api/v1/Books", "body.title", null)
+                .replaceFirst("\\{", "{\"activeVersion\":\"1.0.0\","));
+        write("services/broken-book.versions/1.0.0.json", "{ not json");
+
+        loader.loadAll();
+
+        assertThat(registry.brokenReasons()).containsKey("broken-book");
+        HttpResponse<String> ok = call("POST", "ok-book", "{\"title\":\"T\"}");
+        assertThat(ok.statusCode()).as(ok.body()).isEqualTo(200);
+        Files.delete(CONFIG.resolve("services/broken-book.json"));
+    }
+
+    @Test
+    void failedPublishChangesNoFiles() throws Exception {
+        write("services/careful-book.json", service("careful-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("careful-book");
+        String serviceBefore = Files.readString(store.service("careful-book"));
+
+        // A draft edit keeps activeVersion, as the console will; only publish/activate change it.
+        write("services/careful-book.json", service("careful-book", "POST", "/api/v1/Books", "nowhere.title", null)
+                .replaceFirst("\\{", "{\"activeVersion\":\"1.0.0\","));
+        assertThatThrownBy(() -> publisher.publishDraft("careful-book")).hasMessageContaining("inside one of");
+
+        assertThat(store.versions("careful-book")).containsExactly("1.0.0");
+        assertThat(read(store.service("careful-book")).path("activeVersion").asText()).isEqualTo("1.0.0");
+        assertThat(Files.readString(store.service("careful-book"))).isNotEqualTo(serviceBefore); // the draft edit itself stays
+        assertThat(registry.activeVersions()).containsEntry("careful-book", "1.0.0");
+    }
+
+    @Test
+    void secretsComeFromEnvOrFileAndAreNeverStored() throws Exception {
+        write("services/secure-book.json", service("secure-book", "GET", "/secure", null, "{\"type\":\"bearer\"}"));
+        publisher.publishDraft("secure-book");
+        call("GET", "secure-book", null);
+        assertThat(((HttpHeaders) fake.lastRequest.get("headers")).getFirst("Authorization")).isEqualTo("Bearer tok-123");
+
+        write("services/keyed-book.json", service("keyed-book", "GET", "/secure", null,
+                "{\"type\":\"apiKey\",\"in\":\"query\",\"name\":\"api_key\"}"));
+        publisher.publishDraft("keyed-book");
+        call("GET", "keyed-book", null);
+        assertThat(fake.lastRequest.get("query")).isEqualTo("api_key=key-456");
+
+        write("services/file-book.json", service("file-book", "GET", "/secure", null,
+                "{\"type\":\"apiKey\",\"in\":\"header\",\"name\":\"X-Api-Key\"}"));
+        write("secrets/file-book.json", "{\"value\":\"from-file\"}");
+        publisher.publishDraft("file-book");
+        call("GET", "file-book", null);
+        assertThat(((HttpHeaders) fake.lastRequest.get("headers")).getFirst("X-Api-Key")).isEqualTo("from-file");
+
+        for (String slug : new String[] {"secure-book", "keyed-book", "file-book"}) {
+            String stored = Files.readString(store.version(slug, "1.0.0")) + Files.readString(store.service(slug));
+            assertThat(stored).doesNotContain("tok-123").doesNotContain("key-456").doesNotContain("from-file");
+        }
+
+        write("services/nosecret-book.json", service("nosecret-book", "GET", "/secure", null, "{\"type\":\"bearer\"}"));
+        assertThatThrownBy(() -> publisher.publishDraft("nosecret-book"))
+                .hasMessageContaining("MAPPER_SECRET_NOSECRET_BOOK").hasMessageContaining("secrets");
+        assertThat(store.versions("nosecret-book")).isEmpty();
+    }
+
+    @Test
+    void slowRemoteTimesOutWith504() throws Exception {
+        write("services/slow-book.json", service("slow-book", "GET", "/slow", null, null));
+        publisher.publishDraft("slow-book");
+        long t0 = System.nanoTime();
+        HttpResponse<String> r = call("GET", "slow-book", null);
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        assertThat(r.statusCode()).isEqualTo(504);
+        assertThat(r.body()).contains("remote-timeout");
+        assertThat(ms).isLessThan(1500);
+    }
+
+    @Test
+    void adminPublishAndVersionsOverHttp() throws Exception {
+        write("services/admin-book.json", service("admin-book", "POST", "/api/v1/Books", "body.title", null));
+        HttpResponse<String> pub = http.send(HttpRequest.newBuilder(
+                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/publish"))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(pub.statusCode()).isEqualTo(200);
+        assertThat(pub.body()).contains("\"activeVersion\":\"1.0.0\"");
+
+        HttpResponse<String> bad = http.send(HttpRequest.newBuilder(
+                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/versions/9.9.9/activate"))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(bad.statusCode()).isEqualTo(400);
+        assertThat(bad.body()).contains("has no version 9.9.9");
+    }
+}

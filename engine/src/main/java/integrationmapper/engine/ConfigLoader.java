@@ -14,8 +14,9 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 /**
- * At startup loads the payload library ({@code <config-dir>/entities/*.json}), then publishes every
- * {@code <config-dir>/services/*.json}. A broken file is skipped and reported, the others still start (R10).
+ * At startup loads the payload library ({@code <config-dir>/entities/*.json}), then serves the active version of
+ * every {@code <config-dir>/services/*.json} from its version file. A broken file is skipped and reported, the
+ * others still start (R10).
  */
 @Component
 public class ConfigLoader {
@@ -47,10 +48,11 @@ public class ConfigLoader {
         for (Path file : jsonFiles("services")) {
             String slug = file.getFileName().toString().replaceFirst("\\.json$", "");
             try {
-                ServiceDefinition def = Json.MAPPER.readValue(file.toFile(), ServiceDefinition.class);
-                publisher.publish(def);
-                log.info("Published {} {} ({} → {}) → {} {}{}", def.id(), def.version(), def.input(), def.output(),
-                        def.target().method(), def.target().baseUrl(), def.target().path());
+                if (publisher.loadActive(slug)) {
+                    log.info("Serving {} {}", slug, registry.activeVersions().get(slug));
+                } else {
+                    log.info("{} is a draft that was never published; not served", slug);
+                }
             } catch (Exception e) {
                 registry.markBroken(slug, e.getMessage());
                 log.error("Skipped broken integration {} ({}): {}", slug, file, e.getMessage());

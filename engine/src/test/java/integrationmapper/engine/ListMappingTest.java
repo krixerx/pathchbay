@@ -35,8 +35,8 @@ class ListMappingTest {
     }
 
     static JsonNode request(List<ServiceDefinition.Link> links, String input) throws Exception {
-        CompiledIntegration ci = CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", "person", "books",
-                new ServiceDefinition.Target("http://x", "POST", "/"), new ServiceDefinition.Mapping(links),
+        CompiledIntegration ci = CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", null, "person", "books",
+                new ServiceDefinition.Target("http://x", "POST", "/"), null, new ServiceDefinition.Mapping(links),
                 new ServiceDefinition.Mapping(List.of())), PERSON, BOOKS);
         return Json.MAPPER.readTree(ci.mapRequest(input)).path("body");
     }
@@ -81,8 +81,8 @@ class ListMappingTest {
 
     @Test
     void rootListOfTheResponseMapsIntoAnOutputList() throws Exception {
-        CompiledIntegration ci = CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", "person", "books",
-                new ServiceDefinition.Target("http://x", "GET", "/"), new ServiceDefinition.Mapping(List.of()),
+        CompiledIntegration ci = CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", null, "person", "books",
+                new ServiceDefinition.Target("http://x", "GET", "/"), null, new ServiceDefinition.Mapping(List.of()),
                 new ServiceDefinition.Mapping(List.of(link("[]", "b-books"), link("[].id", "b-id"), link("[].title", "b-title")))),
                 PERSON, BOOKS);
         String out = ci.mapResponse("[{\"id\":1,\"title\":\"A\",\"pageCount\":3},{\"id\":2,\"title\":\"B\"}]");
