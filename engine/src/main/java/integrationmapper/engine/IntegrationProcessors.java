@@ -144,7 +144,7 @@ public class IntegrationProcessors {
 
     // ---- helpers
 
-    private static String fillPath(String template, JsonNode values) {
+    static String fillPath(String template, JsonNode values) {
         Matcher m = PATH_PARAM.matcher(template);
         StringBuilder sb = new StringBuilder();
         while (m.find()) {
@@ -158,7 +158,7 @@ public class IntegrationProcessors {
         return sb.toString();
     }
 
-    private static String toQuery(JsonNode query) {
+    static String toQuery(JsonNode query) {
         StringJoiner sj = new StringJoiner("&");
         query.properties().forEach(p -> {
             if (p.getValue().isArray()) {
@@ -214,11 +214,11 @@ public class IntegrationProcessors {
         return s == null || s.isBlank() ? "{}" : s;
     }
 
-    private static String stripTrailingSlash(String s) {
+    static String stripTrailingSlash(String s) {
         return s.endsWith("/") ? s.substring(0, s.length() - 1) : s;
     }
 
-    private static String encode(String s) {
+    static String encode(String s) {
         return URLEncoder.encode(s, StandardCharsets.UTF_8).replace("+", "%20");
     }
 

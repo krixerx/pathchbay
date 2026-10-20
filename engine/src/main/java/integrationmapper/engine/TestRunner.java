@@ -1,0 +1,205 @@
+package integrationmapper.engine;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+/**
+ * The Test drawer (D-2, OV-7): runs a sample input through the draft with the same validation, mapping scripts and
+ * request building as a live call, without publishing. The external answer is a mock built from the contract by
+ * default; the real system is called only when asked. Auth values are never returned, only shown as ***.
+ */
+@Component
+public class TestRunner {
+
+    private static final Set<String> BODY_METHODS = Set.of("POST", "PUT", "PATCH");
+
+    private final ConfigStore store;
+    private final PayloadLibrary library;
+    private final SecretResolver secrets;
+    private final HttpClient http;
+
+    public TestRunner(ConfigStore store, PayloadLibrary library, SecretResolver secrets,
+            @Value("${mapper.outbound-timeout-ms:10000}") long timeoutMs) {
+        this.store = store;
+        this.library = library;
+        this.secrets = secrets;
+        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(timeoutMs)).build();
+    }
+
+    /** What the drawer shows, step by step; a step that failed stops the rest and fills {@code problem}. */
+    public record Result(String stage, List<String> problems, Map<String, Object> request, Map<String, Object> response,
+            JsonNode output, boolean mock) {
+    }
+
+    public Result run(String slug, JsonNode input, boolean real) throws IOException {
+        ServiceDefinition def = Json.MAPPER.readValue(store.service(slug).toFile(), ServiceDefinition.class);
+        if (def.input() == null || def.output() == null || def.target() == null || def.target().method() == null) {
+            return failed("setup", List.of("Pick the Input, Output and operation first (steps 1–3)"));
+        }
+        PayloadDefinition in = library.get(def.input());
+        PayloadDefinition out = library.get(def.output());
+        CompiledIntegration ci;
+        try {
+            ci = CompiledIntegration.compile(def.withVersion("test"), in, out, null);
+        } catch (IllegalArgumentException e) {
+            return failed("links", List.of(e.getMessage()));
+        }
+
+        // 1. Input, as a caller would send it.
+        JsonNode callerInput = input;
+        if (!BODY_METHODS.contains(def.target().method()) && input.isObject()) {
+            callerInput = InputValidator.coerceQuery((ObjectNode) input, in);
+        }
+        List<String> problems = InputValidator.validate(callerInput, in);
+        if (!problems.isEmpty()) {
+            return failed("input", problems);
+        }
+
+        // 2. The request the engine would send.
+        JsonNode mapped;
+        String url;
+        try {
+            mapped = Json.MAPPER.readTree(ci.mapRequest(callerInput.toString()));
+            url = IntegrationProcessors.stripTrailingSlash(def.target().baseUrl() == null ? "" : def.target().baseUrl())
+                    + IntegrationProcessors.fillPath(def.target().path(), mapped.path("path"));
+        } catch (RuntimeException e) {
+            return failed("request", List.of(e.getMessage()));
+        }
+        String query = IntegrationProcessors.toQuery(mapped.path("query"));
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Accept", "application/json");
+        mapped.path("headers").properties().forEach(h -> {
+            if (!h.getValue().isNull()) {
+                headers.put(h.getKey(), h.getValue().asText());
+            }
+        });
+        String authHeader = null;
+        String authQuery = null;
+        if (def.auth() != null) {
+            authHeader = "bearer".equals(def.auth().type()) ? "Authorization" : "header".equals(def.auth().in()) ? def.auth().name() : null;
+            authQuery = "query".equals(def.auth().in()) ? def.auth().name() : null;
+        }
+        boolean hasBody = BODY_METHODS.contains(def.target().method());
+        String body = hasBody ? Json.MAPPER.writeValueAsString(mapped.path("body")) : null;
+
+        Map<String, Object> shownHeaders = new LinkedHashMap<>(headers);
+        if (authHeader != null) {
+            shownHeaders.put(authHeader, "***");
+        }
+        String shownUrl = url + (query.isEmpty() && authQuery == null ? ""
+                : "?" + query + (authQuery == null ? "" : (query.isEmpty() ? "" : "&") + IntegrationProcessors.encode(authQuery) + "=***"));
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("method", def.target().method());
+        request.put("url", shownUrl);
+        request.put("headers", shownHeaders);
+        request.put("body", hasBody ? mapped.path("body") : null);
+
+        // 3. The answer: mock from the contract, or the real system.
+        int status;
+        String responseText;
+        if (!real) {
+            Contract.Operation op = operation(def);
+            status = op == null || op.responseStatus() == null ? 200 : Integer.parseInt(op.responseStatus());
+            responseText = MockGenerator.example(op == null ? null : op.response()).toString();
+        } else {
+            if (def.target().baseUrl() == null || def.target().baseUrl().isBlank()) {
+                return new Result("request", List.of("Set the base URL on the Settings page first"), request, null, null, false);
+            }
+            String secret = null;
+            if (def.auth() != null) {
+                try {
+                    secret = secrets.resolve(slug);
+                } catch (IllegalArgumentException e) {
+                    return new Result("request", List.of(e.getMessage()), request, null, null, false);
+                }
+            }
+            String realQuery = query;
+            if (authQuery != null) {
+                String p = IntegrationProcessors.encode(authQuery) + "=" + IntegrationProcessors.encode(secret);
+                realQuery = realQuery.isEmpty() ? p : realQuery + "&" + p;
+            }
+            HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url + (realQuery.isEmpty() ? "" : "?" + realQuery)))
+                    .timeout(Duration.ofSeconds(10))
+                    .method(def.target().method(), hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
+            headers.forEach(rb::header);
+            if (hasBody) {
+                rb.header("Content-Type", "application/json");
+            }
+            if (authHeader != null) {
+                rb.header(authHeader, "Authorization".equals(authHeader) ? "Bearer " + secret : secret);
+            }
+            try {
+                HttpResponse<String> r = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+                status = r.statusCode();
+                responseText = r.body();
+            } catch (IOException e) {
+                return new Result("response", List.of("The external system did not answer: " + e.getMessage()), request, null, null, false);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(e);
+            }
+        }
+        JsonNode responseBody = parseOrText(responseText);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", status);
+        response.put("body", responseBody);
+
+        // 4. Mapped back into the Output, as callers would get it.
+        if (status >= 400) {
+            return new Result("response", List.of("The external system answered " + status + "; callers get this status and body"),
+                    request, response, null, !real);
+        }
+        List<String> notes = !real && responseText.equals("{}")
+                ? List.of("The contract does not describe the response of this operation, so the mock answer is empty. Try a real call to see real data.")
+                : List.of();
+        try {
+            JsonNode output = Json.MAPPER.readTree(ci.mapResponse(responseText == null || responseText.isBlank() ? "{}" : responseText));
+            return new Result("done", notes, request, response, output, !real);
+        } catch (RuntimeException e) {
+            return new Result("output", List.of("Response mapping failed: " + e.getMessage()), request, response, null, !real);
+        }
+    }
+
+    private Contract.Operation operation(ServiceDefinition def) throws IOException {
+        JsonNode draft = Json.MAPPER.readTree(store.service(def.id()).toFile());
+        String contractId = draft.path("contract").asText(null);
+        String opId = draft.path("operationId").asText(null);
+        if (contractId == null || opId == null) {
+            return null;
+        }
+        Path p = store.root().resolve("contracts").resolve(contractId + ".json");
+        if (!Files.isRegularFile(p)) {
+            return null;
+        }
+        Contract c = Json.MAPPER.readValue(p.toFile(), Contract.class);
+        return c.operations().stream().filter(o -> o.id().equals(opId)).findFirst().orElse(null);
+    }
+
+    private static JsonNode parseOrText(String text) {
+        try {
+            return text == null || text.isBlank() ? null : Json.MAPPER.readTree(text);
+        } catch (IOException e) {
+            return Json.MAPPER.getNodeFactory().textNode(text);
+        }
+    }
+
+    private static Result failed(String stage, List<String> problems) {
+        return new Result(stage, problems, null, null, null, false);
+    }
+}

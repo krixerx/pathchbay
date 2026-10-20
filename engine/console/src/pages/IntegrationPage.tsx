@@ -8,6 +8,7 @@ import { meaning } from '../theme';
 import { PayloadStep } from './steps/PayloadStep';
 import { ImportStep } from './steps/ImportStep';
 import { OperationStep } from './steps/OperationStep';
+import { MapStep } from './steps/MapStep';
 
 /** One integration: the 5 steps (D-2, D-19). Finished steps can be reopened at any time (D-19). */
 export function IntegrationPage() {
@@ -27,7 +28,7 @@ function Integration({ slug }: { slug: string }) {
       (d) => {
         setDraft(d);
         setContractId(d.contract ?? null);
-        setActive(!d.input || !d.output ? 0 : !d.contract ? 1 : 2);
+        setActive(!d.input || !d.output ? 0 : !d.contract ? 1 : !d.operationId ? 2 : 3);
       },
       (e: Error) => setError(e.message),
     );
@@ -44,8 +45,8 @@ function Integration({ slug }: { slug: string }) {
   }
 
   const linkCount = (draft.request?.links?.length ?? 0) + (draft.response?.links?.length ?? 0);
-  // Steps 4 and 5 are not built yet; steps 1-3 are always reachable.
-  const reachable = (step: number) => step <= 2;
+  // Step 5 is not built yet; step 4 needs the operation from step 3.
+  const reachable = (step: number) => step <= 2 || (step === 3 && !!draft.operationId);
 
   return (
     <Stack gap="lg" maw={1200}>
@@ -87,13 +88,15 @@ function Integration({ slug }: { slug: string }) {
         <Stepper.Step label="Operation" description="What to call">
           <OperationStep draft={draft} contractId={contractId} linkCount={linkCount} onChange={setDraft} onBack={() => setActive(1)} />
         </Stepper.Step>
-        <Stepper.Step label="Map" description="Link fields" allowStepSelect={false} />
+        <Stepper.Step label="Map" description="Link fields" allowStepSelect={!!draft.operationId}>
+          <MapStep draft={draft} onChange={setDraft} />
+        </Stepper.Step>
         <Stepper.Step label="Publish" description="Make it live" allowStepSelect={false} />
       </Stepper>
 
       <Text size="sm" c="dimmed">
-        Steps 4 (Map) and 5 (Publish) come in the next build steps. Until then, links are edited in{' '}
-        <Code>config/services/{draft.id}.json</Code> and published with <Code>POST /admin/integrations/{draft.id}/publish</Code>.
+        Step 5 (Publish) comes in the next build step. Until then, publish with{' '}
+        <Code>POST /admin/integrations/{draft.id}/publish</Code>.
       </Text>
     </Stack>
   );

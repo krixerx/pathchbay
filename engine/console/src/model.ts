@@ -103,6 +103,16 @@ export interface Contract {
   warnings: string[];
 }
 
+/** A Test drawer run (engine TestRunner): where it stopped, and what each step produced. */
+export interface TestResult {
+  stage: 'setup' | 'links' | 'input' | 'request' | 'response' | 'output' | 'done';
+  problems: string[];
+  request?: { method: string; url: string; headers: Record<string, string>; body: unknown };
+  response?: { status: number; body: unknown };
+  output?: unknown;
+  mock: boolean;
+}
+
 export type Auth =
   | { type: 'bearer' }
   | { type: 'apiKey'; in: 'header' | 'query'; name: string };

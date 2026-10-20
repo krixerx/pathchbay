@@ -1,7 +1,9 @@
 import type {
   Auth,
   Contract,
+  ContractOperation,
   ContractSummary,
+  TestResult,
   DefinitionSummary,
   IntegrationDraft,
   IntegrationSettings,
@@ -46,6 +48,14 @@ export const api = {
     call<Contract>('POST', '/contracts', { name, ...source }),
   chooseOperation: (slug: string, contract: string, operationId: string) =>
     call<IntegrationDraft>('PUT', `/integrations/${slug}/operation`, { contract, operationId }),
+  board: (slug: string) =>
+    call<{ draft: IntegrationDraft; input: PayloadDefinition | null; output: PayloadDefinition | null; operation: ContractOperation | null }>(
+      'GET',
+      `/integrations/${slug}/board`,
+    ),
+  saveLinks: (slug: string, request: { from: string; to: string }[], response: { from: string; to: string }[]) =>
+    call<IntegrationDraft>('PUT', `/integrations/${slug}/links`, { request, response }),
+  test: (slug: string, input: unknown, real: boolean) => call<TestResult>('POST', `/integrations/${slug}/test`, { input, real }),
   settings: (slug: string) => call<IntegrationSettings>('GET', `/integrations/${slug}/settings`),
   saveSettings: (slug: string, update: { baseUrl?: string; auth: Auth | null; secret?: string; removeSecret?: boolean }) =>
     call<IntegrationSettings>('PUT', `/integrations/${slug}/settings`, update),
