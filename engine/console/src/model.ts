@@ -1,0 +1,62 @@
+// Shapes of the config files and API responses (engine: PayloadDefinition, ConsoleApiController).
+
+export type FieldType = 'text' | 'number' | 'integer' | 'boolean' | 'date' | 'datetime' | 'object' | 'list';
+
+export const SIMPLE_TYPES: FieldType[] = ['text', 'number', 'integer', 'boolean', 'date', 'datetime'];
+export const ALL_TYPES: FieldType[] = [...SIMPLE_TYPES, 'object', 'list'];
+
+/** One vocabulary in every view (D-4). */
+export const TYPE_LABELS: Record<FieldType, string> = {
+  text: 'text',
+  number: 'number',
+  integer: 'whole number',
+  boolean: 'yes/no',
+  date: 'date',
+  datetime: 'date-time',
+  object: 'object',
+  list: 'list',
+};
+
+export interface Field {
+  id?: string;
+  name?: string;
+  type: FieldType;
+  required?: boolean;
+  format?: string;
+  /** A field with a value is a constant (R11). */
+  value?: unknown;
+  fields?: Field[];
+  items?: Field;
+}
+
+export interface PayloadDefinition {
+  id: string;
+  name: string;
+  fields: Field[];
+}
+
+export interface DefinitionSummary {
+  id: string;
+  name: string;
+  fieldCount: number;
+  usedBy: string[];
+}
+
+export interface IntegrationSummary {
+  id: string;
+  name?: string;
+  input?: string;
+  output?: string;
+  method?: string;
+  activeVersion?: string;
+  status: 'live' | 'draft' | 'broken';
+  problem?: string;
+}
+
+export interface IntegrationDraft {
+  id: string;
+  name?: string;
+  input?: string;
+  output?: string;
+  activeVersion?: string;
+}

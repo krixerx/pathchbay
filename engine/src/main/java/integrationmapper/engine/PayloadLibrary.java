@@ -1,5 +1,7 @@
 package integrationmapper.engine;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,6 +19,11 @@ public class PayloadLibrary {
     public void put(PayloadDefinition def) {
         def.check();
         definitions.put(def.id(), def);
+    }
+
+    /** All definitions, sorted by id. */
+    public List<PayloadDefinition> all() {
+        return definitions.values().stream().sorted(Comparator.comparing(PayloadDefinition::id)).toList();
     }
 
     public PayloadDefinition get(String id) {

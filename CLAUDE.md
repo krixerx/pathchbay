@@ -9,6 +9,8 @@ The engine lives in `engine/` (Java 21, Spring Boot 4.1.1, Apache Camel 4.23.0, 
 - `mvn test` runs all tests; `mvn test -Dtest=ListMappingTest` runs one class, `-Dtest=ListMappingTest#nestedListsAreMappedLevelByLevel` one method. Tests need no internet (a local fake of FakeRESTApi's Books endpoints).
 - `mvn package && java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config` starts the engine on port 8080 with the example integrations, which call the public FakeRESTApi. `engine/README.md` has the curl calls and the config file formats.
 
+The console is in `engine/console/` (React 19, TypeScript, Vite, Mantine 9; tokens in `DESIGN.md`). From there: `npm test` (Vitest), `npm run typecheck`, `npm run build` (writes into `engine/src/main/resources/static`, git-ignored, so `mvn package` serves it), `npm run dev` (port 5173, proxies `/admin` and `/api` to an engine on 8080). The console's API is `ConsoleApiController` (`/admin/api/...`); it reads and writes request bodies with the engine's Jackson 2 mapper (`Json.MAPPER`), not Spring Boot 4's Jackson 3.
+
 `rules/link-cases.json` is the shared table of linking rules (D-12, R5): the engine's `LinkCasesTest` runs every case, and the console must run the same file. Change a rule there first.
 
 - `docs/integration-mapper-spec.md`: the product spec, the long-term source of truth for requirements.

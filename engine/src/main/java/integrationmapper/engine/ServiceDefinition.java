@@ -3,6 +3,7 @@ package integrationmapper.engine;
 import java.util.List;
 import java.util.Set;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
@@ -11,6 +12,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * {@code input} and {@code output} name payload definitions in the library (D-9).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties({"name"}) // the display name is for the console; the engine works with the id
 public record ServiceDefinition(String id, String version, String activeVersion, String input, String output,
         Target target, Auth auth, Mapping request, Mapping response) {
 

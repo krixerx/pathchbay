@@ -5,10 +5,14 @@ Spring Boot 4.1.1, Apache Camel 4.23.0, Java 21. Plan: `../docs/slice-plan.md` (
 ## Run it locally
 
 ```bash
-cd engine
-mvn package
+cd engine/console && npm install && npm run build && cd ..   # builds the console into src/main/resources/static
+mvn clean package
 java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config
 ```
+
+Open **http://localhost:8080** for the console. So far it has the Integrations list, "New integration", step 1 of an integration (pick Input and Output), and the Payload definitions library with the field editor and "Paste a JSON sample". Steps 2–5 come next; until then the rest of an integration is edited in its JSON file and published with the admin call below.
+
+Console development with hot reload: keep the engine running and run `npm run dev` in `engine/console` (http://localhost:5173; API calls go to the engine on 8080). `npm test` runs the console's unit tests. Design tokens and rules: `../DESIGN.md`.
 
 Startup loads the payload library `config/entities/*.json`, then serves the **active version** of every `config/services/*.json` from its version file. A draft that was never published is not served. The three book examples are already published (version 1.0.0) and call the public [FakeRESTApi](https://fakerestapi.azurewebsites.net/index.html):
 
