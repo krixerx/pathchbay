@@ -1,0 +1,9 @@
+{
+  "id": "book-ref",
+  "name": "Book reference",
+  "fields": [
+    { "id": "br-bookId", "name": "bookId", "type": "integer", "required": true },
+    { "id": "br-title", "name": "title", "type": "text" },
+    { "id": "br-pages", "name": "pages", "type": "integer" }
+  ]
+}

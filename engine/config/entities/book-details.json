@@ -1,0 +1,11 @@
+{
+  "id": "book-details",
+  "name": "Book details",
+  "fields": [
+    { "id": "bd-bookId", "name": "bookId", "type": "integer" },
+    { "id": "bd-title", "name": "title", "type": "text" },
+    { "id": "bd-summary", "name": "summary", "type": "text" },
+    { "id": "bd-pages", "name": "pages", "type": "integer" },
+    { "id": "bd-published", "name": "published", "type": "datetime" }
+  ]
+}

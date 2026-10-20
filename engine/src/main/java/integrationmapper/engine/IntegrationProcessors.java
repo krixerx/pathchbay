@@ -5,6 +5,8 @@ import java.net.SocketTimeoutException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.StringJoiner;
 import java.util.regex.Matcher;
@@ -37,16 +39,20 @@ public class IntegrationProcessors {
         CompiledIntegration ci = registry.get(exchange.getProperty(SLUG, String.class));
         ServiceDefinition.Target target = ci.definition().target();
 
-        String input = BODY_METHODS.contains(target.method())
-                ? blankToEmptyObject(msg.getBody(String.class))
-                : queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class));
-        if (!isJsonObject(input)) {
-            throw new BadInputException("Request body must be a JSON object");
+        JsonNode input;
+        if (BODY_METHODS.contains(target.method())) {
+            input = parseObject(blankToEmptyObject(msg.getBody(String.class)));
+        } else {
+            input = InputValidator.coerceQuery(queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class)), ci.input());
+        }
+        List<String> problems = InputValidator.validate(input, ci.input());
+        if (!problems.isEmpty()) {
+            throw new BadInputException("Input does not match " + ci.input().id(), problems);
         }
 
         JsonNode mapped;
         try {
-            mapped = Json.MAPPER.readTree(ci.mapRequest(input));
+            mapped = Json.MAPPER.readTree(ci.mapRequest(input.toString()));
         } catch (Exception e) {
             throw new MappingException("request mapping failed: " + e.getMessage(), e);
         }
@@ -121,7 +127,8 @@ public class IntegrationProcessors {
         msg.removeHeaders("*");
         msg.setHeader(Exchange.HTTP_RESPONSE_CODE, status);
         msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
-        msg.setBody(Json.error(error, slug, e == null ? null : rootMessage(e)));
+        List<String> problems = e == null ? List.of() : findCause(e, BadInputException.class).map(b -> b.problems).orElse(List.of());
+        msg.setBody(Json.error(error, slug, e == null ? null : rootMessage(e), problems));
     }
 
     // ---- helpers
@@ -153,10 +160,10 @@ public class IntegrationProcessors {
     }
 
     /** GET/DELETE input: query parameters become a flat JSON object; repeated names become a list (R1, D16). */
-    static String queryToJson(String rawQuery) {
+    static ObjectNode queryToJson(String rawQuery) {
         ObjectNode obj = Json.MAPPER.createObjectNode();
         if (rawQuery == null || rawQuery.isBlank()) {
-            return obj.toString();
+            return obj;
         }
         for (String pair : rawQuery.split("&")) {
             if (pair.isEmpty()) {
@@ -176,15 +183,20 @@ public class IntegrationProcessors {
                 arr.add(value);
             }
         }
-        return obj.toString();
+        return obj;
     }
 
-    private static boolean isJsonObject(String s) {
+    private static JsonNode parseObject(String s) {
+        JsonNode node;
         try {
-            return Json.MAPPER.readTree(s).isObject();
+            node = Json.MAPPER.readTree(s);
         } catch (Exception e) {
-            return false;
+            throw new BadInputException("Request body must be a JSON object");
         }
+        if (!node.isObject()) {
+            throw new BadInputException("Request body must be a JSON object");
+        }
+        return node;
     }
 
     private static String blankToEmptyObject(String s) {
@@ -200,12 +212,16 @@ public class IntegrationProcessors {
     }
 
     private static boolean hasCause(Throwable t, Class<? extends Throwable> type) {
+        return findCause(t, type).isPresent();
+    }
+
+    private static <T extends Throwable> Optional<T> findCause(Throwable t, Class<T> type) {
         for (Throwable c = t; c != null; c = c.getCause()) {
             if (type.isInstance(c)) {
-                return true;
+                return Optional.of(type.cast(c));
             }
         }
-        return false;
+        return Optional.empty();
     }
 
     private static String rootMessage(Throwable t) {
@@ -217,8 +233,15 @@ public class IntegrationProcessors {
     }
 
     static final class BadInputException extends RuntimeException {
+        final List<String> problems;
+
         BadInputException(String message) {
+            this(message, List.of());
+        }
+
+        BadInputException(String message, List<String> problems) {
             super(message);
+            this.problems = problems;
         }
     }
 

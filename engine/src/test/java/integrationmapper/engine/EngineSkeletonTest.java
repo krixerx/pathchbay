@@ -22,11 +22,26 @@ import org.springframework.http.HttpHeaders;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "mapper.config-dir=target/no-config")
 class EngineSkeletonTest {
 
+    static final String NEW_BOOK = """
+            {"id":"new-book","fields":[
+              {"id":"nb-title","name":"title","type":"text","required":true},
+              {"id":"nb-pages","name":"pages","type":"integer","required":true},
+              {"id":"nb-published","name":"published","type":"datetime"},
+              {"id":"nb-source","name":"source","type":"text","value":"Integration Mapper"}]}""";
+    static final String BOOK_REF = """
+            {"id":"book-ref","fields":[
+              {"id":"br-bookId","name":"bookId","type":"integer","required":true},
+              {"id":"br-title","name":"title","type":"text"},
+              {"id":"br-pages","name":"pages","type":"integer"}]}""";
+
     @Autowired
     IntegrationPublisher publisher;
 
     @Autowired
     IntegrationRegistry registry;
+
+    @Autowired
+    PayloadLibrary library;
 
     @Autowired
     FakeBooksApi fake;
@@ -44,20 +59,29 @@ class EngineSkeletonTest {
         return new ServiceDefinition.Link(from, to);
     }
 
+    static PayloadDefinition definition(String json) throws Exception {
+        return Json.MAPPER.readValue(json, PayloadDefinition.class);
+    }
+
     ServiceDefinition createBook(String version, String baseUrl) {
-        return new ServiceDefinition("create-book", version, new ServiceDefinition.Target(baseUrl, "POST", "/api/v1/Books"),
-                new ServiceDefinition.Mapping(List.of(link("title", "body.title"), link("pages", "body.pageCount"))),
-                new ServiceDefinition.Mapping(List.of(link("id", "bookId"), link("title", "title"))));
+        return new ServiceDefinition("create-book", version, "new-book", "book-ref",
+                new ServiceDefinition.Target(baseUrl, "POST", "/api/v1/Books"),
+                new ServiceDefinition.Mapping(List.of(link("nb-title", "body.title"), link("nb-pages", "body.pageCount"),
+                        link("nb-source", "body.excerpt"))),
+                new ServiceDefinition.Mapping(List.of(link("id", "br-bookId"), link("title", "br-title"))));
     }
 
     ServiceDefinition getBook() {
-        return new ServiceDefinition("get-book", "1.0.0", new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/{id}"),
-                new ServiceDefinition.Mapping(List.of(link("bookId", "path.id"))),
-                new ServiceDefinition.Mapping(List.of(link("id", "bookId"), link("pageCount", "pages"))));
+        return new ServiceDefinition("get-book", "1.0.0", "book-ref", "book-ref",
+                new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/{id}"),
+                new ServiceDefinition.Mapping(List.of(link("br-bookId", "path.id"))),
+                new ServiceDefinition.Mapping(List.of(link("id", "br-bookId"), link("pageCount", "br-pages"))));
     }
 
     @BeforeEach
     void publish() throws Exception {
+        library.put(definition(NEW_BOOK));
+        library.put(definition(BOOK_REF));
         publisher.publish(createBook("1.0.0", base()));
         publisher.publish(getBook());
         fake.lastRequest.clear();
@@ -76,14 +100,18 @@ class EngineSkeletonTest {
                 .GET().build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    JsonNode sentBody() throws Exception {
+        return Json.MAPPER.readTree((String) fake.lastRequest.get("body"));
+    }
+
     @Test
     void postMapsRequestAndResponseAndStripsCallerHeaders() throws Exception {
         HttpResponse<String> r = post("create-book", "application/json", "{\"title\":\"T\",\"pages\":42,\"ignored\":true}");
 
         assertThat(r.statusCode()).isEqualTo(200);
         assertThat(Json.MAPPER.readTree(r.body())).isEqualTo(Json.MAPPER.readTree("{\"bookId\":99,\"title\":\"T\"}"));
-        assertThat(Json.MAPPER.readTree((String) fake.lastRequest.get("body")))
-                .isEqualTo(Json.MAPPER.readTree("{\"title\":\"T\",\"pageCount\":42}"));
+        assertThat(sentBody()).isEqualTo(Json.MAPPER.readTree(
+                "{\"title\":\"T\",\"pageCount\":42,\"excerpt\":\"Integration Mapper\"}"));
 
         HttpHeaders sent = (HttpHeaders) fake.lastRequest.get("headers");
         assertThat(sent.containsHeader("X-API-Key")).as("caller key must not reach the vendor").isFalse();
@@ -92,22 +120,46 @@ class EngineSkeletonTest {
     }
 
     @Test
-    void getTakesQueryParametersIntoThePath() throws Exception {
+    void constantCannotBeOverriddenByTheCaller() throws Exception {
+        post("create-book", "application/json", "{\"title\":\"T\",\"pages\":1,\"source\":\"caller\"}");
+        assertThat(sentBody().path("excerpt").asText()).isEqualTo("Integration Mapper");
+    }
+
+    @Test
+    void invalidInputIs400WithEveryProblemAndNoExternalCall() throws Exception {
+        HttpResponse<String> r = post("create-book", "application/json", "{\"pages\":\"many\",\"published\":\"yesterday\"}");
+
+        assertThat(r.statusCode()).isEqualTo(400);
+        JsonNode body = Json.MAPPER.readTree(r.body());
+        assertThat(body.path("error").asText()).isEqualTo("bad-request");
+        assertThat(body.path("problems").toString())
+                .contains("title: required")
+                .contains("pages: must be a whole number")
+                .contains("published: must be a date-time");
+        assertThat(fake.lastRequest).as("vendor not called").isEmpty();
+    }
+
+    @Test
+    void getTakesTypedQueryParametersIntoThePath() throws Exception {
         HttpResponse<String> r = get("get-book?bookId=7");
 
         assertThat(r.statusCode()).isEqualTo(200);
         assertThat(fake.lastRequest.get("path")).isEqualTo("7");
         JsonNode out = Json.MAPPER.readTree(r.body());
-        assertThat(out.path("bookId").asInt()).isEqualTo(7);
+        assertThat(out.path("bookId").isIntegralNumber()).isTrue();
         assertThat(out.path("pages").asInt()).isEqualTo(700);
     }
 
     @Test
-    void missingPathParameterIs400() throws Exception {
-        HttpResponse<String> r = get("get-book");
-        assertThat(r.statusCode()).isEqualTo(400);
-        assertThat(r.body()).contains("\"error\":\"bad-request\"").contains("'id'");
-        assertThat(fake.lastRequest).as("vendor not called").isEmpty();
+    void badOrMissingQueryParameterIs400() throws Exception {
+        HttpResponse<String> notNumber = get("get-book?bookId=seven");
+        assertThat(notNumber.statusCode()).isEqualTo(400);
+        assertThat(notNumber.body()).contains("bookId: must be a whole number");
+
+        HttpResponse<String> missing = get("get-book");
+        assertThat(missing.statusCode()).isEqualTo(400);
+        assertThat(missing.body()).contains("bookId: required");
+        assertThat(fake.lastRequest).isEmpty();
     }
 
     @Test
@@ -130,7 +182,7 @@ class EngineSkeletonTest {
     @Test
     void unreachableRemoteIs502() throws Exception {
         publisher.publish(createBook("1.0.1", "http://localhost:1"));
-        HttpResponse<String> r = post("create-book", "application/json", "{\"title\":\"T\"}");
+        HttpResponse<String> r = post("create-book", "application/json", "{\"title\":\"T\",\"pages\":1}");
         assertThat(r.statusCode()).isEqualTo(502);
         assertThat(r.body()).contains("\"integration\":\"create-book\"");
     }
@@ -140,13 +192,38 @@ class EngineSkeletonTest {
         publisher.publish(createBook("1.1.0", base()));
         assertThat(registry.activeVersions()).containsEntry("create-book", "1.1.0");
 
-        ServiceDefinition broken = new ServiceDefinition("create-book", "1.2.0",
+        ServiceDefinition broken = new ServiceDefinition("create-book", "1.2.0", "new-book", "book-ref",
                 new ServiceDefinition.Target(base(), "POST", "/api/v1/Books"),
-                new ServiceDefinition.Mapping(List.of(link("title", "nowhere.title"))),
+                new ServiceDefinition.Mapping(List.of(link("no-such-field", "body.title"))),
                 new ServiceDefinition.Mapping(List.of()));
-        assertThatThrownBy(() -> publisher.publish(broken)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> publisher.publish(broken)).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no-such-field");
 
         assertThat(registry.activeVersions()).containsEntry("create-book", "1.1.0");
-        assertThat(post("create-book", "application/json", "{\"title\":\"T\"}").statusCode()).isEqualTo(200);
+        assertThat(post("create-book", "application/json", "{\"title\":\"T\",\"pages\":1}").statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void libraryEditDoesNotChangeTheLiveVersionUntilRepublished() throws Exception {
+        // Rename "title" to "name" in the shared definition; the live version keeps its own copy (D-9).
+        library.put(definition(NEW_BOOK.replace("\"name\":\"title\"", "\"name\":\"name\"")));
+        assertThat(post("create-book", "application/json", "{\"title\":\"Old\",\"pages\":1}").statusCode()).isEqualTo(200);
+        assertThat(sentBody().path("title").asText()).isEqualTo("Old");
+
+        // After republishing, the same link (by field id) reads the renamed field (D-18).
+        publisher.publish(createBook("1.1.0", base()));
+        post("create-book", "application/json", "{\"name\":\"New\",\"pages\":1}");
+        assertThat(sentBody().path("title").asText()).isEqualTo("New");
+    }
+
+    @Test
+    void getIntegrationNeedsAFlatInput() throws Exception {
+        library.put(definition("""
+                {"id":"nested","fields":[{"id":"n-a","name":"a","type":"object","fields":[
+                  {"id":"n-b","name":"b","type":"text"}]}]}"""));
+        ServiceDefinition def = new ServiceDefinition("nested-get", "1.0.0", "nested", "book-ref",
+                new ServiceDefinition.Target(base(), "GET", "/api/v1/Books/1"),
+                new ServiceDefinition.Mapping(List.of()), new ServiceDefinition.Mapping(List.of()));
+        assertThatThrownBy(() -> publisher.publish(def)).hasMessageContaining("only have simple fields");
     }
 }

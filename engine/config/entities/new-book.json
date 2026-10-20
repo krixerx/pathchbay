@@ -1,0 +1,11 @@
+{
+  "id": "new-book",
+  "name": "New book",
+  "fields": [
+    { "id": "nb-title", "name": "title", "type": "text", "required": true },
+    { "id": "nb-summary", "name": "summary", "type": "text" },
+    { "id": "nb-pages", "name": "pages", "type": "integer", "required": true },
+    { "id": "nb-published", "name": "published", "type": "datetime" },
+    { "id": "nb-source", "name": "source", "type": "text", "value": "Created by Integration Mapper" }
+  ]
+}

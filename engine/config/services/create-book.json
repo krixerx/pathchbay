@@ -1,6 +1,8 @@
 {
   "id": "create-book",
   "version": "1.0.0",
+  "input": "new-book",
+  "output": "book-ref",
   "target": {
     "baseUrl": "https://fakerestapi.azurewebsites.net",
     "method": "POST",
@@ -8,17 +10,18 @@
   },
   "request": {
     "links": [
-      { "from": "title", "to": "body.title" },
-      { "from": "summary", "to": "body.description" },
-      { "from": "pages", "to": "body.pageCount" },
-      { "from": "published", "to": "body.publishDate" }
+      { "from": "nb-title", "to": "body.title" },
+      { "from": "nb-summary", "to": "body.description" },
+      { "from": "nb-pages", "to": "body.pageCount" },
+      { "from": "nb-published", "to": "body.publishDate" },
+      { "from": "nb-source", "to": "body.excerpt" }
     ]
   },
   "response": {
     "links": [
-      { "from": "id", "to": "bookId" },
-      { "from": "title", "to": "title" },
-      { "from": "pageCount", "to": "pages" }
+      { "from": "id", "to": "br-bookId" },
+      { "from": "title", "to": "br-title" },
+      { "from": "pageCount", "to": "br-pages" }
     ]
   }
 }
