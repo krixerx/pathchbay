@@ -1,0 +1,23 @@
+{
+  "id": "get-book",
+  "version": "1.0.0",
+  "target": {
+    "baseUrl": "https://fakerestapi.azurewebsites.net",
+    "method": "GET",
+    "path": "/api/v1/Books/{id}"
+  },
+  "request": {
+    "links": [
+      { "from": "bookId", "to": "path.id" }
+    ]
+  },
+  "response": {
+    "links": [
+      { "from": "id", "to": "bookId" },
+      { "from": "title", "to": "title" },
+      { "from": "description", "to": "summary" },
+      { "from": "pageCount", "to": "pages" },
+      { "from": "publishDate", "to": "published" }
+    ]
+  }
+}

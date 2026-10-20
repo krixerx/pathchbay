@@ -1,0 +1,24 @@
+{
+  "id": "create-book",
+  "version": "1.0.0",
+  "target": {
+    "baseUrl": "https://fakerestapi.azurewebsites.net",
+    "method": "POST",
+    "path": "/api/v1/Books"
+  },
+  "request": {
+    "links": [
+      { "from": "title", "to": "body.title" },
+      { "from": "summary", "to": "body.description" },
+      { "from": "pages", "to": "body.pageCount" },
+      { "from": "published", "to": "body.publishDate" }
+    ]
+  },
+  "response": {
+    "links": [
+      { "from": "id", "to": "bookId" },
+      { "from": "title", "to": "title" },
+      { "from": "pageCount", "to": "pages" }
+    ]
+  }
+}
