@@ -86,7 +86,7 @@ Deferred: contract diff, `/v1` + `/v2` side by side and AI suggestions are the b
 
 What remains as our own code is the part nobody else ships for analysts: the 5-step console, the mapping JSON → DataSonnet generator, and the test panel.
 
-**Engine (Java 21, Spring Boot 3, Apache Camel 4, `camel-datasonnet`, swagger-parser v3)**
+**Engine (Java 21, Spring Boot 4.1.1, Apache Camel 4.23.0, `camel-datasonnet`, swagger-parser v3)** — versions chosen by the user on 2026-10-20 after spike E1 passed on this line; Camel 4.23.0's `camel-dependencies` targets Spring Boot 4.1.1.
 - One Camel route template (YAML DSL) with parameters `slug`, `requestScript`, `targetUrl`, `method`, `auth`, `responseScript`. Each published integration is one templated route created from it, with route ID `int-{slug}` (see Slice behavior rules). Exact YAML keys for `templated-route` must be checked against the current Camel YAML DSL docs; the search did not confirm them.
 - On publish, the service JSON (spec ADR-004 file format, subset) is turned into DataSonnet request and response scripts and passed as template parameters. Scripts are compiled once per version. Nothing is parsed on the request path (spec performance principles 1-2).
 - Publish writes an immutable `services/{slug}.versions/{semver}.json`, sets `activeVersion` in the service file, then replaces only the route for that slug (spec NFR-003). The route is stopped gracefully (in-flight calls finish); new calls for that slug during the swap get `503` with `Retry-After: 2` (eng review R2).
@@ -270,7 +270,9 @@ STEP | USER DOES                                  | USER FEELS                  
 ## Next Steps
 
 1. `git init`, pick a temporary name, create the GitHub repo and a minimal README.
-2. Choose the target public API (real, nested arrays, API key auth, free tier) and save its OpenAPI file as the fixture for every test.
+2. Test APIs (chosen by the user on 2026-10-20), each OpenAPI file saved as a fixture:
+   - **FakeRESTApi** (`https://fakerestapi.azurewebsites.net`, spec `/swagger/v1/swagger.json`): first fixture. OpenAPI 3.0.1, no auth, no `servers` (base URL typed in), flat objects, CRUD with path parameters and list responses.
+   - **GoREST** (`https://gorest.co.in`): second fixture for bearer-token auth (free token) and nested resources; OpenAPI availability still to check.
 3. **First, the routing spike (eng review R7, at most 1 day):** on platform-http + Spring Boot, add a templated route with a new REST path after startup, replace it under load, and record what callers get during the swap. Bring the results back to the R7 decision before building on either routing design.
    Engine spike: Spring Boot + Camel 4 + DataSonnet. Write the one route template, hand-write one set of parameters with two DataSonnet scripts, call the real API, return the mapped response. Prove that adding or replacing a templated route at runtime needs no restart and doesn't touch other routes. The spike must also verify, in Camel 4 itself: `addRouteFromTemplate` (or the YAML `templated-route` keys), graceful replacement of one route while a load loop calls it and another integration (measure the 503 gap), and whether `camel-datasonnet` compiles a script once or per call.
 4. Mapping JSON schema (subset of the spec's mapping model) plus the compiler with unit tests for direct links and the D-12 list truth table.

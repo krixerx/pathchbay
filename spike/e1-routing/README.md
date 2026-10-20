@@ -37,6 +37,13 @@ Result over 20 gated swaps under load (two runs): replaced integration 200 × 40
 - Without a gate, callers of the replaced integration get a mix of empty 500, HTML 503 and occasionally 404 during the swap.
 - With `IntegrationGate`, the R2 contract holds exactly: JSON 503 with `Retry-After: 2`, nothing else.
 
+## Re-run on Camel 4.23.0 + Spring Boot 4.1.1 (2026-10-20)
+
+The pom now uses Camel 4.23.0 and Spring Boot 4.1.1 (the version `camel-dependencies-4.23.0` is built against). The code compiled unchanged and all 5 tests pass. Same conclusions:
+- Q1 runtime add: 200. Q3 YAML template keys: 200.
+- Ungated swaps (20): other integration only 200; replaced integration 200 × 34,819, **404 × 83**, HTML 503 × 49 (Spring Boot 4 gives 404s where 3.5 gave empty 500s).
+- Gated swaps (20): replaced integration 200 × 42,458 and only JSON 503 with `Retry-After: 2` × 255; zero 404/500/HTML; swap including drain ≤ 2 ms.
+
 ## Known spike issue
 
 Surefire once printed "Surefire is going to kill self fork JVM … 30 seconds after System.exit(0)": the JVM was slow to stop after the tests finished (all passed). Probably Camel's graceful shutdown timeout; not investigated, not relevant to the findings.

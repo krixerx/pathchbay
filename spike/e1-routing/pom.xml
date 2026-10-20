@@ -9,8 +9,8 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <!-- Spring Boot version that camel-dependencies 4.18.5 is built against -->
-        <version>3.5.16</version>
+        <!-- Spring Boot version that camel-dependencies 4.23.0 is built against -->
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -20,7 +20,7 @@
 
     <properties>
         <java.version>21</java.version>
-        <camel.version>4.18.5</camel.version>
+        <camel.version>4.23.0</camel.version>
     </properties>
 
     <dependencyManagement>
