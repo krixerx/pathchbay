@@ -777,10 +777,11 @@ First spike task, at most 1 day: add a route at runtime, replace it under load, 
 D) Defer
 Keep D2 and R2 as approved, including the 503 promise; decide during implementation.
 
-State: pending (investigation approved; routing remedy still undecided)
-Actual answer: C, D9 — "C) Investigate first (recommended)"
-Accepted scope: first engine spike task, at most 1 day, on platform-http + Spring Boot: (1) add a templated route with a new REST path after startup and call it; (2) replace it while a load loop calls it and another integration; (3) record the exact status callers get during the swap. Then return to R7 with the results. D2 and R2 stay as approved until then; no implementation of either routing option is approved by this answer.
-History: D2 (user answer: route templates per method) and R2 (A: short 503) approved earlier in this review.
+State: approved
+Actual answer: A, D19 (after the spike) — "A) Route per integration + fix errors (recommended)"
+Accepted scope: keep D2: one route template per HTTP method, one Camel route per published integration, replaced on publish/rollback. Add error handling so calls that hit an integration during its swap get a JSON `503` with `Retry-After: 2` (R2) instead of Spring's HTML 503 or an empty 500. Verified by rerunning spike E1: no 500 or HTML responses during swaps, the other integration only 200. **Mechanism (verified in the spike):** a servlet filter on `/api/v1/integrations/**` counts in-flight calls per slug; publish closes the slug's gate (new calls get the JSON 503), waits for in-flight calls to drain, replaces the route and reopens. A Spring `ErrorController` alone does not work, because Camel's platform-http consumer writes those errors directly. Result: 20 gated swaps under load, only 200 and JSON 503 with `Retry-After: 2`, zero 500/HTML/404; swap including drain ≤ 5 ms.
+Runtime evidence: spike E1 (`spike/e1-routing/README.md`, Camel 4.18.5, Spring Boot 3.5.16): runtime `addRouteFromTemplate` works on platform-http; YAML `routeTemplate`/`templatedRoute` keys load at runtime; swap 4–23 ms; other integration only 200; replaced integration without a fix: 155 × empty 500, 43 × HTML 503 in 20 swaps (~0.6 % of calls), no 404.
+History: D9 answer C (investigate first) with accepted scope: a ≤1-day spike on runtime add, replace under load and the status during the swap. D2 (user answer: route templates per method) and R2 (A: short 503) approved earlier in this review.
 
 ### R8: What publish generates for red or broken links
 Finding: OV-3, High, confidence 8/10, plan D-6 "Publish shows the same warnings and does not block" + D-7 broken links + R5 "Publish re-runs the engine check and reports the same warnings… do not block publish"; no rule for the generated script; reviewer: outside voice (Claude subagent, native)
@@ -1031,7 +1032,6 @@ REALITY: deferred-asks pass no linked issue kriks-unknown-design-20261020-175438
 REALITY: pr-count pass no ship-policy.json; default one PR per wave kriks-unknown-design-20261020-175438.md:969
 
 - **OUTSIDE COVERAGE:** plan-review phase: Codex unavailable (not a git repository); native Claude subagent completed within the 5-minute bound with 15 findings. Design phase: Codex unavailable; native subagent completed. No external provider completed in either phase.
-- **VERDICT:** DESIGN CLEARED. Eng review ISSUES OPEN: one routing decision (R7) waits for its 1-day spike; every other finding is decided or recorded as a task. eng review required
+- **VERDICT:** DESIGN CLEARED. Eng review: all decisions made; R7 closed after spike E1 (D19 A: route per integration + in-flight gate, verified). The logged eng review run predates this and still shows issues_open; re-run `/plan-eng-review` on this file to record it as clear.
 
-**UNRESOLVED DECISIONS:**
-- R7 (D9): one fixed route vs one route per integration, pending the routing spike (Next Step 3, task E1)
+NO UNRESOLVED DECISIONS
