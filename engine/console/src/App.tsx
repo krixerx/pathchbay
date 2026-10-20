@@ -4,6 +4,7 @@ import { IntegrationsPage } from './pages/IntegrationsPage';
 import { IntegrationPage } from './pages/IntegrationPage';
 import { DefinitionsPage } from './pages/DefinitionsPage';
 import { DefinitionEditorPage } from './pages/DefinitionEditorPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 function Layout() {
   const { pathname } = useLocation();
@@ -35,6 +36,7 @@ export const router = createHashRouter([
     children: [
       { path: '/', element: <IntegrationsPage /> },
       { path: '/integrations/:slug', element: <IntegrationPage /> },
+      { path: '/integrations/:slug/settings', element: <SettingsPage /> },
       { path: '/definitions', element: <DefinitionsPage /> },
       { path: '/definitions/new', element: <DefinitionEditorPage /> },
       { path: '/definitions/:id', element: <DefinitionEditorPage /> },

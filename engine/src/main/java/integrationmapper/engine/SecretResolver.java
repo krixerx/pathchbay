@@ -29,6 +29,25 @@ public class SecretResolver {
         return "MAPPER_SECRET_" + slug.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", "_");
     }
 
+    /** Whether the environment variable is set; the console shows where a secret comes from, never its value. */
+    public boolean inEnv(String slug) {
+        String v = env.getProperty(envName(slug));
+        return v != null && !v.isBlank();
+    }
+
+    public boolean inFile(String slug) {
+        return Files.isRegularFile(store.secret(slug));
+    }
+
+    /** Saves a secret typed in the console (D-3); an empty value removes the file. */
+    public void save(String slug, String value) throws IOException {
+        if (value == null || value.isBlank()) {
+            Files.deleteIfExists(store.secret(slug));
+        } else {
+            store.writeJson(store.secret(slug), java.util.Map.of("value", value));
+        }
+    }
+
     /** The secret, or throws naming both places it was looked for. */
     public String resolve(String slug) {
         String fromEnv = env.getProperty(envName(slug));

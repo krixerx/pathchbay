@@ -59,4 +59,59 @@ export interface IntegrationDraft {
   input?: string;
   output?: string;
   activeVersion?: string;
+  contract?: string;
+  operationId?: string;
+  target?: { baseUrl?: string; method?: string; path?: string };
+  request?: { links: unknown[] };
+  response?: { links: unknown[] };
+}
+
+export interface ContractSummary {
+  id: string;
+  name: string;
+  operationCount: number;
+  servers: string[];
+  warningCount: number;
+  importedAt: string;
+}
+
+export interface ContractParameter {
+  name: string;
+  in: 'path' | 'query' | 'header';
+  required: boolean;
+  type: string;
+}
+
+export interface ContractOperation {
+  id: string;
+  method: string;
+  path: string;
+  summary?: string;
+  parameters: ContractParameter[];
+  requestBody?: Field;
+  responseStatus?: string;
+  response?: Field;
+}
+
+export interface Contract {
+  id: string;
+  name: string;
+  sourceFile: string;
+  importedAt: string;
+  servers: string[];
+  operations: ContractOperation[];
+  warnings: string[];
+}
+
+export type Auth =
+  | { type: 'bearer' }
+  | { type: 'apiKey'; in: 'header' | 'query'; name: string };
+
+export interface IntegrationSettings {
+  baseUrl: string;
+  servers: string[];
+  auth: Auth | null;
+  secretEnvName: string;
+  secretInEnv: boolean;
+  secretInFile: boolean;
 }

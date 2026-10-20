@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
-import { Alert, Anchor, Code, Group, Select, Skeleton, Stack, Stepper, Text, Title } from '@mantine/core';
-import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
+import { Alert, Button, Code, Group, Skeleton, Stack, Stepper, Text, Title } from '@mantine/core';
+import { IconAlertTriangle, IconSettings } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
-import type { DefinitionSummary, IntegrationDraft } from '../model';
+import type { IntegrationDraft } from '../model';
 import { meaning } from '../theme';
+import { PayloadStep } from './steps/PayloadStep';
+import { ImportStep } from './steps/ImportStep';
+import { OperationStep } from './steps/OperationStep';
 
-/** One integration: the 5 steps (D-2, D-19). Step 1 picks the Input and Output payload definitions (D-8, D-9). */
+/** One integration: the 5 steps (D-2, D-19). Finished steps can be reopened at any time (D-19). */
 export function IntegrationPage() {
   const { slug = '' } = useParams();
   return <Integration key={slug} slug={slug} />;
@@ -14,35 +17,21 @@ export function IntegrationPage() {
 
 function Integration({ slug }: { slug: string }) {
   const [draft, setDraft] = useState<IntegrationDraft | null>(null);
-  const [definitions, setDefinitions] = useState<DefinitionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [active, setActive] = useState(0);
+  // The contract chosen in step 2; saved into the draft together with the operation in step 3.
+  const [contractId, setContractId] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([api.integration(slug), api.definitions()]).then(
-      ([d, defs]) => {
+    api.integration(slug).then(
+      (d) => {
         setDraft(d);
-        setDefinitions(defs);
+        setContractId(d.contract ?? null);
+        setActive(!d.input || !d.output ? 0 : !d.contract ? 1 : 2);
       },
       (e: Error) => setError(e.message),
     );
   }, [slug]);
-
-  // Autosave on every change (D-1).
-  const choose = async (part: 'input' | 'output', value: string | null) => {
-    if (!draft) return;
-    const next = { ...draft, [part]: value ?? undefined };
-    setDraft(next);
-    setSaved('saving');
-    setError(null);
-    try {
-      setDraft(await api.setPayloads(slug, next.input ?? null, next.output ?? null));
-      setSaved('saved');
-    } catch (e) {
-      setError((e as Error).message);
-      setSaved('idle');
-    }
-  };
 
   if (!draft) {
     return error ? (
@@ -54,80 +43,57 @@ function Integration({ slug }: { slug: string }) {
     );
   }
 
-  const options = definitions.map((d) => ({
-    value: d.id,
-    label: `${d.name ?? d.id} (${d.id}) · ${d.fieldCount} fields${d.usedBy.length ? ` · used by ${d.usedBy.length}` : ''}`,
-  }));
+  const linkCount = (draft.request?.links?.length ?? 0) + (draft.response?.links?.length ?? 0);
+  // Steps 4 and 5 are not built yet; steps 1-3 are always reachable.
+  const reachable = (step: number) => step <= 2;
 
   return (
-    <Stack gap="lg" maw={1100}>
-      <div>
-        <Title order={2}>{draft.name ?? draft.id}</Title>
-        <Text size="sm" c="dimmed">
-          <Code>/api/v1/integrations/{draft.id}</Code>
-          {draft.activeVersion ? ` · live version ${draft.activeVersion}` : ' · not published yet'}
-        </Text>
-      </div>
-
-      <Stepper active={0} allowNextStepsSelect={false} size="sm">
-        <Stepper.Step label="Payload" description="Input and Output">
-          <Stack gap="md" mt="lg" maw={640}>
-            <Text>
-              Pick what callers send (Input) and what they get back (Output). Both come from the payload library; the
-              same definition can be used for both.
-            </Text>
-            <Select
-              label="Input"
-              description="What callers send to this integration"
-              placeholder="Choose a payload definition"
-              data={options}
-              value={draft.input ?? null}
-              onChange={(v) => choose('input', v)}
-              searchable
-              clearable
-              nothingFoundMessage="No payload definition with that name"
-            />
-            <Select
-              label="Output"
-              description="What callers get back"
-              placeholder="Choose a payload definition"
-              data={options}
-              value={draft.output ?? null}
-              onChange={(v) => choose('output', v)}
-              searchable
-              clearable
-              nothingFoundMessage="No payload definition with that name"
-            />
-            <Group justify="space-between">
-              <Anchor component={Link} to="/definitions/new" size="sm">
-                Create a new payload definition
-              </Anchor>
-              <Text size="sm" c="dimmed" aria-live="polite">
-                {saved === 'saving' && 'Saving…'}
-                {saved === 'saved' && (
-                  <Group gap={4} component="span">
-                    <IconCheck size={14} /> Saved
-                  </Group>
-                )}
-              </Text>
-            </Group>
-            {error && (
-              <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
-                {error}
-              </Alert>
+    <Stack gap="lg" maw={1200}>
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Title order={2}>{draft.name ?? draft.id}</Title>
+          <Text size="sm" c="dimmed">
+            <Code>/api/v1/integrations/{draft.id}</Code>
+            {draft.activeVersion ? ` · live version ${draft.activeVersion}` : ' · not published yet'}
+            {draft.target?.method && (
+              <>
+                {' · calls '}
+                <Code>
+                  {draft.target.method} {draft.target.baseUrl ?? '(no base URL yet)'}
+                  {draft.target.path}
+                </Code>
+              </>
             )}
-          </Stack>
+          </Text>
+        </div>
+        <Button variant="default" leftSection={<IconSettings size={16} />} component={Link} to={`/integrations/${slug}/settings`}>
+          Settings
+        </Button>
+      </Group>
+
+      <Stepper active={active} onStepClick={(s) => reachable(s) && setActive(s)} size="sm">
+        <Stepper.Step label="Payload" description="Input and Output">
+          <PayloadStep draft={draft} onChange={setDraft} onNext={() => setActive(1)} />
         </Stepper.Step>
-        <Stepper.Step label="Import" description="Swagger file" />
-        <Stepper.Step label="Operation" description="What to call" />
-        <Stepper.Step label="Map" description="Link fields" />
-        <Stepper.Step label="Publish" description="Make it live" />
+        <Stepper.Step label="Import" description="Swagger file">
+          <ImportStep
+            selected={contractId}
+            onSelect={(id) => {
+              setContractId(id);
+              setActive(2);
+            }}
+          />
+        </Stepper.Step>
+        <Stepper.Step label="Operation" description="What to call">
+          <OperationStep draft={draft} contractId={contractId} linkCount={linkCount} onChange={setDraft} onBack={() => setActive(1)} />
+        </Stepper.Step>
+        <Stepper.Step label="Map" description="Link fields" allowStepSelect={false} />
+        <Stepper.Step label="Publish" description="Make it live" allowStepSelect={false} />
       </Stepper>
 
       <Text size="sm" c="dimmed">
-        Steps 2–5 come in the next build steps. Until then, the rest of an integration is edited in{' '}
-        <Code>config/services/{draft.id}.json</Code> and published with{' '}
-        <Code>POST /admin/integrations/{draft.id}/publish</Code>.
+        Steps 4 (Map) and 5 (Publish) come in the next build steps. Until then, links are edited in{' '}
+        <Code>config/services/{draft.id}.json</Code> and published with <Code>POST /admin/integrations/{draft.id}/publish</Code>.
       </Text>
     </Stack>
   );

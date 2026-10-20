@@ -1,4 +1,13 @@
-import type { DefinitionSummary, IntegrationDraft, IntegrationSummary, PayloadDefinition } from './model';
+import type {
+  Auth,
+  Contract,
+  ContractSummary,
+  DefinitionSummary,
+  IntegrationDraft,
+  IntegrationSettings,
+  IntegrationSummary,
+  PayloadDefinition,
+} from './model';
 
 /** Error with the engine's plain-language detail, shown as is (D-6). */
 export class ApiError extends Error {}
@@ -30,4 +39,14 @@ export const api = {
   createIntegration: (name: string) => call<IntegrationDraft>('POST', '/integrations', { name }),
   setPayloads: (slug: string, input: string | null, output: string | null) =>
     call<IntegrationDraft>('PUT', `/integrations/${slug}/payloads`, { input, output }),
+
+  contracts: () => call<ContractSummary[]>('GET', '/contracts'),
+  contract: (id: string) => call<Contract>('GET', `/contracts/${id}`),
+  importContract: (name: string, source: { url?: string; content?: string }) =>
+    call<Contract>('POST', '/contracts', { name, ...source }),
+  chooseOperation: (slug: string, contract: string, operationId: string) =>
+    call<IntegrationDraft>('PUT', `/integrations/${slug}/operation`, { contract, operationId }),
+  settings: (slug: string) => call<IntegrationSettings>('GET', `/integrations/${slug}/settings`),
+  saveSettings: (slug: string, update: { baseUrl?: string; auth: Auth | null; secret?: string; removeSecret?: boolean }) =>
+    call<IntegrationSettings>('PUT', `/integrations/${slug}/settings`, update),
 };
