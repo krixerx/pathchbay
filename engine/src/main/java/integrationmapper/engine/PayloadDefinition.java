@@ -85,23 +85,28 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
         }
     }
 
-    /** Finds a field by id anywhere in the definition, except inside lists (list mapping comes with E3). */
+    /**
+     * Finds a field by id anywhere in the definition. The name path uses the {@link LinkRules} form: a list field
+     * ends in {@code name[]}, and fields inside list items run through {@code name[]}.
+     */
     public Optional<Located> find(String fieldId) {
         return find(fields == null ? List.of() : fields, fieldId, List.of());
     }
 
     private static Optional<Located> find(List<Field> fields, String fieldId, List<String> prefix) {
         for (Field f : fields) {
+            boolean list = "list".equals(f.type());
             List<String> path = new ArrayList<>(prefix);
-            path.add(f.name());
+            path.add(list ? f.name() + "[]" : f.name());
             if (fieldId.equals(f.id())) {
                 return Optional.of(new Located(List.copyOf(path), f));
             }
-            if ("object".equals(f.type())) {
-                Optional<Located> inner = find(f.children(), fieldId, path);
-                if (inner.isPresent()) {
-                    return inner;
-                }
+            List<Field> inside = "object".equals(f.type()) ? f.children()
+                    : list && f.items() != null && "object".equals(f.items().type()) ? f.items().children()
+                    : List.of();
+            Optional<Located> inner = find(inside, fieldId, path);
+            if (inner.isPresent()) {
+                return inner;
             }
         }
         return Optional.empty();

@@ -24,6 +24,9 @@ curl -X POST localhost:8080/api/v1/integrations/create-book \
 # get-book: GET with query parameters; bookId goes into the external path /api/v1/Books/{id}
 curl "localhost:8080/api/v1/integrations/get-book?bookId=7"
 
+# list-books: the external response is a bare array; each item is mapped into {"books":[...]}
+curl "localhost:8080/api/v1/integrations/list-books"
+
 # Error shapes
 curl -i "localhost:8080/api/v1/integrations/get-book?bookId=999999"   # 404 passed through, X-Integration-Error: remote
 curl -i "localhost:8080/api/v1/integrations/get-book?bookId=seven"    # 400: bookId must be a whole number
@@ -69,6 +72,28 @@ Types: `text`, `number`, `integer`, `boolean`, `date`, `datetime`, `object` (wit
 
 Request links go from an Input field id to `path.`, `query.`, `headers.` or `body.` of the external call. Response links go from a dotted path in the external response to an Output field id. The caller uses the same HTTP method as `target.method`: a JSON body for POST/PUT/PATCH, query parameters for GET/DELETE.
 
+## Lists
+
+On the external side `[]` means "each item": `body.ADDRESSES[]` is the list, `body.ADDRESSES[].line1` a field in every item, and a bare `[]` is a response that is itself a list. On your side, list fields and the fields inside their items are referred to by field id as usual.
+
+```json
+{ "from": "p-addresses", "to": "body.ADDRESSES[]" },
+{ "from": "p-street",    "to": "body.ADDRESSES[].line1" },
+{ "from": "p-country",   "to": "body.ADDRESSES[].country" }
+```
+
+Rules (D-12), shared with the future console in `../rules/link-cases.json`:
+1. Link the list itself (list → list, same nesting level) before any field inside it.
+2. Links inside a linked list run once per item.
+3. After the list link, fields from outside the list may go into item fields; they are the same for every item.
+4. Nested lists are linked level by level, outer first.
+5. A field inside a nested list can't go to a less nested place.
+6. A list can only go into a list, and a single value can't go into a list.
+
+A list linked without item links is copied as it is. A missing source list gives `null`.
+
+Any broken link (unknown field id) or link that breaks these rules stops the version from publishing, and the error lists every problem at once (R8).
+
 ## Not in the engine yet
 
-Lists inside mappings (D-12, task E3), the shared link-rule table, outbound auth and secrets, version files and rollback, outbound timeout setting, the console, Docker image.
+Outbound auth and secrets, version files and rollback, outbound timeout setting (task E4), the console, Docker image.

@@ -83,6 +83,6 @@ class ScriptGeneratorTest {
         assertThatThrownBy(() -> compile(List.of(link("i-id", "body")), List.of())).hasMessageContaining("inside one of");
         assertThatThrownBy(() -> compile(List.of(link("nope", "body.a")), List.of())).hasMessageContaining("not a field of in");
         assertThatThrownBy(() -> compile(List.of(), List.of(link("a", "nope")))).hasMessageContaining("not a field of out");
-        assertThatThrownBy(() -> compile(List.of(), List.of(link("a", "o-z"), link("b", "o-z")))).hasMessageContaining("Two links");
+        assertThatThrownBy(() -> compile(List.of(), List.of(link("a", "o-z"), link("b", "o-z")))).hasMessageContaining("another link already writes to");
     }
 }

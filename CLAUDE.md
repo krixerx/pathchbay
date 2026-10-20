@@ -4,7 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-The repository has no source code, build files or tests yet. It contains an empty Eclipse project descriptor (`.project`, UTF-8 encoding) and three documents in `docs/`. There are no build, lint or test commands to run. When code is added, update this file with the real commands instead of guessing them from the docs.
+The engine lives in `engine/` (Java 21, Spring Boot 4.1.1, Apache Camel 4.23.0, Maven). There is no console yet. Commands, run from `engine/`:
+
+- `mvn test` runs all tests; `mvn test -Dtest=ListMappingTest` runs one class, `-Dtest=ListMappingTest#nestedListsAreMappedLevelByLevel` one method. Tests need no internet (a local fake of FakeRESTApi's Books endpoints).
+- `mvn package && java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config` starts the engine on port 8080 with the example integrations, which call the public FakeRESTApi. `engine/README.md` has the curl calls and the config file formats.
+
+`rules/link-cases.json` is the shared table of linking rules (D-12, R5): the engine's `LinkCasesTest` runs every case, and the console must run the same file. Change a rule there first.
 
 - `docs/integration-mapper-spec.md`: the product spec, the long-term source of truth for requirements.
 - `docs/slice-plan.md`: the reviewed build plan for the first vertical slice (office hours, design review and eng review, 2026-10-20). **Where it differs from the spec, the slice plan wins for current work.** Its UI decisions are D-1…D-20, its engineering decisions are R1…R12 in the "Decision ledger", deferred work is TODO-T1…T4, and the build order is "Eng Review: Implementation Tasks" (E1…E5).

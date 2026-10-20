@@ -1,0 +1,11 @@
+{
+  "id": "book-list",
+  "name": "Book list",
+  "fields": [
+    { "id": "bl-books", "name": "books", "type": "list", "items": { "type": "object", "fields": [
+      { "id": "bl-bookId", "name": "bookId", "type": "integer" },
+      { "id": "bl-title", "name": "title", "type": "text" },
+      { "id": "bl-pages", "name": "pages", "type": "integer" }
+    ] } }
+  ]
+}
