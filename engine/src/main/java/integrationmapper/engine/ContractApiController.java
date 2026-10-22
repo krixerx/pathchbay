@@ -7,10 +7,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.springframework.http.MediaType;
@@ -123,6 +126,42 @@ public class ContractApiController {
             throw new IllegalArgumentException("Upload a file or give a URL");
         }
         return json(importer.importContract(id, req.name().strip(), text));
+    }
+
+    /**
+     * Edits a contract in place: a new name, and optionally a new file (upload or URL) read again. The id stays, so
+     * integrations keep pointing at it; live versions are not touched. The response lists, as transient
+     * {@code notes}, integrations whose operation is not in the new file.
+     */
+    @PutMapping("/contracts/{id}")
+    public ResponseEntity<String> updateContract(@PathVariable String id, @RequestBody String body) throws IOException {
+        Contract old = readContract(id);
+        ImportRequest req = read(body, ImportRequest.class);
+        String name = req.name() == null || req.name().isBlank() ? old.name() : req.name().strip();
+        String text = req.content() != null && !req.content().isBlank() ? req.content()
+                : req.url() != null && !req.url().isBlank() ? importer.fetch(req.url().strip())
+                : null;
+        Contract updated;
+        if (text == null) {
+            updated = new Contract(id, name, old.sourceFile(), old.importedAt(), old.servers(), old.operations(), old.warnings());
+            store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), updated);
+        } else {
+            updated = importer.importContract(id, name, text);
+            if (old.sourceFile() != null && !old.sourceFile().equals(updated.sourceFile())) {
+                Files.deleteIfExists(store.root().resolve("contracts").resolve(old.sourceFile()));
+            }
+        }
+        ObjectNode out = Json.MAPPER.valueToTree(updated);
+        ArrayNode notes = out.putArray("notes");
+        Set<String> ops = updated.operations().stream().map(Contract.Operation::id).collect(Collectors.toSet());
+        for (String slug : usedBy(id)) {
+            String opId = draft(slug).path("operationId").asText(null);
+            if (opId != null && !ops.contains(opId)) {
+                notes.add("Integration " + slug + " calls " + opId + ", which is not in the new file. Pick another operation on its board;"
+                        + " its live version keeps working until you publish again.");
+            }
+        }
+        return json(out);
     }
 
     // ---- operation (step 3)

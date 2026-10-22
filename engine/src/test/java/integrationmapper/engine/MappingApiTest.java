@@ -187,6 +187,19 @@ class MappingApiTest {
         // Configuration: a contract in use can't be deleted; deleting the integration takes its endpoint down.
         assertThat(send("GET", "/contracts", null).get(0).path("usedBy").toString()).isEqualTo("[\"add-book\"]");
         assertThat(status("DELETE", "/admin/api/contracts/fake-rest-api")).isEqualTo(400);
+
+        // Editing a configuration keeps its id: rename only, then a new file without the operation in use.
+        JsonNode renamed = send("PUT", "/contracts/fake-rest-api", Map.of("name", "Books system"));
+        assertThat(renamed.path("id").asText()).isEqualTo("fake-rest-api");
+        assertThat(renamed.path("operations").size()).isGreaterThan(1);
+        assertThat(send("GET", "/contracts", null).get(0).path("name").asText()).isEqualTo("Books system");
+        JsonNode replaced = send("PUT", "/contracts/fake-rest-api", Map.of("content", """
+                {"openapi":"3.0.3","info":{"title":"x","version":"1"},
+                 "paths":{"/other":{"get":{"responses":{"200":{"description":"ok"}}}}}}"""));
+        assertThat(replaced.path("name").asText()).isEqualTo("Books system");
+        assertThat(replaced.path("operations")).hasSize(1);
+        assertThat(replaced.path("notes").get(0).asText()).startsWith("Integration add-book calls POST /api/v1/Books");
+        assertThat(status("POST", "/api/v1/integrations/add-book")).isNotEqualTo(404);
         assertThat(status("POST", "/api/v1/integrations/add-book")).isNotEqualTo(404);
         assertThat(status("DELETE", "/admin/api/integrations/add-book")).isEqualTo(204);
         assertThat(status("POST", "/api/v1/integrations/add-book")).isEqualTo(404);

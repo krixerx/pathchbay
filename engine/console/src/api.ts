@@ -77,6 +77,8 @@ export const api = {
   contracts: () => call<ContractSummary[]>('GET', '/contracts'),
   contract: (id: string) => call<Contract>('GET', `/contracts/${id}`),
   deleteContract: (id: string) => call<null>('DELETE', `/contracts/${id}`),
+  updateContract: (id: string, name: string, source: { url?: string; content?: string }) =>
+    call<Contract & { notes?: string[] }>('PUT', `/contracts/${id}`, { name, ...source }),
   importContract: (name: string, source: { url?: string; content?: string }) =>
     call<Contract>('POST', '/contracts', { name, ...source }),
   chooseOperation: (slug: string, contract: string, operationId: string) =>

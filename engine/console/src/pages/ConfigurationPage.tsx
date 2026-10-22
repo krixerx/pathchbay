@@ -18,7 +18,7 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core';
-import { IconAlertTriangle, IconCheck, IconFileUpload, IconInfoCircle, IconLink, IconTrash } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconFileUpload, IconInfoCircle, IconLink, IconPencil, IconTrash } from '@tabler/icons-react';
 import { api } from '../api';
 import type { Contract, ContractSummary } from '../model';
 import { meaning } from '../theme';
@@ -32,6 +32,7 @@ export function ConfigurationPage() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<Contract | null>(null);
   const [deleting, setDeleting] = useState<ContractSummary | null>(null);
+  const [editing, setEditing] = useState<ContractSummary | null>(null);
 
   const load = () => api.contracts().then(setContracts, (e: Error) => setError(e.message));
   useEffect(() => {
@@ -102,6 +103,9 @@ export function ConfigurationPage() {
                     <Button size="compact-sm" variant="default" onClick={() => api.contract(c.id).then(setOpen, (e: Error) => setError(e.message))}>
                       Operations
                     </Button>
+                    <Button size="compact-sm" variant="default" leftSection={<IconPencil size={14} />} onClick={() => setEditing(c)}>
+                      Edit
+                    </Button>
                     <Tooltip label={`Used by ${c.usedBy.join(', ')}`} disabled={c.usedBy.length === 0} withArrow>
                       <Button
                         size="compact-sm"
@@ -153,6 +157,10 @@ export function ConfigurationPage() {
         )}
       </Modal>
 
+      <Modal opened={!!editing} onClose={() => setEditing(null)} title={`Edit “${editing?.name}”`} size="lg">
+        {editing && <ImportForm key={editing.id} existing={editing} onImported={load} />}
+      </Modal>
+
       <Modal opened={!!deleting} onClose={() => setDeleting(null)} title="Delete this configuration?">
         <Stack>
           <Text>
@@ -172,24 +180,28 @@ export function ConfigurationPage() {
   );
 }
 
-/** Upload a file or give a URL (fetched by the engine). Unresolved parts become warnings; the import still goes on. */
-function ImportForm(props: { onImported: () => void }) {
-  const [name, setName] = useState('');
+/**
+ * Upload a file or give a URL (fetched by the engine). Unresolved parts become warnings; the import still goes on.
+ * With `existing` it edits that configuration: the name can change, a new file is optional, the id stays.
+ */
+function ImportForm(props: { existing?: ContractSummary; onImported: () => void }) {
+  const { existing } = props;
+  const [name, setName] = useState(existing?.name ?? '');
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState('');
   const [mode, setMode] = useState<string | null>('file');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<Contract | null>(null);
+  const [result, setResult] = useState<(Contract & { notes?: string[] }) | null>(null);
 
   const importNow = async () => {
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const source = mode === 'file' ? { content: await file!.text() } : { url };
-      setResult(await api.importContract(name, source));
-      setName('');
+      const source = mode === 'file' ? (file ? { content: await file.text() } : {}) : url.trim() ? { url } : {};
+      setResult(existing ? await api.updateContract(existing.id, name, source) : await api.importContract(name, source));
+      if (!existing) setName('');
       setFile(null);
       setUrl('');
       props.onImported();
@@ -200,18 +212,27 @@ function ImportForm(props: { onImported: () => void }) {
     }
   };
 
-  const ready = name.trim() && (mode === 'file' ? !!file : url.trim().length > 0);
+  const ready = name.trim() && (existing || (mode === 'file' ? !!file : url.trim().length > 0));
 
   return (
-    <Paper withBorder p="md" maw={720}>
+    <Paper withBorder={!existing} p={existing ? 0 : 'md'} maw={720}>
       <Stack gap="sm">
-        <Text fw={600}>Import a Swagger or OpenAPI file</Text>
+        {!existing && <Text fw={600}>Import a Swagger or OpenAPI file</Text>}
         <TextInput
           label="Name of the external system"
-          description="For example “Population register”. Importing again under the same name replaces it."
+          description={
+            existing
+              ? 'Only the shown name changes; integrations using it stay connected.'
+              : 'For example “Population register”. Importing again under the same name replaces it.'
+          }
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
         />
+        {existing && (
+          <Text size="sm" c="dimmed">
+            Replace the file (optional): upload a new version or give its URL. Leave both empty to keep the current file.
+          </Text>
+        )}
         <Tabs value={mode} onChange={setMode}>
           <Tabs.List>
             <Tabs.Tab value="file" leftSection={<IconFileUpload size={16} />}>
@@ -244,7 +265,7 @@ function ImportForm(props: { onImported: () => void }) {
         </Tabs>
         <Group>
           <Button onClick={importNow} loading={busy} disabled={!ready}>
-            Import
+            {existing ? 'Save' : 'Import'}
           </Button>
         </Group>
         {error && (
@@ -253,8 +274,18 @@ function ImportForm(props: { onImported: () => void }) {
           </Alert>
         )}
         {result && (
-          <Alert color={meaning.accent} icon={<IconCheck />} title={`“${result.name}” imported: ${result.operations.length} operations`}>
-            {result.warnings.length > 0 ? (
+          <Alert
+            color={result.notes?.length ? meaning.warning : meaning.accent}
+            icon={<IconCheck />}
+            title={`“${result.name}” ${existing ? 'saved' : 'imported'}: ${result.operations.length} operations`}
+          >
+            {result.notes?.length ? (
+              <List size="sm">
+                {result.notes.map((n) => (
+                  <List.Item key={n}>{n}</List.Item>
+                ))}
+              </List>
+            ) : result.warnings.length > 0 ? (
               <List size="sm">
                 {result.warnings.map((w) => (
                   <List.Item key={w}>{w}</List.Item>
