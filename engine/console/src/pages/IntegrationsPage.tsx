@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Alert, Badge, Button, Code, Group, Modal, Skeleton, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { IconAlertTriangle, IconPlus, IconTrash } from '@tabler/icons-react';
+import { Alert, Anchor, Badge, Button, Code, Group, Modal, Skeleton, Stack, Table, Text, TextInput, Title } from '@mantine/core';
+import { IconAlertTriangle, IconApi, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { IntegrationSummary } from '../model';
@@ -40,9 +40,14 @@ export function IntegrationsPage() {
     <Stack gap="lg" maw={1100}>
       <Group justify="space-between">
         <Title order={2}>Integrations</Title>
-        <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
-          New integration
-        </Button>
+        <Group gap="xs">
+          <Button variant="default" leftSection={<IconApi size={16} />} component="a" href="/api/openapi.json" target="_blank">
+            OpenAPI of all live integrations
+          </Button>
+          <Button leftSection={<IconPlus size={16} />} onClick={() => setCreating(true)}>
+            New integration
+          </Button>
+        </Group>
       </Group>
 
       {error && (
@@ -129,7 +134,14 @@ function IntegrationTable({ items, onDelete }: { items: IntegrationSummary[]; on
                 {STATUS[it.status].label}
               </Badge>
             </Table.Td>
-            <Table.Td>{it.activeVersion ?? '—'}</Table.Td>
+            <Table.Td>
+              {it.activeVersion ?? '—'}
+              {it.activeVersion && (
+                <Anchor href={`/api/openapi/${it.id}.json`} target="_blank" size="xs" ml="xs" onClick={(e) => e.stopPropagation()}>
+                  OpenAPI
+                </Anchor>
+              )}
+            </Table.Td>
             <Table.Td>
               <Group gap="xs" justify="flex-end" wrap="nowrap">
                 <Button size="compact-sm" variant="default" onClick={() => navigate(`/integrations/${it.id}`)}>

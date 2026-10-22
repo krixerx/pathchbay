@@ -164,6 +164,26 @@ class MappingApiTest {
         assertThat(okCall.path("output").toString()).isEqualTo("{\"bookId\":99,\"title\":\"Live\"}");
         assertThat(log.toString()).doesNotContain("k-123");
 
+        // D-23: the live version is described as OpenAPI, and that document imports like any external system's.
+        HttpResponse<String> doc = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/openapi.json")).build(),
+                HttpResponse.BodyHandlers.ofString());
+        JsonNode post = Json.MAPPER.readTree(doc.body()).path("paths").path("/api/v1/integrations/add-book").path("post");
+        assertThat(post.path("description").asText()).startsWith("Live version 1.0.0.");
+        JsonNode in = post.path("requestBody").path("content").path("application/json").path("schema");
+        assertThat(in.path("properties").path("pages").path("type").asText()).isEqualTo("integer");
+        assertThat(in.path("required").toString()).isEqualTo("[\"title\"]");
+        assertThat(post.path("responses").path("200").path("content").path("application/json").path("schema")
+                .path("properties").fieldNames()).toIterable().containsExactly("bookId", "title");
+        assertThat(status("GET", "/api/openapi/add-book.json")).isEqualTo(200);
+        assertThat(status("GET", "/api/openapi/nothing-here.json")).isEqualTo(404);
+        JsonNode self = send("POST", "/contracts", Map.of("name", "Mapper itself", "url", "http://localhost:" + port + "/api/openapi.json"));
+        assertThat(self.path("operations")).hasSize(1);
+        assertThat(self.path("operations").get(0).path("id").asText()).isEqualTo("add-book");
+        assertThat(self.path("operations").get(0).path("method").asText()).isEqualTo("POST");
+        assertThat(self.path("operations").get(0).path("path").asText()).isEqualTo("/api/v1/integrations/add-book");
+        assertThat(self.path("servers").get(0).asText()).isEqualTo("http://localhost:" + port);
+        assertThat(status("DELETE", "/admin/api/contracts/" + self.path("id").asText())).isEqualTo(204);
+
         // Configuration: a contract in use can't be deleted; deleting the integration takes its endpoint down.
         assertThat(send("GET", "/contracts", null).get(0).path("usedBy").toString()).isEqualTo("[\"add-book\"]");
         assertThat(status("DELETE", "/admin/api/contracts/fake-rest-api")).isEqualTo(400);

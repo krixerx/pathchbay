@@ -35,6 +35,11 @@ public class IntegrationRegistry {
         broken.put(slug, reason);
     }
 
+    /** Every live version, by slug in name order. */
+    Map<String, CompiledIntegration> active() {
+        return new TreeMap<>(active);
+    }
+
     Map<String, String> activeVersions() {
         Map<String, String> m = new TreeMap<>();
         active.forEach((slug, ci) -> m.put(slug, ci.definition().version()));

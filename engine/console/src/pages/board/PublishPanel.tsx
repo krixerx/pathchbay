@@ -116,7 +116,10 @@ export function PublishPanel(props: {
               )}
             </Group>
             <Text size="sm">
-              {method} <Code>{`${window.location.origin}/api/v1/integrations/${draft.id}`}</Code>
+              {method} <Code>{`${window.location.origin}/api/v1/integrations/${draft.id}`}</Code> ·{' '}
+              <Anchor href={`/api/openapi/${draft.id}.json`} target="_blank">
+                OpenAPI document
+              </Anchor>
             </Text>
             <Text size="sm" c="dimmed">
               Try it with:
