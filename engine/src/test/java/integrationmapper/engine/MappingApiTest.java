@@ -9,6 +9,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -140,6 +141,28 @@ class MappingApiTest {
         assertThat(refused.statusCode()).isEqualTo(400);
         assertThat(refused.body()).contains("nb-gone");
         assertThat(send("GET", "/integrations/add-book/versions", null).path("versions")).hasSize(2);
+
+        // D-22: live calls are kept, newest first, with the four parts and the API key as ***.
+        for (String body : List.of("{\"title\":\"Live\",\"pages\":3}", "{\"pages\":\"many\"}")) {
+            http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/integrations/add-book"))
+                    .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                    HttpResponse.BodyHandlers.discarding());
+        }
+        JsonNode log = send("GET", "/integrations/add-book/calls", null);
+        assertThat(log.path("enabled").asBoolean()).isTrue();
+        JsonNode badCall = log.path("calls").get(0);
+        assertThat(badCall.path("status").asInt()).isEqualTo(400);
+        assertThat(badCall.path("stage").asText()).isEqualTo("input");
+        assertThat(badCall.path("problems").toString()).contains("title: required");
+        JsonNode okCall = log.path("calls").get(1);
+        assertThat(okCall.path("stage").asText()).as(okCall.toString()).isEqualTo("done");
+        assertThat(okCall.path("version").asText()).isEqualTo("1.0.0");
+        assertThat(okCall.path("input").toString()).isEqualTo("{\"title\":\"Live\",\"pages\":3}");
+        assertThat(okCall.path("request").path("body").toString()).isEqualTo("{\"title\":\"Live\",\"pageCount\":3}");
+        assertThat(okCall.path("request").path("headers").path("X-Api-Key").asText()).isEqualTo("***");
+        assertThat(okCall.path("response").path("status").asInt()).isEqualTo(200);
+        assertThat(okCall.path("output").toString()).isEqualTo("{\"bookId\":99,\"title\":\"Live\"}");
+        assertThat(log.toString()).doesNotContain("k-123");
 
         // Configuration: a contract in use can't be deleted; deleting the integration takes its endpoint down.
         assertThat(send("GET", "/contracts", null).get(0).path("usedBy").toString()).isEqualTo("[\"add-book\"]");

@@ -17,7 +17,8 @@ const itemTypeOptions = ALL_TYPES.filter((t) => t !== 'list').map((t) => ({ valu
 
 /**
  * The payload definition editor (D-13): one row per field with name | type | required | format | value. Objects
- * and lists of objects get "+ field"; a list asks for its item type. A field with a value is a constant (R11).
+ * and lists of objects get an "Add field inside" row under their fields; a list asks for its item type, objects
+ * first. A field with a value is a constant (R11).
  */
 export function FieldTree({ definitionId, fields, onChange }: Props) {
   const add = (parent: TreePath) =>
@@ -151,23 +152,24 @@ function Rows({ fields, path, depth, all, onChange, onAdd }: RowsProps) {
                 )}
               </Table.Td>
               <Table.Td>
-                <Group gap={2} wrap="nowrap">
-                  {kids && (
-                    <Tooltip label={`Add a field inside ${label}`} withArrow>
-                      <ActionIcon variant="subtle" onClick={() => onAdd(here)} aria-label={`Add a field inside ${label}`}>
-                        <IconPlus size={16} />
-                      </ActionIcon>
-                    </Tooltip>
-                  )}
-                  <Tooltip label={`Delete ${label}`} withArrow>
-                    <ActionIcon variant="subtle" color="red" onClick={() => onChange(removeField(all, here))} aria-label={`Delete ${label}`}>
-                      <IconTrash size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                </Group>
+                <Tooltip label={`Delete ${label}`} withArrow>
+                  <ActionIcon variant="subtle" color="red" onClick={() => onChange(removeField(all, here))} aria-label={`Delete ${label}`}>
+                    <IconTrash size={16} />
+                  </ActionIcon>
+                </Tooltip>
               </Table.Td>
             </Table.Tr>
             {kids && <Rows fields={kids} path={here} depth={depth + 1} all={all} onChange={onChange} onAdd={onAdd} />}
+            {kids && (
+              <Table.Tr>
+                <Table.Td colSpan={6} py={0}>
+                  <Button variant="subtle" size="compact-xs" leftSection={<IconPlus size={14} />} ml={(depth + 1) * 24} onClick={() => onAdd(here)}>
+                    Add field inside {label}
+                    {f.type === 'list' ? ' (each item)' : ''}
+                  </Button>
+                </Table.Td>
+              </Table.Tr>
+            )}
           </Fragment>
         );
       })}

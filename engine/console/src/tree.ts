@@ -39,7 +39,10 @@ export function addField(fields: Field[], parent: TreePath, field: Field): Field
   );
 }
 
-/** Keeps the shape consistent with the type: objects have fields, lists have an item type, constants are simple. */
+/**
+ * Keeps the shape consistent with the type: objects have fields, lists have an item type (a new list holds objects,
+ * so its fields can be added right away), constants are simple.
+ */
 export function normalize(f: Field): Field {
   const out: Field = { ...f };
   if (out.type === 'object') {
@@ -47,7 +50,7 @@ export function normalize(f: Field): Field {
     delete out.items;
     delete out.value;
   } else if (out.type === 'list') {
-    out.items = out.items ?? { type: 'text' };
+    out.items = out.items ?? { type: 'object', fields: [] };
     delete out.fields;
     delete out.value;
   } else {

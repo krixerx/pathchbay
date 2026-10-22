@@ -46,6 +46,27 @@ describe('publishSummary', () => {
     };
     expect(publishSummary(draft, input, output, op)).toEqual({ blocking: [], warnings: [] });
   });
+
+  it('blocks a GET integration whose Input has nested fields, like the engine does', () => {
+    const nested: PayloadDefinition = {
+      ...input,
+      fields: [
+        ...input.fields,
+        { id: 'nb-tags', name: 'tags', type: 'list', items: { type: 'text' } },
+        { id: 'nb-authors', name: 'authors', type: 'list', items: { type: 'object', fields: [] } },
+      ],
+    };
+    const get = { ...op, method: 'GET', requestBody: undefined };
+    const s = publishSummary({ id: 'find-book' }, nested, output, get);
+    expect(s.blocking).toEqual([
+      {
+        tab: 'request',
+        definition: 'new-book',
+        text: 'Callers of a GET integration send the Input as query parameters, so it can only have simple fields. Change or remove in New book: authors',
+      },
+    ]);
+    expect(publishSummary({ id: 'add-book' }, nested, output, op).blocking).toEqual([]);
+  });
 });
 
 describe('curlCommand', () => {

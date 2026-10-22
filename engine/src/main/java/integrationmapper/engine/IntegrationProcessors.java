@@ -5,7 +5,11 @@ import java.net.SocketTimeoutException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringJoiner;
@@ -20,24 +24,48 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Message;
 import org.springframework.stereotype.Component;
 
-/** The three steps every integration route runs: map the inbound call, map the external response, map failures. */
+/**
+ * The steps every integration route runs: map the inbound call, map the external response, map failures, and
+ * record the call (D-22).
+ */
 @Component
 public class IntegrationProcessors {
 
     static final String SLUG = "integrationSlug";
+    private static final String TRACE = "integrationTrace";
     private static final Set<String> BODY_METHODS = Set.of("POST", "PUT", "PATCH");
     private static final Pattern PATH_PARAM = Pattern.compile("\\{([^}]+)}");
 
     private final IntegrationRegistry registry;
+    private final CallLog calls;
 
-    public IntegrationProcessors(IntegrationRegistry registry) {
+    public IntegrationProcessors(IntegrationRegistry registry, CallLog calls) {
         this.registry = registry;
+        this.calls = calls;
+    }
+
+    /** What one call did so far, filled step by step; {@code stage} is the step it is in (the Test drawer's names). */
+    private static final class Trace {
+        final long start = System.nanoTime();
+        final Instant at = Instant.now();
+        String version;
+        String method = "?";
+        String stage = "input";
+        List<String> problems = List.of();
+        JsonNode input;
+        Map<String, Object> request;
+        Map<String, Object> response;
+        JsonNode output;
     }
 
     void mapRequest(Exchange exchange) throws Exception {
+        Trace trace = new Trace();
+        exchange.setProperty(TRACE, trace);
         Message msg = exchange.getMessage();
         CompiledIntegration ci = registry.get(exchange.getProperty(SLUG, String.class));
         ServiceDefinition.Target target = ci.definition().target();
+        trace.version = ci.definition().version();
+        trace.method = target.method();
 
         JsonNode input;
         if (BODY_METHODS.contains(target.method())) {
@@ -45,10 +73,12 @@ public class IntegrationProcessors {
         } else {
             input = InputValidator.coerceQuery(queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class)), ci.input());
         }
+        trace.input = input;
         List<String> problems = InputValidator.validate(input, ci.input());
         if (!problems.isEmpty()) {
             throw new BadInputException("Input does not match " + ci.input().id(), problems);
         }
+        trace.stage = "request";
 
         JsonNode mapped;
         try {
@@ -68,15 +98,27 @@ public class IntegrationProcessors {
                 msg.setHeader(h.getKey(), h.getValue().asText());
             }
         });
+        // What the call log shows: the same request, with auth values as *** (D-22).
+        Map<String, Object> shownHeaders = new LinkedHashMap<>();
+        msg.getHeaders().forEach((k, v) -> {
+            if (!k.startsWith("Camel")) {
+                shownHeaders.put(k, v);
+            }
+        });
+        String shownQuery = query;
         ServiceDefinition.Auth auth = ci.definition().auth();
         if (auth != null) {
             if ("bearer".equals(auth.type())) {
                 msg.setHeader("Authorization", "Bearer " + ci.secret());
+                shownHeaders.put("Authorization", "***");
             } else if ("header".equals(auth.in())) {
                 msg.setHeader(auth.name(), ci.secret());
+                shownHeaders.put(auth.name(), "***");
             } else {
                 String param = encode(auth.name()) + "=" + encode(ci.secret());
                 query = query.isEmpty() ? param : query + "&" + param;
+                String shownParam = encode(auth.name()) + "=***";
+                shownQuery = shownQuery.isEmpty() ? shownParam : shownQuery + "&" + shownParam;
             }
         }
         if (!query.isEmpty()) {
@@ -88,6 +130,13 @@ public class IntegrationProcessors {
         } else {
             msg.setBody(null);
         }
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("method", target.method());
+        request.put("url", msg.getHeader(Exchange.HTTP_URI, String.class) + (shownQuery.isEmpty() ? "" : "?" + shownQuery));
+        request.put("headers", shownHeaders);
+        request.put("body", BODY_METHODS.contains(target.method()) ? mapped.path("body") : null);
+        trace.request = request;
+        trace.stage = "response";
     }
 
     void mapResponse(Exchange exchange) throws Exception {
@@ -97,20 +146,35 @@ public class IntegrationProcessors {
         String body = msg.getBody(String.class);
         msg.removeHeaders("*");
         msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
+        Trace trace = exchange.getProperty(TRACE, Trace.class);
+        if (calls.enabled()) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            response.put("status", status);
+            response.put("body", parseOrText(body));
+            trace.response = response;
+        }
 
         if (status >= 400) {
+            trace.problems = List.of("The external system answered " + status + "; the caller got this status and body");
             // Runtime rule: external errors pass through with their status and body.
             msg.setHeader(Exchange.HTTP_RESPONSE_CODE, status);
             msg.setHeader("X-Integration-Error", "remote");
             msg.setBody(body);
             return;
         }
+        trace.stage = "output";
+        String output;
         try {
-            msg.setBody(ci.mapResponse(blankToEmptyObject(body)));
+            output = ci.mapResponse(blankToEmptyObject(body));
         } catch (Exception e) {
             throw new MappingException("response mapping failed: " + e.getMessage(), e);
         }
+        msg.setBody(output);
         msg.setHeader(Exchange.HTTP_RESPONSE_CODE, 200);
+        if (calls.enabled()) {
+            trace.output = parseOrText(output);
+        }
+        trace.stage = "done";
     }
 
     void mapError(Exchange exchange) {
@@ -140,6 +204,28 @@ public class IntegrationProcessors {
         msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
         List<String> problems = e == null ? List.of() : findCause(e, BadInputException.class).map(b -> b.problems).orElse(List.of());
         msg.setBody(Json.error(error, slug, e == null ? null : rootMessage(e), problems));
+        Trace trace = exchange.getProperty(TRACE, Trace.class);
+        if (trace != null) {
+            List<String> shown = new ArrayList<>();
+            if (e != null) {
+                shown.add(rootMessage(e));
+            }
+            shown.addAll(problems);
+            trace.problems = shown;
+        }
+    }
+
+    /** Last step of every call: one log line, and the call kept for the console while the call log is on (D-22). */
+    void record(Exchange exchange) {
+        Trace trace = exchange.getProperty(TRACE, Trace.class);
+        if (trace == null) {
+            return;
+        }
+        int status = exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE, 200, Integer.class);
+        long ms = (System.nanoTime() - trace.start) / 1_000_000;
+        boolean keep = calls.enabled();
+        calls.add(exchange.getProperty(SLUG, String.class), trace.method, new CallLog.Call(trace.at.toString(), trace.version, status, ms,
+                trace.stage, trace.problems, keep ? trace.input : null, keep ? trace.request : null, trace.response, trace.output));
     }
 
     // ---- helpers
@@ -195,6 +281,17 @@ public class IntegrationProcessors {
             }
         }
         return obj;
+    }
+
+    private static JsonNode parseOrText(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return Json.MAPPER.readTree(text);
+        } catch (Exception e) {
+            return Json.MAPPER.getNodeFactory().textNode(text);
+        }
     }
 
     private static JsonNode parseObject(String s) {

@@ -1,5 +1,6 @@
 import type {
   Auth,
+  CallList,
   Contract,
   ContractOperation,
   ContractSummary,
@@ -88,6 +89,7 @@ export const api = {
     call<IntegrationDraft>('PUT', `/integrations/${slug}/links`, { request, response }),
   test: (slug: string, input: unknown, real: boolean) => call<TestResult>('POST', `/integrations/${slug}/test`, { input, real }),
   versions: (slug: string) => call<VersionList>('GET', `/integrations/${slug}/versions`),
+  calls: (slug: string) => call<CallList>('GET', `/integrations/${slug}/calls`),
   publish: (slug: string) => call<VersionList>('POST', `/integrations/${slug}/publish`),
   activate: (slug: string, version: string) => call<VersionList>('POST', `/integrations/${slug}/versions/${version}/activate`),
   settings: (slug: string) => call<IntegrationSettings>('GET', `/integrations/${slug}/settings`),

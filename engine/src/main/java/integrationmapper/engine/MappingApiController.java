@@ -32,12 +32,15 @@ public class MappingApiController {
     private final PayloadLibrary library;
     private final TestRunner tests;
     private final IntegrationPublisher publisher;
+    private final CallLog calls;
 
-    public MappingApiController(ConfigStore store, PayloadLibrary library, TestRunner tests, IntegrationPublisher publisher) {
+    public MappingApiController(ConfigStore store, PayloadLibrary library, TestRunner tests, IntegrationPublisher publisher,
+            CallLog calls) {
         this.store = store;
         this.library = library;
         this.tests = tests;
         this.publisher = publisher;
+        this.calls = calls;
     }
 
     /** The draft, both payload definitions and the chosen operation, in one call. */
@@ -84,7 +87,18 @@ public class MappingApiController {
     public ResponseEntity<String> delete(@PathVariable String slug) throws Exception {
         draft(slug);
         publisher.delete(slug);
+        calls.clear(slug);
         return ResponseEntity.noContent().build();
+    }
+
+    /** The last live calls, newest first (D-22); {@code enabled} is false when MAPPER_CALL_LOG=off. */
+    @GetMapping("/calls")
+    public ResponseEntity<String> calls(@PathVariable String slug) throws IOException {
+        draft(slug);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", calls.enabled());
+        out.put("calls", calls.list(slug));
+        return json(out);
     }
 
     /** Step 5: publishes the draft as the next version (R8: the engine refuses broken links, with the list). */

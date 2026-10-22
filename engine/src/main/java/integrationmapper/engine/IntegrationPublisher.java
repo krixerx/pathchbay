@@ -88,8 +88,9 @@ public class IntegrationPublisher {
             throw new IllegalArgumentException("Integration " + def.id() + ": unsupported method " + method);
         }
         if (QUERY_METHODS.contains(method) && !s.input().isFlat()) {
-            throw new IllegalArgumentException("Integration " + def.id() + ": a " + method
-                    + " integration is called with query parameters, so its Input " + s.input().id() + " must only have simple fields");
+            throw new IllegalArgumentException("Integration " + def.id() + ": callers of a " + method
+                    + " integration send the Input as query parameters, so Input " + s.input().id()
+                    + " can only have simple fields.");
         }
         String secret = null;
         if (def.auth() != null) {

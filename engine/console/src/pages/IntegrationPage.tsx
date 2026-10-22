@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Alert, Badge, Button, Code, Group, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { IconAlertTriangle, IconFlask, IconRocket, IconSettings } from '@tabler/icons-react';
+import { IconAlertTriangle, IconFlask, IconListDetails, IconRocket, IconSettings } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Tab } from '../board';
 import type { IntegrationDraft } from '../model';
 import { meaning } from '../theme';
+import { CallsDrawer } from './board/CallsDrawer';
 import { MappingBoard } from './board/MappingBoard';
 import { PublishPanel } from './board/PublishPanel';
 import { SetupBar } from './board/SetupBar';
@@ -25,6 +26,7 @@ function Integration({ slug }: { slug: string }) {
   const [tab, setTab] = useState<Tab>('request');
   const [testOpen, setTestOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [callsOpen, setCallsOpen] = useState(false);
 
   useEffect(() => {
     api.integration(slug).then(setDraft, (e: Error) => setError(e.message));
@@ -81,6 +83,9 @@ function Integration({ slug }: { slug: string }) {
           >
             Test
           </Button>
+          <Button variant="default" leftSection={<IconListDetails size={16} />} onClick={() => setCallsOpen(true)}>
+            Calls
+          </Button>
           <Button leftSection={<IconRocket size={16} />} onClick={() => setPublishing(true)} disabled={!ready}>
             Publish
           </Button>
@@ -111,6 +116,7 @@ function Integration({ slug }: { slug: string }) {
           }}
         />
       </Modal>
+      <CallsDrawer slug={slug} opened={callsOpen} onClose={() => setCallsOpen(false)} />
     </Stack>
   );
 }

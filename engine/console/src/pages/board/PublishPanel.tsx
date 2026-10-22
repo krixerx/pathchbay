@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Anchor, Badge, Button, Code, CopyButton, Group, Paper, Skeleton, Stack, Table, Text, Title } from '@mantine/core';
 import { IconAlertTriangle, IconCheck, IconX } from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
 import { api } from '../../api';
 import type { Tab } from '../../board';
 import type { ContractOperation, IntegrationDraft, PayloadDefinition, VersionList } from '../../model';
@@ -71,7 +72,7 @@ export function PublishPanel(props: {
             </Group>
           )}
           <ProblemList
-            title={`${blocking.length} link${blocking.length === 1 ? '' : 's'} must be fixed or deleted before publishing`}
+            title={`${blocking.length} problem${blocking.length === 1 ? '' : 's'} must be fixed before publishing`}
             items={blocking}
             color={meaning.broken}
             icon={<IconX size={16} />}
@@ -90,7 +91,7 @@ export function PublishPanel(props: {
             </Button>
             {blocking.length > 0 && (
               <Text size="sm" c="dimmed">
-                Publishing is possible once the red links are fixed.
+                Publishing is possible once these are fixed.
               </Text>
             )}
           </Group>
@@ -98,7 +99,7 @@ export function PublishPanel(props: {
         </Stack>
       </Paper>
 
-      {error && <ErrorBox text={`${error} The draft is kept; nothing changed for callers.`} />}
+      {error && <ErrorBox title="Not published" text={`${error} The draft is kept; nothing changed for callers.`} />}
 
       {live && (
         <Paper withBorder p="md">
@@ -195,12 +196,18 @@ function ProblemList(props: { title: string; items: Problem[]; color: string; ic
       <Stack gap={2}>
         {props.items.map((p) => (
           <Group key={`${p.tab}:${p.text}`} gap="xs" wrap="nowrap">
-            <Text size="sm" ff="monospace">
+            <Text size="sm" ff={p.definition ? undefined : 'monospace'}>
               {p.text}
             </Text>
-            <Anchor size="sm" component="button" onClick={() => props.onShow(p.tab)}>
-              Show
-            </Anchor>
+            {p.definition ? (
+              <Anchor size="sm" component={Link} to={`/definitions/${p.definition}`} style={{ whiteSpace: 'nowrap' }}>
+                Edit the Input
+              </Anchor>
+            ) : (
+              <Anchor size="sm" component="button" onClick={() => props.onShow(p.tab)}>
+                Show
+              </Anchor>
+            )}
           </Group>
         ))}
       </Stack>
@@ -208,9 +215,9 @@ function ProblemList(props: { title: string; items: Problem[]; color: string; ic
   );
 }
 
-function ErrorBox({ text }: { text: string }) {
+function ErrorBox({ text, title }: { text: string; title?: string }) {
   return (
-    <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
+    <Alert color={meaning.broken} icon={<IconAlertTriangle />} title={title} role="alert">
       {text}
     </Alert>
   );

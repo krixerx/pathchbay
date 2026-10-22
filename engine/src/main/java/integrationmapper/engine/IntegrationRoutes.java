@@ -40,7 +40,8 @@ public class IntegrationRoutes extends RouteBuilder {
                         .process(processors::mapResponse)
                     .doCatch(Exception.class)
                         .process(processors::mapError)
-                    .end();
+                    .end()
+                    .process(processors::record);
         }
     }
 }

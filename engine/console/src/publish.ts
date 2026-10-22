@@ -1,16 +1,26 @@
-import type { ContractOperation, IntegrationDraft, PayloadDefinition } from './model';
+import type { ContractOperation, Field, IntegrationDraft, PayloadDefinition } from './model';
+import { SIMPLE_TYPES } from './model';
 import type { Link, Tab } from './board';
 import { exampleInput, linkStates, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
-/** One line of the step 5 summary; `tab` lets "Show" open the board on the right tab. */
+/**
+ * One line of the publish summary; `tab` lets "Show" open the board on the right tab, `definition` points to the
+ * payload definition to fix instead.
+ */
 export interface Problem {
   tab: Tab;
   text: string;
+  definition?: string;
 }
 
+/** GET and DELETE callers send the Input as query parameters (R1), so it can only hold simple fields. */
+const QUERY_METHODS = ['GET', 'DELETE'];
+const isSimple = (f: Field) =>
+  f.value !== undefined || SIMPLE_TYPES.includes(f.type) || (f.type === 'list' && !!f.items && SIMPLE_TYPES.includes(f.items.type));
+
 /**
- * The step 5 summary (D-6, D-7, R8): red and broken links block publish, amber warnings (required fields not
- * mapped) don't. Uses the same checks as the board, so both always agree.
+ * The publish summary (D-6, D-7, R8): red and broken links and a nested Input for GET/DELETE block publish, amber
+ * warnings (required fields not mapped) don't. Uses the same checks as the board, so both always agree.
  */
 export function publishSummary(
   draft: IntegrationDraft,
@@ -20,6 +30,14 @@ export function publishSummary(
 ): { blocking: Problem[]; warnings: Problem[] } {
   const blocking: Problem[] = [];
   const warnings: Problem[] = [];
+  const nested = input?.fields.filter((f) => !isSimple(f)) ?? [];
+  if (op && input && QUERY_METHODS.includes(op.method) && nested.length > 0) {
+    blocking.push({
+      tab: 'request',
+      definition: input.id,
+      text: `Callers of a ${op.method} integration send the Input as query parameters, so it can only have simple fields. Change or remove in ${input.name}: ${nested.map((f) => f.name).join(', ')}`,
+    });
+  }
   const sides: Record<Tab, [ReturnType<typeof payloadRows>, ReturnType<typeof payloadRows>]> = {
     request: [payloadRows(input), requestRows(op)],
     response: [responseRows(op), payloadRows(output)],

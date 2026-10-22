@@ -28,9 +28,10 @@ describe('tree edits', () => {
 
   it('changing the type reshapes the field', () => {
     const toList = updateField(tree, [0], { type: 'list' });
-    expect(toList[0].items).toEqual({ type: 'text' });
-    const toObject = setItemType(toList, [0], 'object');
-    expect(toObject[0].items).toEqual({ type: 'object', fields: [] });
+    expect(toList[0].items).toEqual({ type: 'object', fields: [] });
+    expect(children(toList[0])).toEqual([]);
+    const toText = setItemType(toList, [0], 'text');
+    expect(toText[0].items).toEqual({ type: 'text' });
     expect(normalize({ type: 'object', value: 'x' } as Field)).toEqual({ type: 'object', fields: [] });
   });
 

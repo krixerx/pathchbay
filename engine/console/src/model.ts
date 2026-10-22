@@ -116,6 +116,25 @@ export interface TestResult {
   mock: boolean;
 }
 
+/** One live call from the engine's call log (D-22); payload parts are missing when MAPPER_CALL_LOG=off. */
+export interface CallRecord {
+  at: string;
+  version: string | null;
+  status: number;
+  durationMs: number;
+  stage: TestResult['stage'];
+  problems: string[];
+  input?: unknown;
+  request?: TestResult['request'];
+  response?: TestResult['response'];
+  output?: unknown;
+}
+
+export interface CallList {
+  enabled: boolean;
+  calls: CallRecord[];
+}
+
 /** Published versions of one integration, newest first (engine MappingApiController). */
 export interface VersionList {
   activeVersion: string | null;

@@ -60,12 +60,14 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 | `MAPPER_OUTBOUNDTIMEOUTMS` (option `--mapper.outbound-timeout-ms`) | `10000` | How long a call to an external system may take, in milliseconds; after that the caller gets `504`. |
 | `INBOUND_API_KEY` | not set | When set, every call to a published integration, the console and the admin API must send this value in the `X-API-Key` header, otherwise `401`. The console asks for it once per browser tab. Not set: nothing is checked, which is meant for a closed Docker network only. |
 | `MAPPER_SECRET_<SLUG>` | not set | The token or API key an integration sends to its external system, for example `MAPPER_SECRET_CREATE_USER` for the integration `create-user` (slug in capitals, other characters as `_`). It wins over a secret typed on the integration's Settings page. |
+| `MAPPER_CALL_LOG` | `on` | `on` keeps the last 100 live calls of each integration in memory, with what the caller sent, the request sent out, the answer and the mapped output, shown under **Calls** on the board. `off` keeps none of that; each call still writes one line without data to the log. |
 
 ## Security in short
 
 - Without `INBOUND_API_KEY`, anyone who can reach the port can use the console and every integration, including the stored credentials of the external systems. Set it whenever the port is reachable from outside a closed network.
 - Secrets typed on a Settings page are stored **unencrypted** in `<config>/secrets/<slug>.json`, readable only by the engine's user on Linux and in Docker (Windows does not enforce it). Use `MAPPER_SECRET_<SLUG>` to keep them out of the folder.
 - Headers that callers send (including `X-API-Key` and `Authorization`) never reach the external system.
+- The call log holds real payloads, which may include personal data, and anyone with console access can see them. Auth values are shown as `***`. Set `MAPPER_CALL_LOG=off` where that is not acceptable.
 
 ## How to build an integration
 
@@ -74,6 +76,7 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 3. **Integrations → New integration**, then on its board pick the Input, the Output, the Swagger configuration and the operation. Leave Input or Output empty to have it created from the operation, already linked.
 4. **Map:** click a field on the left, then the field on the right it goes into; a line connects them. Red lines can't be published; amber warnings can. **Test** runs a sample through the same code as a live call.
 5. **Publish:** shows the live URL and a ready `curl` command. Earlier versions can be made active again.
+6. **Calls:** every live call, step by step, with where it stopped if it failed. `docker logs` shows one line per call.
 
 Base URL, authentication and the secret are on the integration's **Settings** page.
 
