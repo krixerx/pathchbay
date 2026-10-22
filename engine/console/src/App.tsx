@@ -5,10 +5,12 @@ import { IntegrationPage } from './pages/IntegrationPage';
 import { DefinitionsPage } from './pages/DefinitionsPage';
 import { DefinitionEditorPage } from './pages/DefinitionEditorPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { KeyPrompt } from './components/KeyPrompt';
+import { ConfigurationPage } from './pages/ConfigurationPage';
 
 function Layout() {
   const { pathname } = useLocation();
-  const inDefinitions = pathname.startsWith('/definitions');
+  const section = pathname.startsWith('/definitions') ? 'definitions' : pathname.startsWith('/configuration') ? 'configuration' : 'integrations';
   return (
     <AppShell header={{ height: 56 }} padding="lg">
       <AppShell.Header px="lg">
@@ -17,14 +19,16 @@ function Layout() {
             Integration Mapper
           </Text>
           <Group gap="xs" component="nav" aria-label="Main">
-            <NavLink component={Link} to="/" label="Integrations" active={!inDefinitions} w="auto" />
-            <NavLink component={Link} to="/definitions" label="Payload definitions" active={inDefinitions} w="auto" />
+            <NavLink component={Link} to="/" label="Integrations" active={section === 'integrations'} w="auto" />
+            <NavLink component={Link} to="/definitions" label="Payload definitions" active={section === 'definitions'} w="auto" />
+            <NavLink component={Link} to="/configuration" label="Configuration" active={section === 'configuration'} w="auto" />
           </Group>
         </Group>
       </AppShell.Header>
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
+      <KeyPrompt />
     </AppShell>
   );
 }
@@ -40,6 +44,7 @@ export const router = createHashRouter([
       { path: '/definitions', element: <DefinitionsPage /> },
       { path: '/definitions/new', element: <DefinitionEditorPage /> },
       { path: '/definitions/:id', element: <DefinitionEditorPage /> },
+      { path: '/configuration', element: <ConfigurationPage /> },
     ],
   },
 ]);

@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -76,6 +77,14 @@ public class MappingApiController {
         TestRequest req = read(body, TestRequest.class);
         draft(slug); // 400 for an unknown integration
         return json(tests.run(slug, req.input() == null ? Json.MAPPER.createObjectNode() : req.input(), req.real()));
+    }
+
+    /** Deletes the integration: its live endpoint, draft, versions and secret (IntegrationPublisher.delete). */
+    @DeleteMapping
+    public ResponseEntity<String> delete(@PathVariable String slug) throws Exception {
+        draft(slug);
+        publisher.delete(slug);
+        return ResponseEntity.noContent().build();
     }
 
     /** Step 5: publishes the draft as the next version (R8: the engine refuses broken links, with the list). */

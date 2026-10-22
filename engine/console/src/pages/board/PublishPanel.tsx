@@ -14,8 +14,8 @@ interface BoardData {
   operation: ContractOperation | null;
 }
 
-/** Step 5 (D-6, D-10, R8): summary, publish as the next version, live URL + curl, earlier versions with "Make active". */
-export function PublishStep(props: {
+/** Publish (D-6, D-10, R8): summary, publish as the next version, live URL + curl, earlier versions with "Make active". */
+export function PublishPanel(props: {
   draft: IntegrationDraft;
   onChange: (d: IntegrationDraft) => void;
   onShow: (tab: Tab) => void;
@@ -60,7 +60,7 @@ export function PublishStep(props: {
   };
 
   return (
-    <Stack gap="md" mt="md" maw={900}>
+    <Stack gap="md">
       <Paper withBorder p="md">
         <Stack gap="sm">
           <Title order={4}>Before you publish</Title>

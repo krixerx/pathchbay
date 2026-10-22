@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -46,8 +47,9 @@ public class ContractApiController {
 
     // ---- contracts (step 2)
 
+    /** {@code usedBy}: integrations whose draft calls an operation of this contract. */
     public record ContractSummary(String id, String name, int operationCount, List<String> servers, int warningCount,
-            String importedAt) {
+            String importedAt, List<String> usedBy) {
     }
 
     @GetMapping("/contracts")
@@ -55,7 +57,7 @@ public class ContractApiController {
         List<ContractSummary> out = new ArrayList<>();
         for (Contract c : allContracts()) {
             out.add(new ContractSummary(c.id(), c.name(), c.operations().size(), c.servers(),
-                    c.warnings() == null ? 0 : c.warnings().size(), c.importedAt()));
+                    c.warnings() == null ? 0 : c.warnings().size(), c.importedAt(), usedBy(c.id())));
         }
         return json(out);
     }
@@ -63,6 +65,44 @@ public class ContractApiController {
     @GetMapping("/contracts/{id}")
     public ResponseEntity<String> contract(@PathVariable String id) throws IOException {
         return json(readContract(id));
+    }
+
+    /** Deletes an imported contract and its original file; refused while an integration still uses it. */
+    @DeleteMapping("/contracts/{id}")
+    public ResponseEntity<String> deleteContract(@PathVariable String id) throws IOException {
+        readContract(id);
+        List<String> users = usedBy(id);
+        if (!users.isEmpty()) {
+            throw new IllegalArgumentException("Contract " + id + " is used by " + String.join(", ", users)
+                    + ". Pick another operation there or delete those integrations first.");
+        }
+        Path dir = store.root().resolve("contracts");
+        try (Stream<Path> s = Files.list(dir)) {
+            for (Path p : s.filter(p -> p.getFileName().toString().startsWith(id + ".")).toList()) {
+                String rest = p.getFileName().toString().substring(id.length());
+                if (rest.equals(".json") || rest.startsWith(".openapi.")) {
+                    Files.delete(p);
+                }
+            }
+        }
+        return ResponseEntity.noContent().build();
+    }
+
+    private List<String> usedBy(String contractId) throws IOException {
+        Path dir = store.root().resolve("services");
+        if (!Files.isDirectory(dir)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        try (Stream<Path> s = Files.list(dir)) {
+            for (Path p : s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().toList()) {
+                JsonNode d = Json.MAPPER.readTree(p.toFile());
+                if (contractId.equals(d.path("contract").asText(null))) {
+                    out.add(d.path("id").asText());
+                }
+            }
+        }
+        return out;
     }
 
     record ImportRequest(String name, String url, String content) {

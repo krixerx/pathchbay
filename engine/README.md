@@ -1,26 +1,12 @@
 # Integration Mapper engine
 
-Spring Boot 4.1.1, Apache Camel 4.23.0, Java 21. Plan: `../docs/slice-plan.md` (tasks E1–E5 done). No console yet: integrations are JSON files, published with admin calls.
+Spring Boot 4.1.1, Apache Camel 4.23.0, Java 21, with the console (React, in `console/`) built into the same jar. Plan: `../docs/slice-plan.md`.
 
-## Run it locally
+How to install, run and configure it (Docker or not, all variables): see `../README.md`. This file is the reference for the files and calls behind the console.
 
-```bash
-cd engine/console && npm install && npm run build && cd ..   # builds the console into src/main/resources/static
-mvn clean package
-java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config
-```
+## Examples and admin calls
 
-Open **http://localhost:8080** for the console. So far it has:
-- the Integrations list and "New integration";
-- steps 1–3 of an integration: pick Input and Output, import the external system's contract (upload a file or give a URL; Swagger 2.0 is converted; problems are listed as warnings), pick the operation;
-- the integration's Settings page: base URL, authentication and the secret (saved to `config/secrets/<slug>.json`, never shown again; the environment variable `MAPPER_SECRET_<SLUG>` wins);
-- the Payload definitions library with the field editor and "Paste a JSON sample".
-
-Imported contracts are stored in `config/contracts/`: `<id>.openapi.json|yaml` is the original file, `<id>.json` the operations the console works with. Steps 4 (Map) and 5 (Publish) come next; until then links are edited in the service file and published with the admin call below.
-
-Console development with hot reload: keep the engine running and run `npm run dev` in `engine/console` (http://localhost:5173; API calls go to the engine on 8080). `npm test` runs the console's unit tests. Design tokens and rules: `../DESIGN.md`.
-
-Startup loads the payload library `config/entities/*.json`, then serves the **active version** of every `config/services/*.json` from its version file. A draft that was never published is not served. The three book examples are already published (version 1.0.0) and call the public [FakeRESTApi](https://fakerestapi.azurewebsites.net/index.html):
+Startup loads the payload library `config/entities/*.json`, then serves the **active version** of every `config/services/*.json` from its version file. A draft that was never published is not served. The repository's `config/` folder (not part of the image; use it with "Run it without Docker" or mount a copy) has three book examples, already published (version 1.0.0), that call the public [FakeRESTApi](https://fakerestapi.azurewebsites.net/index.html):
 
 ```bash
 # What is live
@@ -135,7 +121,7 @@ On the external side `[]` means "each item": `body.ADDRESSES[]` is the list, `bo
 { "from": "p-country",   "to": "body.ADDRESSES[].country" }
 ```
 
-Rules (D-12), shared with the future console in `../rules/link-cases.json`:
+Rules (D-12), shared with the console in `../rules/link-cases.json`:
 1. Link the list itself (list → list, same nesting level) before any field inside it.
 2. Links inside a linked list run once per item.
 3. After the list link, fields from outside the list may go into item fields; they are the same for every item.
@@ -143,10 +129,14 @@ Rules (D-12), shared with the future console in `../rules/link-cases.json`:
 5. A field inside a nested list can't go to a less nested place.
 6. A list can only go into a list, and a single value can't go into a list.
 
-A list linked without item links is copied as it is. A missing source list gives `null`.
+A list linked without item links is copied as it is.
+
+## Missing fields and null
+
+A field the caller did not send is left out of the external request, not sent as `null`; an object is left out when nothing inside it was sent. An explicit `null` from the caller is passed on, so an update (PUT, POST) can reset a field. Responses mapped back into the Output follow the same rule.
 
 Any broken link (unknown field id) or link that breaks these rules stops the version from publishing, and the error lists every problem at once (R8).
 
-## Not in the engine yet
+## Not built yet
 
-The console (publishing and editing are files plus the admin calls above), the Docker image, JSON ↔ XML (TODO-T4), extra outbound headers (TODO-T3), transforms and conditions (TODO-T1).
+JSON ↔ XML (TODO-T4), extra outbound headers (TODO-T3), transforms and conditions (TODO-T1), a CI build of the image.

@@ -3,6 +3,7 @@ package integrationmapper.engine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Locale;
 
 import org.springframework.core.env.Environment;
@@ -39,12 +40,24 @@ public class SecretResolver {
         return Files.isRegularFile(store.secret(slug));
     }
 
-    /** Saves a secret typed in the console (D-3); an empty value removes the file. */
+    /**
+     * Saves a secret typed in the console (D-3); an empty value removes the file. Where the file system has POSIX
+     * permissions (the Docker image), the folder and file are readable only by the engine's user.
+     */
     public void save(String slug, String value) throws IOException {
+        Path file = store.secret(slug);
         if (value == null || value.isBlank()) {
-            Files.deleteIfExists(store.secret(slug));
-        } else {
-            store.writeJson(store.secret(slug), java.util.Map.of("value", value));
+            Files.deleteIfExists(file);
+            return;
+        }
+        Files.createDirectories(file.getParent());
+        boolean posix = file.getFileSystem().supportedFileAttributeViews().contains("posix");
+        if (posix) {
+            Files.setPosixFilePermissions(file.getParent(), PosixFilePermissions.fromString("rwx------"));
+        }
+        store.writeJson(file, java.util.Map.of("value", value));
+        if (posix) {
+            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
         }
     }
 

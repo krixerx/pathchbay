@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, Badge, Button, Code, Group, Modal, Skeleton, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { IconAlertTriangle, IconPlus } from '@tabler/icons-react';
+import { IconAlertTriangle, IconPlus, IconTrash } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { IntegrationSummary } from '../model';
@@ -18,10 +18,23 @@ export function IntegrationsPage() {
   const [items, setItems] = useState<IntegrationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState<IntegrationSummary | null>(null);
 
+  const load = () => api.integrations().then(setItems, (e: Error) => setError(e.message));
   useEffect(() => {
-    api.integrations().then(setItems, (e: Error) => setError(e.message));
+    load();
   }, []);
+
+  const remove = async (it: IntegrationSummary) => {
+    setDeleting(null);
+    setError(null);
+    try {
+      await api.deleteIntegration(it.id);
+      load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
 
   return (
     <Stack gap="lg" maw={1100}>
@@ -49,14 +62,36 @@ export function IntegrationsPage() {
         </Stack>
       )}
 
-      {items && items.length > 0 && <IntegrationTable items={items} />}
+      {items && items.length > 0 && <IntegrationTable items={items} onDelete={setDeleting} />}
 
       <NewIntegrationModal opened={creating} onClose={() => setCreating(false)} />
+      <Modal opened={!!deleting} onClose={() => setDeleting(null)} title="Delete this integration?">
+        <Stack>
+          <Text>
+            “{deleting?.name ?? deleting?.id}” is deleted with all its versions and its stored secret.
+            {deleting?.activeVersion && (
+              <>
+                {' '}
+                Its live endpoint <Code>/api/v1/integrations/{deleting.id}</Code> stops answering.
+              </>
+            )}{' '}
+            Payload definitions and Swagger configurations stay.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDeleting(null)}>
+              Cancel
+            </Button>
+            <Button color={meaning.broken} onClick={() => deleting && remove(deleting)}>
+              Delete
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
 
-function IntegrationTable({ items }: { items: IntegrationSummary[] }) {
+function IntegrationTable({ items, onDelete }: { items: IntegrationSummary[]; onDelete: (it: IntegrationSummary) => void }) {
   const navigate = useNavigate();
   return (
     <Table highlightOnHover verticalSpacing="sm">
@@ -67,6 +102,7 @@ function IntegrationTable({ items }: { items: IntegrationSummary[] }) {
           <Table.Th>Method</Table.Th>
           <Table.Th>Status</Table.Th>
           <Table.Th>Live version</Table.Th>
+          <Table.Th />
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
@@ -94,6 +130,25 @@ function IntegrationTable({ items }: { items: IntegrationSummary[] }) {
               </Badge>
             </Table.Td>
             <Table.Td>{it.activeVersion ?? '—'}</Table.Td>
+            <Table.Td>
+              <Group gap="xs" justify="flex-end" wrap="nowrap">
+                <Button size="compact-sm" variant="default" onClick={() => navigate(`/integrations/${it.id}`)}>
+                  Select
+                </Button>
+                <Button
+                  size="compact-sm"
+                  variant="subtle"
+                  color={meaning.broken}
+                  leftSection={<IconTrash size={14} />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(it);
+                  }}
+                >
+                  Delete
+                </Button>
+              </Group>
+            </Table.Td>
           </Table.Tr>
         ))}
       </Table.Tbody>

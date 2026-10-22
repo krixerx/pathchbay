@@ -1,0 +1,7 @@
+# Built inside the image or local only; config is mounted at /config, never baked in.
+target/
+config/
+console/node_modules/
+src/main/resources/static/
+Dockerfile
+.dockerignore

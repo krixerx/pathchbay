@@ -140,5 +140,24 @@ class MappingApiTest {
         assertThat(refused.statusCode()).isEqualTo(400);
         assertThat(refused.body()).contains("nb-gone");
         assertThat(send("GET", "/integrations/add-book/versions", null).path("versions")).hasSize(2);
+
+        // Configuration: a contract in use can't be deleted; deleting the integration takes its endpoint down.
+        assertThat(send("GET", "/contracts", null).get(0).path("usedBy").toString()).isEqualTo("[\"add-book\"]");
+        assertThat(status("DELETE", "/admin/api/contracts/fake-rest-api")).isEqualTo(400);
+        assertThat(status("POST", "/api/v1/integrations/add-book")).isNotEqualTo(404);
+        assertThat(status("DELETE", "/admin/api/integrations/add-book")).isEqualTo(204);
+        assertThat(status("POST", "/api/v1/integrations/add-book")).isEqualTo(404);
+        assertThat(CONFIG.resolve("services/add-book.json")).doesNotExist();
+        assertThat(CONFIG.resolve("services/add-book.versions")).doesNotExist();
+        assertThat(CONFIG.resolve("secrets/add-book.json")).doesNotExist();
+        assertThat(status("DELETE", "/admin/api/contracts/fake-rest-api")).isEqualTo(204);
+        assertThat(send("GET", "/contracts", null)).isEmpty();
+    }
+
+    int status(String method, String path) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Content-Type", "application/json")
+                .method(method, HttpRequest.BodyPublishers.ofString("POST".equals(method) ? "{}" : ""))
+                .build(), HttpResponse.BodyHandlers.discarding()).statusCode();
     }
 }

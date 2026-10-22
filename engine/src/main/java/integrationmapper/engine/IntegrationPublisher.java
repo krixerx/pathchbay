@@ -99,6 +99,30 @@ public class IntegrationPublisher {
         return CompiledIntegration.compile(def, s.input(), s.output(), secret);
     }
 
+    /**
+     * Deletes an integration: takes its route down (callers then get 404) and removes its draft, every version file
+     * and its stored secret. Payload definitions and contracts stay; they belong to the library.
+     */
+    public synchronized void delete(String slug) throws Exception {
+        if (!Files.isRegularFile(store.service(slug))) {
+            throw new IllegalArgumentException("No integration " + slug);
+        }
+        String routeId = "int-" + slug;
+        gate.swap(slug, () -> {
+            if (camel.getRoute(routeId) != null) {
+                camel.getRouteController().stopRoute(routeId);
+                camel.removeRoute(routeId);
+            }
+            registry.remove(slug);
+        });
+        for (String v : store.versions(slug)) {
+            Files.deleteIfExists(store.version(slug, v));
+        }
+        Files.deleteIfExists(store.versionsDir(slug));
+        Files.deleteIfExists(store.secret(slug));
+        Files.delete(store.service(slug));
+    }
+
     private void goLive(CompiledIntegration compiled) throws Exception {
         ServiceDefinition def = compiled.definition();
         String routeId = "int-" + def.id();

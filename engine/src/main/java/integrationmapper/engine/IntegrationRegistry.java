@@ -26,6 +26,11 @@ public class IntegrationRegistry {
         broken.remove(ci.definition().id());
     }
 
+    void remove(String slug) {
+        active.remove(slug);
+        broken.remove(slug);
+    }
+
     void markBroken(String slug, String reason) {
         broken.put(slug, reason);
     }

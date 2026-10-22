@@ -75,6 +75,7 @@ export interface ContractSummary {
   servers: string[];
   warningCount: number;
   importedAt: string;
+  usedBy: string[];
 }
 
 export interface ContractParameter {
