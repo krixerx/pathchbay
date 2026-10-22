@@ -47,6 +47,19 @@ describe('publishSummary', () => {
     expect(publishSummary(draft, input, output, op)).toEqual({ blocking: [], warnings: [] });
   });
 
+  it('accepts links to headers added on the board (D-27) and reports them broken once removed', () => {
+    const draft: IntegrationDraft = {
+      id: 'add-book',
+      addedHeaders: ['X-Correlation-Id'],
+      request: { links: [{ from: 'nb-title', to: 'body.title' }, { from: 'nb-pages', to: 'headers.X-Correlation-Id' }] },
+      response: { links: [{ from: 'id', to: 'br-id' }] },
+    };
+    expect(publishSummary(draft, input, output, op).blocking).toEqual([]);
+    expect(publishSummary({ ...draft, addedHeaders: [] }, input, output, op).blocking.map((p) => p.text)).toEqual([
+      'pages → headers.X-Correlation-Id: Field headers.X-Correlation-Id no longer exists',
+    ]);
+  });
+
   it('blocks a GET integration whose Input has nested fields, like the engine does', () => {
     const nested: PayloadDefinition = {
       ...input,

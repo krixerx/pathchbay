@@ -39,7 +39,7 @@ export function publishSummary(
     });
   }
   const sides: Record<Tab, [ReturnType<typeof payloadRows>, ReturnType<typeof payloadRows>]> = {
-    request: [payloadRows(input), requestRows(op)],
+    request: [payloadRows(input), requestRows(op, draft.addedHeaders ?? [])],
     response: [responseRows(op), payloadRows(output)],
   };
   for (const tab of ['request', 'response'] as Tab[]) {

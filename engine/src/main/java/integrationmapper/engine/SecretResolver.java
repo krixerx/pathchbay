@@ -40,22 +40,30 @@ public class SecretResolver {
         return Files.isRegularFile(store.secret(slug));
     }
 
-    /**
-     * Saves a secret typed in the console (D-3); an empty value removes the file. Where the file system has POSIX
-     * permissions (the Docker image), the folder and file are readable only by the engine's user.
-     */
+    /** Saves a secret typed in the console (D-3); an empty value removes the file. */
     public void save(String slug, String value) throws IOException {
         Path file = store.secret(slug);
         if (value == null || value.isBlank()) {
             Files.deleteIfExists(file);
             return;
         }
+        writePrivate(store, file, java.util.Map.of("value", value));
+    }
+
+    /**
+     * Writes a file under {@code <config-dir>/secrets}. Where the file system has POSIX permissions (the Docker
+     * image), its folders and the file are readable only by the engine's user.
+     */
+    static void writePrivate(ConfigStore store, Path file, Object value) throws IOException {
         Files.createDirectories(file.getParent());
         boolean posix = file.getFileSystem().supportedFileAttributeViews().contains("posix");
         if (posix) {
-            Files.setPosixFilePermissions(file.getParent(), PosixFilePermissions.fromString("rwx------"));
+            Path secrets = store.root().resolve("secrets");
+            for (Path dir = file.getParent(); dir != null && dir.startsWith(secrets); dir = dir.getParent()) {
+                Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"));
+            }
         }
-        store.writeJson(file, java.util.Map.of("value", value));
+        store.writeJson(file, value);
         if (posix) {
             Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
         }

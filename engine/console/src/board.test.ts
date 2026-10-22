@@ -62,6 +62,16 @@ describe('rows', () => {
     ]);
   });
 
+  it('headers added on the board (D-27) follow the contract headers, untyped, so any simple field fits', () => {
+    const rows = requestRows(op, ['X-Correlation-Id']);
+    expect(rows.filter((r) => r.group === 'Headers').map((r) => [r.key, r.added ?? false])).toEqual([
+      ['headers.X-Trace', false],
+      ['headers.X-Correlation-Id', true],
+    ]);
+    const states = linkStates([{ from: 'p-born', to: 'headers.X-Correlation-Id' }], src, rows);
+    expect(states).toEqual([{ kind: 'ok' }]);
+  });
+
   it('a response that is a list starts with []', () => {
     expect(responseRows(op).map((r) => r.key)).toEqual(['[]', '[].id']);
   });

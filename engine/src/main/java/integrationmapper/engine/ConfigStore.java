@@ -56,6 +56,11 @@ public class ConfigStore {
         return root.resolve("connections").resolve(id + ".json");
     }
 
+    /** The secret header values of a connection (D-27), kept with the other secrets. */
+    public Path connectionSecrets(String id) {
+        return root.resolve("secrets").resolve("connections").resolve(id + ".json");
+    }
+
     /** The versions stored for one integration, oldest first. */
     public List<String> versions(String slug) throws IOException {
         Path dir = versionsDir(slug);

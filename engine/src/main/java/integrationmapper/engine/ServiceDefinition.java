@@ -12,8 +12,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * {@code input} and {@code output} name payload definitions in the library (D-9).
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-// Console-only fields: the display name and which contract operation the target came from; the engine runs on target.
-@JsonIgnoreProperties({"name", "contract", "operationId"})
+// Console-only fields: the display name, which contract operation the target came from and the headers added on the
+// board (D-27, plain request link targets); the engine runs on target and links.
+@JsonIgnoreProperties({"name", "contract", "operationId", "addedHeaders"})
 public record ServiceDefinition(String id, String version, String activeVersion, String input, String output,
         Target target, Auth auth, Mapping request, Mapping response, Formats formats) {
 

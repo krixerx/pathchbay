@@ -23,18 +23,21 @@ public final class CompiledIntegration {
     private final String secret;
     /** Where the external system is in this environment, resolved from the connection when the version goes live (D-26). */
     private final String baseUrl;
+    /** The connection's headers in this environment, resolved with the base URL (D-27). */
+    private final List<Connections.Header> headers;
     private final Mapper request;
     private final Mapper response;
     /** Where the external answer has lists, for reading XML answers (D-24). */
     private final List<String> responseLists;
 
     private CompiledIntegration(ServiceDefinition definition, PayloadDefinition input, PayloadDefinition output,
-            String secret, String baseUrl, Mapper request, Mapper response) {
+            String secret, String baseUrl, List<Connections.Header> headers, Mapper request, Mapper response) {
         this.definition = definition;
         this.input = input;
         this.output = output;
         this.secret = secret;
         this.baseUrl = baseUrl;
+        this.headers = headers;
         this.request = request;
         this.response = response;
         this.responseLists = XmlFormat.listPaths(definition.response().links().stream().map(ServiceDefinition.Link::from).toList());
@@ -52,11 +55,16 @@ public final class CompiledIntegration {
 
     public static CompiledIntegration compile(ServiceDefinition def, PayloadDefinition input, PayloadDefinition output,
             String secret, String baseUrl) {
+        return compile(def, input, output, secret, baseUrl, List.of());
+    }
+
+    public static CompiledIntegration compile(ServiceDefinition def, PayloadDefinition input, PayloadDefinition output,
+            String secret, String baseUrl, List<Connections.Header> headers) {
         try {
             def.wire().check(def.id());
             String req = ScriptGenerator.requestScript(def.request().links(), input);
             String res = ScriptGenerator.responseScript(def.response().links(), output);
-            return new CompiledIntegration(def, input, output, secret, baseUrl, build(req), build(res));
+            return new CompiledIntegration(def, input, output, secret, baseUrl, headers, build(req), build(res));
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Integration " + def.id() + " " + def.version() + " does not compile: " + e.getMessage(), e);
         }
@@ -84,6 +92,10 @@ public final class CompiledIntegration {
 
     String baseUrl() {
         return baseUrl;
+    }
+
+    List<Connections.Header> headers() {
+        return headers;
     }
 
     public String mapRequest(String inputJson) {

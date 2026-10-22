@@ -100,19 +100,20 @@ public class IntegrationPublisher {
             def.auth().check(def.id());
             secret = secrets.resolve(def.id());
         }
-        return CompiledIntegration.compile(def, s.input(), s.output(), secret, connections.resolve(def));
+        return CompiledIntegration.compile(def, s.input(), s.output(), secret, connections.resolve(def), connections.headers(def));
     }
 
     /**
-     * After a connection's base URL changed: every live integration using it goes live again with the new address,
-     * same version, one at a time behind its gate. Returns the slugs that were switched.
+     * After a connection's base URL or headers changed: every live integration using it goes live again with the new
+     * values, same version, one at a time behind its gate. Returns the slugs that were switched.
      */
     public synchronized List<String> reconnect(String connection) throws Exception {
         List<String> switched = new ArrayList<>();
         for (CompiledIntegration ci : registry.active().values()) {
             ServiceDefinition def = ci.definition();
             if (connection.equals(def.target().connection())) {
-                goLive(CompiledIntegration.compile(def, ci.input(), ci.output(), ci.secret(), connections.resolve(def)));
+                goLive(CompiledIntegration.compile(def, ci.input(), ci.output(), ci.secret(), connections.resolve(def),
+                        connections.headers(def)));
                 switched.add(def.id());
             }
         }

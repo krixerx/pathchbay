@@ -76,6 +76,7 @@ export function MappingBoard(props: {
     request: (draft.request?.links as Link[]) ?? [],
     response: (draft.response?.links as Link[]) ?? [],
   });
+  const [added, setAdded] = useState<string[]>(draft.addedHeaders ?? []);
   const [selected, setSelected] = useState<string | null>(null);
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [lastTest, setLastTest] = useState<{ ok: boolean; at: string } | null>(null);
@@ -97,9 +98,9 @@ export function MappingBoard(props: {
   const sides = useMemo(() => {
     if (!data) return null;
     return tab === 'request'
-      ? { sources: payloadRows(data.input), targets: requestRows(data.operation), left: 'Your Input', right: 'API request' }
+      ? { sources: payloadRows(data.input), targets: requestRows(data.operation, added), left: 'Your Input', right: 'API request' }
       : { sources: responseRows(data.operation), targets: payloadRows(data.output), left: 'API response', right: 'Your Output' };
-  }, [data, tab]);
+  }, [data, tab, added]);
 
   const current = links[tab];
   const states = useMemo(() => (sides ? linkStates(current, sides.sources, sides.targets) : []), [current, sides]);
@@ -146,12 +147,22 @@ export function MappingBoard(props: {
   };
   const remove = (l: Link) => save({ ...links, [tab]: current.filter((x) => x !== l) });
 
+  // Headers added on the board (D-27); the engine drops the links of a removed one, so links follow its answer.
+  const saveHeaders = async (next: string[]) => {
+    const d = await api.saveHeaders(draft.id, next);
+    setAdded(d.addedHeaders ?? []);
+    setLinks((old) => ({ ...old, request: (d.request?.links as Link[]) ?? [] }));
+    props.onChange(d);
+  };
+  const removeHeader = (r: Row) =>
+    saveHeaders(added.filter((h) => `headers.${h}` !== r.key)).catch((e: Error) => setError(e.message));
+
   return (
     <Stack gap="sm" mt="md">
       <StatusBar
         unmapped={unmapped.length}
         red={redCount}
-        other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab)).filter((s) => s.kind !== 'ok').length }}
+        other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab, added)).filter((s) => s.kind !== 'ok').length }}
         lastTest={lastTest}
         saved={saved}
         onShowUnmapped={() => document.getElementById(`row-target-${unmapped[0]?.key}`)?.scrollIntoView({ block: 'center' })}
@@ -218,6 +229,8 @@ export function MappingBoard(props: {
           unmapped={new Set(unmapped.map((r) => r.key))}
           anchor={gutter}
           onLayout={onLayout}
+          onRemoveRow={removeHeader}
+          footer={tab === 'request' && <AddHeader onAdd={(name) => saveHeaders([...added, name])} />}
         />
         {testOpen && (
           <TestDrawer
@@ -235,9 +248,9 @@ export function MappingBoard(props: {
   );
 }
 
-function otherSides(data: BoardData, tab: Tab): [Row[], Row[]] {
+function otherSides(data: BoardData, tab: Tab, added: string[]): [Row[], Row[]] {
   return tab === 'request'
-    ? [payloadRows(data.input), requestRows(data.operation)]
+    ? [payloadRows(data.input), requestRows(data.operation, added)]
     : [responseRows(data.operation), payloadRows(data.output)];
 }
 
@@ -313,6 +326,9 @@ function TreePanel(props: {
   unmapped?: Set<string>;
   anchor: React.RefObject<HTMLDivElement | null>;
   onLayout: (side: 'source' | 'target', l: Layout) => void;
+  /** Removes a row added on the board (D-27); only added rows get the button. */
+  onRemoveRow?: (r: Row) => void;
+  footer?: React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -462,7 +478,7 @@ function TreePanel(props: {
                       )}
                     </Text>
                     <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                      {r.type ? TYPE_LABELS[r.type] ?? r.type : ''}
+                      {r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
                       {r.constant ? ' · constant' : ''}
                     </Text>
                     {amber && <IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" aria-label="required, not mapped" />}
@@ -470,6 +486,21 @@ function TreePanel(props: {
                       <Tooltip label={state.reason} withArrow>
                         <IconAlertTriangle size={14} color="var(--mantine-color-red-7)" aria-label={state.reason} />
                       </Tooltip>
+                    )}
+                    {r.added && props.onRemoveRow && (
+                      <ActionIcon
+                        size="xs"
+                        variant="subtle"
+                        color="gray"
+                        ml="auto"
+                        aria-label={`Remove header ${r.label}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onRemoveRow?.(r);
+                        }}
+                      >
+                        <IconX size={12} />
+                      </ActionIcon>
                     )}
                     {props.side === 'source' && dot}
                   </Box>
@@ -485,8 +516,50 @@ function TreePanel(props: {
               : 'No field matches.'}
           </Text>
         )}
+        {props.footer}
       </Stack>
     </Paper>
+  );
+}
+
+/**
+ * Adds a header the contract doesn't declare, such as a correlation id (D-27); it is then linked like any other.
+ * Headers with the same value on every call belong on the connection under Configuration.
+ */
+function AddHeader(props: { onAdd: (name: string) => Promise<void> }) {
+  const [name, setName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await props.onAdd(name.trim());
+      setName('');
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Group gap="xs" align="flex-start" wrap="nowrap">
+      <TextInput
+        size="xs"
+        style={{ flex: 1 }}
+        placeholder="X-Correlation-Id"
+        aria-label="Header name"
+        value={name}
+        error={error}
+        onChange={(e) => setName(e.currentTarget.value)}
+        onKeyDown={(e) => e.key === 'Enter' && add()}
+        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+      />
+      <Button size="xs" variant="light" onClick={add} loading={busy} disabled={!name.trim()}>
+        Add header
+      </Button>
+    </Group>
   );
 }
 

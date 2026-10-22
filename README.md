@@ -104,13 +104,14 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 | `MAPPER_OUTBOUNDTIMEOUTMS` (option `--mapper.outbound-timeout-ms`) | `10000` | How long a call to an external system may take, in milliseconds; after that the caller gets `504`. |
 | `INBOUND_API_KEY` | not set | When set, every call to a published integration, the console and the admin API must send this value in the `X-API-Key` header, otherwise `401`. The console asks for it once per browser tab. Not set: nothing is checked, which is meant for a closed Docker network only. |
 | `MAPPER_URL_<ID>` | not set | The base URL of a Swagger configuration's connection in this environment, for example `MAPPER_URL_FAKE_REST_API` for the configuration `fake-rest-api` (id in capitals, other characters as `_`). It wins over the address set with **Connection** under Configuration. |
+| `MAPPER_HEADER_<ID>_<NAME>` | not set | The value of a header that a connection sends on every call, for example `MAPPER_HEADER_GOREST_X_CLIENT_ID` for header `X-Client-Id` of connection `gorest` (capitals, other characters as `_`). It wins over the value set with **Connection** under Configuration. |
 | `MAPPER_SECRET_<SLUG>` | not set | The token or API key an integration sends to its external system, for example `MAPPER_SECRET_CREATE_USER` for the integration `create-user` (slug in capitals, other characters as `_`). It wins over a secret typed on the integration's Settings page. |
 | `MAPPER_CALL_LOG` | `on` | `on` keeps the last 100 live calls of each integration in memory, with what the caller sent, the request sent out, the answer and the mapped output, shown under **Calls** on the board. `off` keeps none of that; each call still writes one line without data to the log. |
 
 ## Security in short
 
 - Without `INBOUND_API_KEY`, anyone who can reach the port can use the console and every integration, including the stored credentials of the external systems. Set it whenever the port is reachable from outside a closed network.
-- Secrets typed on a Settings page are stored **unencrypted** in `<config>/secrets/<slug>.json`, readable only by the engine's user on Linux and in Docker (Windows does not enforce it). Use `MAPPER_SECRET_<SLUG>` to keep them out of the folder.
+- Secrets typed on a Settings page are stored **unencrypted** in `<config>/secrets/<slug>.json`, readable only by the engine's user on Linux and in Docker (Windows does not enforce it). The same goes for secret connection headers in `<config>/secrets/connections/<id>.json`. Use `MAPPER_SECRET_<SLUG>` and `MAPPER_HEADER_<ID>_<NAME>` to keep them out of the folder.
 - Headers that callers send (including `X-API-Key` and `Authorization`) never reach the external system.
 - The OpenAPI documents under `/api/openapi` can be read without `INBOUND_API_KEY`. They show integration names and field shapes, never data or secrets.
 - The call log holds real payloads, which may include personal data, and anyone with console access can see them. Auth values are shown as `***`. Set `MAPPER_CALL_LOG=off` where that is not acceptable.

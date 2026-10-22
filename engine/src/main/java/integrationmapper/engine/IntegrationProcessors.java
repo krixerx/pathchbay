@@ -98,13 +98,16 @@ public class IntegrationProcessors {
                 msg.setHeader(h.getKey(), h.getValue().asText());
             }
         });
-        // What the call log shows: the same request, with auth values as *** (D-22).
+        // The connection's headers win over mapped ones of the same name; the auth header wins over both (D-27).
+        ci.headers().forEach(h -> msg.setHeader(h.name(), h.value()));
+        // What the call log shows: the same request, with auth and secret header values as *** (D-22).
         Map<String, Object> shownHeaders = new LinkedHashMap<>();
         msg.getHeaders().forEach((k, v) -> {
             if (!k.startsWith("Camel")) {
                 shownHeaders.put(k, v);
             }
         });
+        maskSecrets(shownHeaders, ci.headers());
         String shownQuery = query;
         ServiceDefinition.Auth auth = ci.definition().auth();
         if (auth != null) {
@@ -231,6 +234,16 @@ public class IntegrationProcessors {
     }
 
     // ---- helpers
+
+    /** Shows secret connection headers as ***, whatever the case of the name they were sent under. */
+    static void maskSecrets(Map<String, ? super String> shown, List<Connections.Header> headers) {
+        for (Connections.Header h : headers) {
+            if (h.secret()) {
+                shown.keySet().removeIf(k -> k.equalsIgnoreCase(h.name()));
+                shown.put(h.name(), "***");
+            }
+        }
+    }
 
     static String fillPath(String template, JsonNode values) {
         Matcher m = PATH_PARAM.matcher(template);

@@ -113,6 +113,10 @@ Optional `"formats": { "request": "xml", "requestRoot": "Book", "output": "xml",
 
 `target.connection` names the connection whose base URL is used (D-26): `MAPPER_URL_<ID>` if set, else `connections/<id>.json` with `{"baseUrl": "https://..."}`. The console names the connection after the Swagger configuration and writes that file with **Connection** under Configuration. `connections/` and `secrets/` belong to one environment; everything else in the folder can be moved between environments unchanged. A literal `target.baseUrl` still works in files from before connections; at startup, drafts that came from a Swagger configuration move it into that configuration's connection.
 
+A connection can also send headers on every call to its system (D-27): `"headers": [{"name": "X-Client-Id", "value": "abc"}, {"name": "X-Tenant-Key", "secret": true}]` in `connections/<id>.json`. `MAPPER_HEADER_<ID>_<NAME>` wins over the value in the file. A secret header has no value in the connection file; it is in `secrets/connections/<id>.json` as `{"X-Tenant-Key": "..."}` and shows as `***` in the console, the Test drawer and the call log. If a mapped header has the same name, the connection's value is sent; the auth header wins over both.
+
+Headers the contract doesn't declare can be added on the board; the draft lists them in `"addedHeaders": ["X-Correlation-Id"]` and links them like any other header (`"to": "headers.X-Correlation-Id"`).
+
 Request links go from an Input field id to `path.`, `query.`, `headers.` or `body.` of the external call. Response links go from a dotted path in the external response to an Output field id. The caller uses the same HTTP method as `target.method`: a JSON body for POST/PUT/PATCH, query parameters for GET/DELETE.
 
 ## Lists

@@ -3,12 +3,17 @@ package integrationmapper.engine;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.springframework.http.MediaType;
@@ -84,6 +89,55 @@ public class MappingApiController {
             d.set("formats", Json.MAPPER.valueToTree(kept));
         } else {
             d.remove("formats");
+        }
+        store.writeJson(store.service(slug), d);
+        return json(d);
+    }
+
+    record AddedHeaders(List<String> headers) {
+    }
+
+    /**
+     * Saves the headers added on the board for the external call (D-27): request link targets like any contract
+     * header. Links to a header that is no longer listed are removed with it.
+     */
+    @PutMapping("/headers")
+    public ResponseEntity<String> saveHeaders(@PathVariable String slug, @RequestBody String body) throws IOException {
+        List<String> headers = read(body, AddedHeaders.class).headers();
+        ObjectNode d = draft(slug);
+        Contract.Operation op = operation(d);
+        Set<String> seen = new HashSet<>();
+        List<String> kept = new ArrayList<>();
+        for (String raw : headers == null ? List.<String>of() : headers) {
+            String h = raw == null ? "" : raw.strip();
+            Connections.checkHeaderName(h);
+            if (op != null && op.parameters().stream().anyMatch(p -> "header".equals(p.in()) && p.name().equalsIgnoreCase(h))) {
+                throw new IllegalArgumentException("The API request already has header " + h);
+            }
+            if (!seen.add(h.toLowerCase(Locale.ROOT))) {
+                throw new IllegalArgumentException("Header " + h + " is listed twice");
+            }
+            kept.add(h);
+        }
+        Set<String> removed = new HashSet<>();
+        d.path("addedHeaders").forEach(n -> {
+            if (!kept.contains(n.asText())) {
+                removed.add("headers." + n.asText());
+            }
+        });
+        if (!removed.isEmpty() && d.path("request").path("links").isArray()) {
+            ArrayNode links = Json.MAPPER.createArrayNode();
+            d.path("request").path("links").forEach(l -> {
+                if (!removed.contains(l.path("to").asText())) {
+                    links.add(l);
+                }
+            });
+            ((ObjectNode) d.get("request")).set("links", links);
+        }
+        if (kept.isEmpty()) {
+            d.remove("addedHeaders");
+        } else {
+            d.set("addedHeaders", Json.MAPPER.valueToTree(kept));
         }
         store.writeJson(store.service(slug), d);
         return json(d);

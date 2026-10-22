@@ -75,6 +75,8 @@ export interface IntegrationDraft {
   /** `connection` gives the base URL in each environment (D-26); a literal `baseUrl` only in older files. */
   target?: { baseUrl?: string; method?: string; path?: string; connection?: string };
   formats?: Formats;
+  /** Headers added on the board for the external call (D-27); request link targets like contract headers. */
+  addedHeaders?: string[];
   request?: { links: unknown[] };
   response?: { links: unknown[] };
   /** Only in the answer to choosing an operation: what "fill from the API later" created. */
@@ -94,7 +96,20 @@ export interface ContractSummary {
   baseUrlInEnv: boolean;
 }
 
-/** Where a Swagger configuration's external system is in this environment (D-26). */
+/**
+ * A header the connection sends on every call (D-27). `value` is null for a secret one, whose value never reaches
+ * the console; `saved` says whether the engine has a value of its own, `inEnv` whether the variable sets it.
+ */
+export interface ConnectionHeader {
+  name: string;
+  secret: boolean;
+  value: string | null;
+  saved: boolean;
+  envName: string;
+  inEnv: boolean;
+}
+
+/** Where a Swagger configuration's external system is in this environment (D-26), and the headers it gets (D-27). */
 export interface Connection {
   id: string;
   /** The address in use: the environment variable's, else the saved one. */
@@ -104,6 +119,7 @@ export interface Connection {
   inEnv: boolean;
   servers: string[];
   usedBy: string[];
+  headers: ConnectionHeader[];
 }
 
 export interface ContractParameter {

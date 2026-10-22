@@ -18,6 +18,8 @@ export interface Row {
   group?: 'Path' | 'Query' | 'Headers' | 'Body' | 'Response';
   rule: string;
   isList: boolean;
+  /** A header added on the board, not declared in the contract (D-27). */
+  added?: boolean;
 }
 
 export interface Link {
@@ -83,8 +85,11 @@ function row(key: string, label: string, f: Field, depth: number, group: Row['gr
   return { key, label, type: f.type, required: !!f.required, constant: false, depth, group, rule: key, isList: key.endsWith('[]') };
 }
 
-/** The API request side, grouped Path / Query / Headers / Body (D-4); empty groups are left out. */
-export function requestRows(op: ContractOperation | null): Row[] {
+/**
+ * The API request side, grouped Path / Query / Headers / Body (D-4); empty groups are left out. `added` are the
+ * headers added on the board (D-27), listed after the contract's, without a type so any simple field fits.
+ */
+export function requestRows(op: ContractOperation | null, added: string[] = []): Row[] {
   if (!op) return [];
   const rows: Row[] = [];
   for (const [inKey, group] of [['path', 'Path'], ['query', 'Query'], ['header', 'Headers']] as const) {
@@ -102,6 +107,10 @@ export function requestRows(op: ContractOperation | null): Row[] {
         isList: false,
       });
     }
+  }
+  for (const name of added) {
+    const key = `headers.${name}`;
+    rows.push({ key, label: name, required: false, constant: false, depth: 0, group: 'Headers', rule: key, isList: false, added: true });
   }
   rows.push(...treeRows(op.requestBody, 'body', 'Body', 0));
   return rows;

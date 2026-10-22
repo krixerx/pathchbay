@@ -73,7 +73,8 @@ public class TestRunner {
             return failed("input", problems);
         }
 
-        // 2. The request the engine would send. Without a base URL yet the mock still runs; a real call can't.
+        // 2. The request the engine would send. Without a base URL or a header value yet the mock still runs; a real
+        // call can't.
         String baseUrl;
         String noBaseUrl = null;
         try {
@@ -81,6 +82,12 @@ public class TestRunner {
         } catch (IllegalArgumentException e) {
             baseUrl = "";
             noBaseUrl = e.getMessage();
+        }
+        List<Connections.Header> connectionHeaders = List.of();
+        try {
+            connectionHeaders = connections.headers(def);
+        } catch (IllegalArgumentException e) {
+            noBaseUrl = noBaseUrl == null ? e.getMessage() : noBaseUrl;
         }
         JsonNode mapped;
         String url;
@@ -99,6 +106,11 @@ public class TestRunner {
                 headers.put(h.getKey(), h.getValue().asText());
             }
         });
+        // As in the route: the connection's headers win over mapped ones of the same name (D-27).
+        for (Connections.Header h : connectionHeaders) {
+            headers.keySet().removeIf(k -> k.equalsIgnoreCase(h.name()));
+            headers.put(h.name(), h.value());
+        }
         String authHeader = null;
         String authQuery = null;
         if (def.auth() != null) {
@@ -109,7 +121,10 @@ public class TestRunner {
         String body = hasBody ? ci.requestBody(mapped.path("body")) : null;
 
         Map<String, Object> shownHeaders = new LinkedHashMap<>(headers);
+        IntegrationProcessors.maskSecrets(shownHeaders, connectionHeaders);
         if (authHeader != null) {
+            String auth = authHeader;
+            shownHeaders.keySet().removeIf(k -> k.equalsIgnoreCase(auth));
             shownHeaders.put(authHeader, "***");
         }
         String shownUrl = url + (query.isEmpty() && authQuery == null ? ""
@@ -148,7 +163,12 @@ public class TestRunner {
             HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url + (realQuery.isEmpty() ? "" : "?" + realQuery)))
                     .timeout(Duration.ofSeconds(10))
                     .method(def.target().method(), hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
-            headers.forEach(rb::header);
+            String auth = authHeader;
+            headers.forEach((k, v) -> {
+                if (auth == null || !k.equalsIgnoreCase(auth)) {
+                    rb.header(k, v);
+                }
+            });
             if (hasBody) {
                 rb.header("Content-Type", ci.requestContentType());
             }

@@ -178,8 +178,8 @@ public class ContractApiController {
     // ---- connections (D-26)
 
     /**
-     * A connection: its base URL in this environment and where it comes from. {@code usedBy}: drafts and live
-     * versions calling through it; a changed URL reaches the live ones at once.
+     * A connection: its base URL and headers (D-27) in this environment and where they come from. {@code usedBy}:
+     * drafts and live versions calling through it; a change reaches the live ones at once.
      */
     @GetMapping("/connections/{id}")
     public ResponseEntity<String> connection(@PathVariable String id) throws IOException {
@@ -190,13 +190,15 @@ public class ContractApiController {
         out.put("savedUrl", connections.fromFile(id));
         out.put("envName", Connections.envName(id));
         out.put("inEnv", connections.fromEnv(id) != null);
+        out.put("headers", connections.headerSettings(id));
         Path contract = store.root().resolve("contracts").resolve(id + ".json");
         out.put("servers", Files.isRegularFile(contract) ? readContract(id).servers() : List.of());
         out.put("usedBy", connectionUsers(id));
         return json(out);
     }
 
-    record ConnectionUpdate(String baseUrl) {
+    /** {@code headers} null leaves the headers as they are. */
+    record ConnectionUpdate(String baseUrl, List<Connections.HeaderUpdate> headers) {
     }
 
     @PutMapping("/connections/{id}")
@@ -211,7 +213,7 @@ public class ContractApiController {
                         + "), so it needs a base URL");
             }
         }
-        connections.save(id, req.baseUrl());
+        connections.save(id, req.baseUrl(), req.headers());
         if (connections.baseUrl(id) != null) {
             publisher.reconnect(id);
         }

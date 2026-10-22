@@ -91,6 +91,7 @@ export const api = {
     ),
   saveLinks: (slug: string, request: { from: string; to: string }[], response: { from: string; to: string }[]) =>
     call<IntegrationDraft>('PUT', `/integrations/${slug}/links`, { request, response }),
+  saveHeaders: (slug: string, headers: string[]) => call<IntegrationDraft>('PUT', `/integrations/${slug}/headers`, { headers }),
   saveFormats: (slug: string, formats: Formats) => call<IntegrationDraft>('PUT', `/integrations/${slug}/formats`, formats),
   test: (slug: string, input: unknown, real: boolean) => call<TestResult>('POST', `/integrations/${slug}/test`, { input, real }),
   versions: (slug: string) => call<VersionList>('GET', `/integrations/${slug}/versions`),
@@ -99,7 +100,8 @@ export const api = {
   activate: (slug: string, version: string) => call<VersionList>('POST', `/integrations/${slug}/versions/${version}/activate`),
   settings: (slug: string) => call<IntegrationSettings>('GET', `/integrations/${slug}/settings`),
   connection: (id: string) => call<Connection>('GET', `/connections/${id}`),
-  saveConnection: (id: string, baseUrl: string) => call<Connection>('PUT', `/connections/${id}`, { baseUrl }),
+  saveConnection: (id: string, baseUrl: string, headers: { name: string; value: string; secret: boolean }[]) =>
+    call<Connection>('PUT', `/connections/${id}`, { baseUrl, headers }),
   saveSettings: (slug: string, update: { baseUrl?: string; auth: Auth | null; secret?: string; removeSecret?: boolean }) =>
     call<IntegrationSettings>('PUT', `/integrations/${slug}/settings`, update),
 };
