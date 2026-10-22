@@ -65,15 +65,30 @@ class ContractApiTest {
         JsonNode draft = Json.MAPPER.readTree(chosen.body());
         assertThat(draft.path("target").path("method").asText()).isEqualTo("GET");
         assertThat(draft.path("target").path("path").asText()).isEqualTo("/api/v1/Books/{id}");
-        assertThat(draft.path("target").has("baseUrl")).as("no absolute server in this contract").isFalse();
+        // The base URL comes from the Swagger configuration's connection (D-26), never from the integration.
+        assertThat(draft.path("target").path("connection").asText()).isEqualTo("fake-rest-api");
+        assertThat(draft.path("target").has("baseUrl")).isFalse();
+        assertThat(Files.exists(CONFIG.resolve("connections/fake-rest-api.json"))).as("no absolute server in this contract").isFalse();
+        assertThat(send("PUT", "/integrations/get-book/settings", java.util.Map.of("baseUrl", "https://x")).body())
+                .contains("comes from its connection");
 
-        assertThat(send("PUT", "/integrations/get-book/settings", java.util.Map.of("baseUrl", "ftp://x")).body())
+        assertThat(send("PUT", "/connections/fake-rest-api", java.util.Map.of("baseUrl", "ftp://x")).body())
                 .contains("must start with http");
+        JsonNode connection = Json.MAPPER.readTree(send("PUT", "/connections/fake-rest-api",
+                java.util.Map.of("baseUrl", "https://fakerestapi.azurewebsites.net")).body());
+        assertThat(connection.path("baseUrl").asText()).isEqualTo("https://fakerestapi.azurewebsites.net");
+        assertThat(connection.path("envName").asText()).isEqualTo("MAPPER_URL_FAKE_REST_API");
+        assertThat(connection.path("usedBy").toString()).isEqualTo("[\"get-book\"]");
+        assertThat(send("GET", "/contracts", null).body()).contains("\"baseUrl\":\"https://fakerestapi.azurewebsites.net\"");
+        assertThat(Files.readString(CONFIG.resolve("services/get-book.json"))).doesNotContain("azurewebsites");
+
         HttpResponse<String> saved = send("PUT", "/integrations/get-book/settings", """
-                {"baseUrl":"https://fakerestapi.azurewebsites.net","auth":{"type":"bearer"},"secret":"top-secret"}""");
+                {"auth":{"type":"bearer"},"secret":"top-secret"}""");
         assertThat(saved.statusCode()).as(saved.body()).isEqualTo(200);
         JsonNode settings = Json.MAPPER.readTree(saved.body());
         assertThat(settings.path("secretInFile").asBoolean()).isTrue();
+        assertThat(settings.path("connection").asText()).isEqualTo("fake-rest-api");
+        assertThat(settings.path("baseUrl").asText()).isEqualTo("https://fakerestapi.azurewebsites.net");
         assertThat(settings.path("secretEnvName").asText()).isEqualTo("MAPPER_SECRET_GET_BOOK");
         assertThat(saved.body()).doesNotContain("top-secret");
         assertThat(Files.readString(CONFIG.resolve("services/get-book.json"))).doesNotContain("top-secret").contains("bearer");

@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,15 +30,17 @@ public class IntegrationPublisher {
     private final PayloadLibrary library;
     private final ConfigStore store;
     private final SecretResolver secrets;
+    private final Connections connections;
 
     public IntegrationPublisher(CamelContext camel, IntegrationGate gate, IntegrationRegistry registry,
-            PayloadLibrary library, ConfigStore store, SecretResolver secrets) {
+            PayloadLibrary library, ConfigStore store, SecretResolver secrets, Connections connections) {
         this.camel = camel;
         this.gate = gate;
         this.registry = registry;
         this.library = library;
         this.store = store;
         this.secrets = secrets;
+        this.connections = connections;
     }
 
     /** Publishes the draft {@code services/<slug>.json} as the next version and makes it live. Returns the version. */
@@ -97,7 +100,23 @@ public class IntegrationPublisher {
             def.auth().check(def.id());
             secret = secrets.resolve(def.id());
         }
-        return CompiledIntegration.compile(def, s.input(), s.output(), secret);
+        return CompiledIntegration.compile(def, s.input(), s.output(), secret, connections.resolve(def));
+    }
+
+    /**
+     * After a connection's base URL changed: every live integration using it goes live again with the new address,
+     * same version, one at a time behind its gate. Returns the slugs that were switched.
+     */
+    public synchronized List<String> reconnect(String connection) throws Exception {
+        List<String> switched = new ArrayList<>();
+        for (CompiledIntegration ci : registry.active().values()) {
+            ServiceDefinition def = ci.definition();
+            if (connection.equals(def.target().connection())) {
+                goLive(CompiledIntegration.compile(def, ci.input(), ci.output(), ci.secret(), connections.resolve(def)));
+                switched.add(def.id());
+            }
+        }
+        return switched;
     }
 
     /**
@@ -134,7 +153,7 @@ public class IntegrationPublisher {
             }
             registry.activate(compiled);
             camel.addRouteFromTemplate(routeId, IntegrationRoutes.templateId(def.target().method()),
-                    Map.of("slug", def.id(), "baseUrl", def.target().baseUrl()));
+                    Map.of("slug", def.id(), "baseUrl", compiled.baseUrl()));
         });
     }
 

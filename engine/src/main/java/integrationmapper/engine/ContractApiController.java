@@ -29,8 +29,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Console API for steps 2 and 3 and the integration's Settings page (D-3): import contracts, choose the operation,
- * set base URL, auth and secret. Same body handling as {@link ConsoleApiController} (engine's Jackson 2).
+ * Console API for Swagger configurations and their connections (D-26), choosing the operation, and the integration's
+ * Settings page (D-3): auth and secret. Same body handling as {@link ConsoleApiController} (engine's Jackson 2).
  */
 @RestController
 @RequestMapping("/admin/api")
@@ -40,19 +40,29 @@ public class ContractApiController {
     private final ContractImporter importer;
     private final SecretResolver secrets;
     private final PayloadLibrary library;
+    private final Connections connections;
+    private final IntegrationPublisher publisher;
+    private final IntegrationRegistry registry;
 
-    public ContractApiController(ConfigStore store, ContractImporter importer, SecretResolver secrets, PayloadLibrary library) {
+    public ContractApiController(ConfigStore store, ContractImporter importer, SecretResolver secrets, PayloadLibrary library,
+            Connections connections, IntegrationPublisher publisher, IntegrationRegistry registry) {
         this.store = store;
         this.importer = importer;
         this.secrets = secrets;
         this.library = library;
+        this.connections = connections;
+        this.publisher = publisher;
+        this.registry = registry;
     }
 
     // ---- contracts (step 2)
 
-    /** {@code usedBy}: integrations whose draft calls an operation of this contract. */
+    /**
+     * {@code usedBy}: integrations whose draft calls an operation of this contract. {@code baseUrl}: its connection's
+     * address in this environment, null when not set; {@code baseUrlInEnv} when it comes from the environment.
+     */
     public record ContractSummary(String id, String name, int operationCount, List<String> servers, int warningCount,
-            String importedAt, List<String> usedBy) {
+            String importedAt, List<String> usedBy, String baseUrl, boolean baseUrlInEnv) {
     }
 
     @GetMapping("/contracts")
@@ -60,7 +70,8 @@ public class ContractApiController {
         List<ContractSummary> out = new ArrayList<>();
         for (Contract c : allContracts()) {
             out.add(new ContractSummary(c.id(), c.name(), c.operations().size(), c.servers(),
-                    c.warnings() == null ? 0 : c.warnings().size(), c.importedAt(), usedBy(c.id())));
+                    c.warnings() == null ? 0 : c.warnings().size(), c.importedAt(), usedBy(c.id()), connections.baseUrl(c.id()),
+                    connections.fromEnv(c.id()) != null));
         }
         return json(out);
     }
@@ -164,14 +175,85 @@ public class ContractApiController {
         return json(out);
     }
 
+    // ---- connections (D-26)
+
+    /**
+     * A connection: its base URL in this environment and where it comes from. {@code usedBy}: drafts and live
+     * versions calling through it; a changed URL reaches the live ones at once.
+     */
+    @GetMapping("/connections/{id}")
+    public ResponseEntity<String> connection(@PathVariable String id) throws IOException {
+        checkConnectionId(id);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("id", id);
+        out.put("baseUrl", connections.baseUrl(id));
+        out.put("savedUrl", connections.fromFile(id));
+        out.put("envName", Connections.envName(id));
+        out.put("inEnv", connections.fromEnv(id) != null);
+        Path contract = store.root().resolve("contracts").resolve(id + ".json");
+        out.put("servers", Files.isRegularFile(contract) ? readContract(id).servers() : List.of());
+        out.put("usedBy", connectionUsers(id));
+        return json(out);
+    }
+
+    record ConnectionUpdate(String baseUrl) {
+    }
+
+    @PutMapping("/connections/{id}")
+    public ResponseEntity<String> saveConnection(@PathVariable String id, @RequestBody String body) throws Exception {
+        checkConnectionId(id);
+        ConnectionUpdate req = read(body, ConnectionUpdate.class);
+        boolean clearing = req.baseUrl() == null || req.baseUrl().isBlank();
+        if (clearing && connections.fromEnv(id) == null) {
+            List<String> live = liveUsers(id);
+            if (!live.isEmpty()) {
+                throw new IllegalArgumentException("Live integrations call through this connection (" + String.join(", ", live)
+                        + "), so it needs a base URL");
+            }
+        }
+        connections.save(id, req.baseUrl());
+        if (connections.baseUrl(id) != null) {
+            publisher.reconnect(id);
+        }
+        return connection(id);
+    }
+
+    private void checkConnectionId(String id) {
+        if (id == null || !id.matches("[a-z0-9]+(-[a-z0-9]+)*")) {
+            throw new IllegalArgumentException("No connection " + id);
+        }
+    }
+
+    private List<String> liveUsers(String id) {
+        return registry.active().values().stream().map(CompiledIntegration::definition)
+                .filter(d -> id.equals(d.target().connection())).map(ServiceDefinition::id).toList();
+    }
+
+    private List<String> connectionUsers(String id) throws IOException {
+        java.util.TreeSet<String> out = new java.util.TreeSet<>(liveUsers(id));
+        Path dir = store.root().resolve("services");
+        if (Files.isDirectory(dir)) {
+            try (Stream<Path> s = Files.list(dir)) {
+                for (Path p : s.filter(p -> p.getFileName().toString().endsWith(".json")).toList()) {
+                    JsonNode d = Json.MAPPER.readTree(p.toFile());
+                    if (id.equals(d.path("target").path("connection").asText(null))) {
+                        out.add(d.path("id").asText());
+                    }
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
     // ---- operation (step 3)
 
     record OperationChoice(String contract, String operationId) {
     }
 
     /**
-     * Sets the contract and operation of an integration: method and path come from the operation; the base URL is
-     * kept if set, otherwise the first absolute server URL of the contract (base URL rule). An Input or Output left
+     * Sets the contract and operation of an integration: method and path come from the operation, the base URL from
+     * the contract's connection (D-26). A connection without a URL yet gets the contract's first absolute server
+     * address. An Input or Output left
      * empty in step 1 ("fill from the API later") is created from the operation, already linked (see {@link Prefill}).
      * The response is the draft plus {@code notes} about the prefill; the notes are not stored.
      */
@@ -187,10 +269,12 @@ public class ContractApiController {
         ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
         target.put("method", op.method());
         target.put("path", op.path());
-        if (!target.hasNonNull("baseUrl") || target.get("baseUrl").asText().isBlank()) {
+        target.put("connection", c.id());
+        target.remove("baseUrl");
+        if (connections.baseUrl(c.id()) == null) {
             String first = c.servers().stream().filter(s -> s.startsWith("http://") || s.startsWith("https://")).findFirst().orElse(null);
             if (first != null) {
-                target.put("baseUrl", first);
+                connections.save(c.id(), first);
             }
         }
         List<String> notes = new ArrayList<>();
@@ -240,13 +324,17 @@ public class ContractApiController {
 
     // ---- settings page (D-3)
 
+    /**
+     * {@code connection}: the connection the integration calls through (its Swagger configuration), whose base URL is
+     * set under Configuration; null for files from before connections, which still carry {@code baseUrl} themselves.
+     */
     @GetMapping("/integrations/{slug}/settings")
     public ResponseEntity<String> settings(@PathVariable String slug) throws IOException {
         ObjectNode d = draft(slug);
-        List<String> servers = d.hasNonNull("contract") ? readContract(d.get("contract").asText()).servers() : List.of();
+        String connection = d.path("target").path("connection").asText(null);
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("baseUrl", d.path("target").path("baseUrl").asText(""));
-        out.put("servers", servers);
+        out.put("connection", connection);
+        out.put("baseUrl", connection != null ? connections.baseUrl(connection) : d.path("target").path("baseUrl").asText(null));
         out.put("auth", d.has("auth") ? d.get("auth") : null);
         out.put("secretEnvName", SecretResolver.envName(slug));
         out.put("secretInEnv", secrets.inEnv(slug));
@@ -262,9 +350,12 @@ public class ContractApiController {
         SettingsUpdate req = read(body, SettingsUpdate.class);
         ObjectNode d = draft(slug);
         if (req.baseUrl() != null) {
+            if (d.path("target").hasNonNull("connection")) {
+                throw new IllegalArgumentException("This integration's base URL comes from its connection; set it under Configuration");
+            }
             String url = req.baseUrl().strip();
-            if (!url.isEmpty() && !url.startsWith("http://") && !url.startsWith("https://")) {
-                throw new IllegalArgumentException("The base URL must start with http:// or https://");
+            if (!url.isEmpty()) {
+                Connections.check(url);
             }
             ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
             target.put("baseUrl", url);

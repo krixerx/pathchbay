@@ -27,10 +27,26 @@ function Integration({ slug }: { slug: string }) {
   const [testOpen, setTestOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [callsOpen, setCallsOpen] = useState(false);
+  const [baseUrl, setBaseUrl] = useState<string | null>(null);
 
   useEffect(() => {
     api.integration(slug).then(setDraft, (e: Error) => setError(e.message));
   }, [slug]);
+
+  // The base URL comes from the connection (D-26); fetched again when the operation (and so maybe the connection) changes.
+  const connection = draft?.target?.connection;
+  const operationId = draft?.operationId;
+  const literalUrl = draft?.target?.baseUrl ?? null;
+  useEffect(() => {
+    if (!connection) {
+      setBaseUrl(literalUrl);
+      return;
+    }
+    api.connection(connection).then(
+      (c) => setBaseUrl(c.baseUrl),
+      () => setBaseUrl(null),
+    );
+  }, [connection, operationId, literalUrl]);
 
   if (!draft) {
     return error ? (
@@ -67,7 +83,7 @@ function Integration({ slug }: { slug: string }) {
               <>
                 {' → calls '}
                 <Code>
-                  {draft.target.method} {draft.target.baseUrl ?? '(no base URL yet)'}
+                  {draft.target.method} {baseUrl ?? '(no base URL yet)'}
                   {draft.target.path}
                 </Code>
               </>
@@ -95,7 +111,7 @@ function Integration({ slug }: { slug: string }) {
         </Group>
       </Group>
 
-      <SetupBar draft={draft} linkCount={linkCount} onChange={setDraft} />
+      <SetupBar draft={draft} baseUrl={baseUrl} linkCount={linkCount} onChange={setDraft} />
 
       <MappingBoard
         key={`${draft.input}|${draft.output}|${draft.contract}|${draft.operationId}`}

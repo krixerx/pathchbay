@@ -22,8 +22,17 @@ public record ServiceDefinition(String id, String version, String activeVersion,
         this(id, version, activeVersion, input, output, target, auth, request, response, null);
     }
 
-    /** The external operation. {@code path} may contain {@code {name}} placeholders filled from the request script's {@code path} object. */
-    public record Target(String baseUrl, String method, String path) {
+    /**
+     * The external operation. {@code path} may contain {@code {name}} placeholders filled from the request script's
+     * {@code path} object. {@code connection} names the connection that gives the base URL in each environment
+     * (D-26); a literal {@code baseUrl} is only for files written before connections and for tests.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Target(String baseUrl, String method, String path, String connection) {
+
+        public Target(String baseUrl, String method, String path) {
+            this(baseUrl, method, path, null);
+        }
     }
 
     /**

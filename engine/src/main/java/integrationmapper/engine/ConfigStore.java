@@ -51,6 +51,11 @@ public class ConfigStore {
         return root.resolve("secrets").resolve(slug + ".json");
     }
 
+    /** A connection's base URL in this environment (D-26); like secrets, it is not moved between environments. */
+    public Path connection(String id) {
+        return root.resolve("connections").resolve(id + ".json");
+    }
+
     /** The versions stored for one integration, oldest first. */
     public List<String> versions(String slug) throws IOException {
         Path dir = versionsDir(slug);

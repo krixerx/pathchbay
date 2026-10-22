@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Anchor,
-  Autocomplete,
   Button,
   Code,
   CopyButton,
@@ -24,8 +23,9 @@ import { meaning } from '../theme';
 type AuthKind = 'none' | 'bearer' | 'apiKey';
 
 /**
- * The integration's connection settings, outside the stepper (D-3): base URL, how the external system is
- * authenticated, and the secret. The secret is never shown again after saving; the page says where it comes from.
+ * The integration's connection settings, outside the stepper (D-3): how the external system is authenticated, and the
+ * secret. The base URL belongs to the Swagger configuration's connection (D-26) and is only shown here; files from
+ * before connections still set it here. The secret is never shown again after saving; the page says where it comes from.
  */
 export function SettingsPage() {
   const { slug = '' } = useParams();
@@ -41,7 +41,7 @@ export function SettingsPage() {
 
   const load = (s: IntegrationSettings) => {
     setSettings(s);
-    setBaseUrl(s.baseUrl);
+    setBaseUrl(s.baseUrl ?? '');
     setKind(s.auth ? s.auth.type : 'none');
     if (s.auth?.type === 'apiKey') {
       setKeyIn(s.auth.in);
@@ -64,14 +64,13 @@ export function SettingsPage() {
   }
 
   const auth: Auth | null = kind === 'none' ? null : kind === 'bearer' ? { type: 'bearer' } : { type: 'apiKey', in: keyIn, name: keyName };
-  const absoluteServers = settings.servers.filter((s) => /^https?:\/\//.test(s));
 
   const save = async () => {
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
-      load(await api.saveSettings(slug, { baseUrl, auth, secret: secret || undefined }));
+      load(await api.saveSettings(slug, { baseUrl: settings.connection ? undefined : baseUrl, auth, secret: secret || undefined }));
       setSecret('');
       setSaved(true);
     } catch (e) {
@@ -101,20 +100,36 @@ export function SettingsPage() {
         </Text>
       </div>
 
-      <Autocomplete
-        label="Base URL"
-        description={
-          absoluteServers.length
-            ? 'Suggested from the contract; you can type another address'
-            : 'The contract has no absolute server address, so type it here'
-        }
-        placeholder="https://api.example.org"
-        data={absoluteServers}
-        value={baseUrl}
-        onChange={setBaseUrl}
-        error={!baseUrl ? 'Needed before the integration can be tested or published' : undefined}
-        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
-      />
+      {settings.connection ? (
+        <Stack gap={4}>
+          <Text fw={500} size="sm">
+            Base URL
+          </Text>
+          {settings.baseUrl ? (
+            <Code>{settings.baseUrl}</Code>
+          ) : (
+            <Text size="sm" c="yellow.8">
+              Not set yet: needed before the integration can be tested for real or published.
+            </Text>
+          )}
+          <Text size="sm" c="dimmed">
+            From the connection <Code>{settings.connection}</Code>, shared by every integration calling this system. Change it under{' '}
+            <Anchor component={Link} to="/configuration" size="sm">
+              Configuration
+            </Anchor>
+            .
+          </Text>
+        </Stack>
+      ) : (
+        <TextInput
+          label="Base URL"
+          description="This integration is from before connections; pick its operation again to use the Swagger configuration's connection."
+          placeholder="https://api.example.org"
+          value={baseUrl}
+          onChange={(e) => setBaseUrl(e.currentTarget.value)}
+          styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
+        />
+      )}
 
       <Stack gap="xs">
         <Text fw={500} size="sm">

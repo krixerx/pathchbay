@@ -18,7 +18,7 @@ const wordFilter: OptionsFilter = ({ options, search }) => {
  * configuration is called. All saved at once (D-1). An Input or Output left empty is created from the operation
  * when it is picked, already linked ("fill from the API").
  */
-export function SetupBar(props: { draft: IntegrationDraft; linkCount: number; onChange: (d: IntegrationDraft) => void }) {
+export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | null; linkCount: number; onChange: (d: IntegrationDraft) => void }) {
   const { draft } = props;
   const [definitions, setDefinitions] = useState<DefinitionSummary[]>([]);
   const [contracts, setContracts] = useState<ContractSummary[] | null>(null);
@@ -126,13 +126,13 @@ export function SetupBar(props: { draft: IntegrationDraft; linkCount: number; on
           />
         </Group>
 
-        {draft.operationId && draft.target && !draft.target.baseUrl && (
+        {draft.operationId && draft.target && !props.baseUrl && (
           <Alert color={meaning.warning} icon={<IconAlertTriangle />} p="xs">
-            This configuration has no absolute server address. Set the base URL on the{' '}
-            <Anchor component={Link} to={`/integrations/${draft.id}/settings`}>
-              Settings
-            </Anchor>{' '}
-            page.
+            This Swagger configuration has no base URL in this environment yet. Set it with <b>Connection</b> under{' '}
+            <Anchor component={Link} to="/configuration">
+              Configuration
+            </Anchor>
+            .
           </Alert>
         )}
         {notes.length > 0 && (

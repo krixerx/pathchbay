@@ -3,7 +3,7 @@
   "input" : "new-book",
   "output" : "book-ref",
   "target" : {
-    "baseUrl" : "https://fakerestapi.azurewebsites.net",
+    "connection" : "fake-rest-api",
     "method" : "POST",
     "path" : "/api/v1/Books"
   },

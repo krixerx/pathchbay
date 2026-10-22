@@ -1,6 +1,7 @@
 import type {
   Auth,
   CallList,
+  Connection,
   Contract,
   ContractOperation,
   Formats,
@@ -97,6 +98,8 @@ export const api = {
   publish: (slug: string) => call<VersionList>('POST', `/integrations/${slug}/publish`),
   activate: (slug: string, version: string) => call<VersionList>('POST', `/integrations/${slug}/versions/${version}/activate`),
   settings: (slug: string) => call<IntegrationSettings>('GET', `/integrations/${slug}/settings`),
+  connection: (id: string) => call<Connection>('GET', `/connections/${id}`),
+  saveConnection: (id: string, baseUrl: string) => call<Connection>('PUT', `/connections/${id}`, { baseUrl }),
   saveSettings: (slug: string, update: { baseUrl?: string; auth: Auth | null; secret?: string; removeSecret?: boolean }) =>
     call<IntegrationSettings>('PUT', `/integrations/${slug}/settings`, update),
 };

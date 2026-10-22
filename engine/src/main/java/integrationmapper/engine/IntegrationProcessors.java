@@ -90,7 +90,7 @@ public class IntegrationProcessors {
         // Nothing from the caller reaches the external system except what the mapping produces (OV-8).
         msg.removeHeaders("*");
         msg.setHeader(Exchange.HTTP_METHOD, target.method());
-        msg.setHeader(Exchange.HTTP_URI, stripTrailingSlash(target.baseUrl()) + fillPath(target.path(), mapped.path("path")));
+        msg.setHeader(Exchange.HTTP_URI, stripTrailingSlash(ci.baseUrl()) + fillPath(target.path(), mapped.path("path")));
         String query = toQuery(mapped.path("query"));
         msg.setHeader("Accept", ci.requestContentType());
         mapped.path("headers").properties().forEach(h -> {

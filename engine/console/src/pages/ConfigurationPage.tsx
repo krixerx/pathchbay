@@ -18,14 +18,16 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core';
-import { IconAlertTriangle, IconCheck, IconFileUpload, IconInfoCircle, IconLink, IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconFileUpload, IconInfoCircle, IconLink, IconPencil, IconPlugConnected, IconTrash } from '@tabler/icons-react';
 import { api } from '../api';
+import { ConnectionForm } from '../components/ConnectionForm';
 import type { Contract, ContractSummary } from '../model';
 import { meaning } from '../theme';
 
 /**
  * Configuration: the external systems' Swagger/OpenAPI files (D-5). Imported once here, used by any number of
- * integrations, which pick one of its operations on their board.
+ * integrations, which pick one of its operations on their board. Each has a connection with its base URL in this
+ * environment (D-26).
  */
 export function ConfigurationPage() {
   const [contracts, setContracts] = useState<ContractSummary[] | null>(null);
@@ -33,6 +35,7 @@ export function ConfigurationPage() {
   const [open, setOpen] = useState<Contract | null>(null);
   const [deleting, setDeleting] = useState<ContractSummary | null>(null);
   const [editing, setEditing] = useState<ContractSummary | null>(null);
+  const [connecting, setConnecting] = useState<ContractSummary | null>(null);
 
   const load = () => api.contracts().then(setContracts, (e: Error) => setError(e.message));
   useEffect(() => {
@@ -74,7 +77,7 @@ export function ConfigurationPage() {
             <Table.Tr>
               <Table.Th>External system</Table.Th>
               <Table.Th>Operations</Table.Th>
-              <Table.Th>Server</Table.Th>
+              <Table.Th>Base URL</Table.Th>
               <Table.Th>Used by</Table.Th>
               <Table.Th />
             </Table.Tr>
@@ -91,9 +94,20 @@ export function ConfigurationPage() {
                 </Table.Td>
                 <Table.Td>{c.operationCount}</Table.Td>
                 <Table.Td>
-                  <Text size="sm" ff="monospace">
-                    {c.servers.find((s) => s.startsWith('http')) ?? '(set per integration)'}
-                  </Text>
+                  {c.baseUrl ? (
+                    <Text size="sm" ff="monospace">
+                      {c.baseUrl}
+                      {c.baseUrlInEnv && (
+                        <Badge ml={6} size="xs" variant="light" color="gray">
+                          env
+                        </Badge>
+                      )}
+                    </Text>
+                  ) : (
+                    <Text size="sm" c="yellow.8">
+                      Not set
+                    </Text>
+                  )}
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm">{c.usedBy.length ? c.usedBy.join(', ') : '–'}</Text>
@@ -102,6 +116,9 @@ export function ConfigurationPage() {
                   <Group gap="xs" justify="flex-end" wrap="nowrap">
                     <Button size="compact-sm" variant="default" onClick={() => api.contract(c.id).then(setOpen, (e: Error) => setError(e.message))}>
                       Operations
+                    </Button>
+                    <Button size="compact-sm" variant="default" leftSection={<IconPlugConnected size={14} />} onClick={() => setConnecting(c)}>
+                      Connection
                     </Button>
                     <Button size="compact-sm" variant="default" leftSection={<IconPencil size={14} />} onClick={() => setEditing(c)}>
                       Edit
@@ -155,6 +172,10 @@ export function ConfigurationPage() {
             ))}
           </Stack>
         )}
+      </Modal>
+
+      <Modal opened={!!connecting} onClose={() => setConnecting(null)} title={`Connection of “${connecting?.name}”`} size="lg">
+        {connecting && <ConnectionForm key={connecting.id} id={connecting.id} onSaved={load} />}
       </Modal>
 
       <Modal opened={!!editing} onClose={() => setEditing(null)} title={`Edit “${editing?.name}”`} size="lg">

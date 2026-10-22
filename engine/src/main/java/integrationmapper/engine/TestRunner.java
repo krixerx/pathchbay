@@ -32,13 +32,15 @@ public class TestRunner {
     private final ConfigStore store;
     private final PayloadLibrary library;
     private final SecretResolver secrets;
+    private final Connections connections;
     private final HttpClient http;
 
-    public TestRunner(ConfigStore store, PayloadLibrary library, SecretResolver secrets,
+    public TestRunner(ConfigStore store, PayloadLibrary library, SecretResolver secrets, Connections connections,
             @Value("${mapper.outbound-timeout-ms:10000}") long timeoutMs) {
         this.store = store;
         this.library = library;
         this.secrets = secrets;
+        this.connections = connections;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(timeoutMs)).build();
     }
 
@@ -71,12 +73,20 @@ public class TestRunner {
             return failed("input", problems);
         }
 
-        // 2. The request the engine would send.
+        // 2. The request the engine would send. Without a base URL yet the mock still runs; a real call can't.
+        String baseUrl;
+        String noBaseUrl = null;
+        try {
+            baseUrl = connections.resolve(def);
+        } catch (IllegalArgumentException e) {
+            baseUrl = "";
+            noBaseUrl = e.getMessage();
+        }
         JsonNode mapped;
         String url;
         try {
             mapped = Json.MAPPER.readTree(ci.mapRequest(callerInput.toString()));
-            url = IntegrationProcessors.stripTrailingSlash(def.target().baseUrl() == null ? "" : def.target().baseUrl())
+            url = IntegrationProcessors.stripTrailingSlash(baseUrl)
                     + IntegrationProcessors.fillPath(def.target().path(), mapped.path("path"));
         } catch (RuntimeException e) {
             return failed("request", List.of(e.getMessage()));
@@ -119,8 +129,8 @@ public class TestRunner {
             status = op == null || op.responseStatus() == null ? 200 : Integer.parseInt(op.responseStatus());
             responseText = MockGenerator.example(op == null ? null : op.response()).toString();
         } else {
-            if (def.target().baseUrl() == null || def.target().baseUrl().isBlank()) {
-                return new Result("request", List.of("Set the base URL on the Settings page first"), request, null, null, false);
+            if (noBaseUrl != null) {
+                return new Result("request", List.of(noBaseUrl), request, null, null, false);
             }
             String secret = null;
             if (def.auth() != null) {

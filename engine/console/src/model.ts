@@ -72,7 +72,8 @@ export interface IntegrationDraft {
   activeVersion?: string;
   contract?: string;
   operationId?: string;
-  target?: { baseUrl?: string; method?: string; path?: string };
+  /** `connection` gives the base URL in each environment (D-26); a literal `baseUrl` only in older files. */
+  target?: { baseUrl?: string; method?: string; path?: string; connection?: string };
   formats?: Formats;
   request?: { links: unknown[] };
   response?: { links: unknown[] };
@@ -87,6 +88,21 @@ export interface ContractSummary {
   servers: string[];
   warningCount: number;
   importedAt: string;
+  usedBy: string[];
+  /** Its connection's base URL in this environment (D-26), null when not set. */
+  baseUrl: string | null;
+  baseUrlInEnv: boolean;
+}
+
+/** Where a Swagger configuration's external system is in this environment (D-26). */
+export interface Connection {
+  id: string;
+  /** The address in use: the environment variable's, else the saved one. */
+  baseUrl: string | null;
+  savedUrl: string | null;
+  envName: string;
+  inEnv: boolean;
+  servers: string[];
   usedBy: string[];
 }
 
@@ -158,8 +174,9 @@ export type Auth =
   | { type: 'apiKey'; in: 'header' | 'query'; name: string };
 
 export interface IntegrationSettings {
-  baseUrl: string;
-  servers: string[];
+  /** The connection the integration calls through; null only in files from before connections. */
+  connection: string | null;
+  baseUrl: string | null;
   auth: Auth | null;
   secretEnvName: string;
   secretInEnv: boolean;

@@ -103,13 +103,15 @@ Types: `text`, `number`, `integer`, `boolean`, `date`, `datetime`, `object` (wit
   "version": "1.0.0",
   "input": "book-ref",
   "output": "book-details",
-  "target": { "baseUrl": "https://fakerestapi.azurewebsites.net", "method": "GET", "path": "/api/v1/Books/{id}" },
+  "target": { "connection": "fake-rest-api", "method": "GET", "path": "/api/v1/Books/{id}" },
   "request":  { "links": [ { "from": "br-bookId", "to": "path.id" } ] },
   "response": { "links": [ { "from": "id", "to": "bd-bookId" }, { "from": "title", "to": "bd-title" } ] }
 }
 ```
 
 Optional `"formats": { "request": "xml", "requestRoot": "Book", "output": "xml", "outputRoot": "bookRef" }` (D-24) sends the request body to the external system as XML under `<Book>` and returns XML under `<bookRef>` to callers; either part left out means JSON. The external answer is read as XML or JSON by its Content-Type. When reading XML the root element is dropped, elements and attributes become fields, repeated elements become lists (also a single one where a response link expects a list), and values get the Output definition's types.
+
+`target.connection` names the connection whose base URL is used (D-26): `MAPPER_URL_<ID>` if set, else `connections/<id>.json` with `{"baseUrl": "https://..."}`. The console names the connection after the Swagger configuration and writes that file with **Connection** under Configuration. `connections/` and `secrets/` belong to one environment; everything else in the folder can be moved between environments unchanged. A literal `target.baseUrl` still works in files from before connections; at startup, drafts that came from a Swagger configuration move it into that configuration's connection.
 
 Request links go from an Input field id to `path.`, `query.`, `headers.` or `body.` of the external call. Response links go from a dotted path in the external response to an Output field id. The caller uses the same HTTP method as `target.method`: a JSON body for POST/PUT/PATCH, query parameters for GET/DELETE.
 

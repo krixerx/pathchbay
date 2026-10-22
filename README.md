@@ -103,6 +103,7 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 | `SERVER_PORT` (option `--server.port`) | `8080` | Port of the console, the admin API and the published integrations. |
 | `MAPPER_OUTBOUNDTIMEOUTMS` (option `--mapper.outbound-timeout-ms`) | `10000` | How long a call to an external system may take, in milliseconds; after that the caller gets `504`. |
 | `INBOUND_API_KEY` | not set | When set, every call to a published integration, the console and the admin API must send this value in the `X-API-Key` header, otherwise `401`. The console asks for it once per browser tab. Not set: nothing is checked, which is meant for a closed Docker network only. |
+| `MAPPER_URL_<ID>` | not set | The base URL of a Swagger configuration's connection in this environment, for example `MAPPER_URL_FAKE_REST_API` for the configuration `fake-rest-api` (id in capitals, other characters as `_`). It wins over the address set with **Connection** under Configuration. |
 | `MAPPER_SECRET_<SLUG>` | not set | The token or API key an integration sends to its external system, for example `MAPPER_SECRET_CREATE_USER` for the integration `create-user` (slug in capitals, other characters as `_`). It wins over a secret typed on the integration's Settings page. |
 | `MAPPER_CALL_LOG` | `on` | `on` keeps the last 100 live calls of each integration in memory, with what the caller sent, the request sent out, the answer and the mapped output, shown under **Calls** on the board. `off` keeps none of that; each call still writes one line without data to the log. |
 
@@ -116,7 +117,7 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 
 ## How to build an integration
 
-1. **Configuration:** import the external system's Swagger or OpenAPI file (upload or URL). Every integration can use it.
+1. **Configuration:** import the external system's Swagger or OpenAPI file (upload or URL). Every integration can use it. Its **Connection** holds the base URL in this environment, taken from the file when it has an absolute server address.
 2. **Payload definitions** (optional): describe what your callers send and get back, by hand or from a pasted JSON sample.
 3. **Integrations → New integration**, then on its board pick the Input, the Output, the Swagger configuration and the operation. Leave Input or Output empty to have it created from the operation, already linked.
 4. **Map:** click a field on the left, then the field on the right it goes into; a line connects them. Red lines can't be published; amber warnings can. **Test** runs a sample through the same code as a live call. The JSON/XML switch next to the tabs sets how the request goes out and what callers get back.
@@ -124,7 +125,11 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 6. **Calls:** every live call, step by step, with where it stopped if it failed. `docker logs` shows one line per call.
 7. **OpenAPI:** `http://localhost:8080/api/openapi.json` describes every live integration, `/api/openapi/<slug>.json` one of them (linked from the Integrations list and the Publish dialog). Give it to callers, or import it under Configuration so one integration can call another; then set that integration's base URL to the engine itself and, if `INBOUND_API_KEY` is set, its auth to an API key in the `X-API-Key` header.
 
-Base URL, authentication and the secret are on the integration's **Settings** page.
+Authentication and the secret are on the integration's **Settings** page; the base URL belongs to the Swagger configuration's connection.
+
+## Environments
+
+Integrations and their versions never contain an address or a secret: they name a connection, and each environment sets that connection's base URL (`MAPPER_URL_<ID>` or **Connection** under Configuration) and the integrations' secrets (`MAPPER_SECRET_<SLUG>` or Settings). So the same version file can run in DEV, TEST and LIVE. The folders `connections/` and `secrets/` in the configuration folder belong to their environment and are not copied along. Integrations published before connections existed keep their literal base URL in those older version files until they are published again.
 
 ## More
 

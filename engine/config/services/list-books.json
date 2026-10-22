@@ -3,7 +3,7 @@
   "input" : "no-input",
   "output" : "book-list",
   "target" : {
-    "baseUrl" : "https://fakerestapi.azurewebsites.net",
+    "connection" : "fake-rest-api",
     "method" : "GET",
     "path" : "/api/v1/Books"
   },

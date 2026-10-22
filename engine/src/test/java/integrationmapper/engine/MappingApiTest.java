@@ -113,8 +113,8 @@ class MappingApiTest {
         assertThat(bad.path("problems").toString()).contains("title: required").contains("pages: must be a whole number");
 
         // Real call, here to the local fake; the API key is used but only shown as ***.
-        send("PUT", "/integrations/add-book/settings", Map.of("baseUrl", "http://localhost:" + port + "/fake",
-                "auth", Map.of("type", "apiKey", "in", "header", "name", "X-Api-Key")));
+        send("PUT", "/connections/fake-rest-api", Map.of("baseUrl", "http://localhost:" + port + "/fake"));
+        send("PUT", "/integrations/add-book/settings", Map.of("auth", Map.of("type", "apiKey", "in", "header", "name", "X-Api-Key")));
         JsonNode real = send("POST", "/integrations/add-book/test", Map.of("input", Map.of("title", "Real", "pages", 9), "real", true));
         assertThat(real.path("stage").asText()).as(real.toString()).isEqualTo("done");
         assertThat(real.path("mock").asBoolean()).isFalse();

@@ -3,7 +3,7 @@
   "input": "new-user",
   "output": "user-ref",
   "target": {
-    "baseUrl": "https://gorest.co.in",
+    "connection": "gorest",
     "method": "POST",
     "path": "/public/v2/users"
   },
