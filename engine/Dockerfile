@@ -1,6 +1,6 @@
 # One image for the engine, the admin API and the console (spec ADR-003). Build from engine/:
-#   docker build -t integration-mapper .
-#   docker run -p 8080:8080 -v mapper-config:/config integration-mapper
+#   docker build -t patchbay .
+#   docker run -p 8080:8080 -v mapper-config:/config patchbay
 # Tests are not run here; run `mvn test` and `npm test` before building.
 
 # 1. The console, built into src/main/resources/static (vite.config.ts outDir).

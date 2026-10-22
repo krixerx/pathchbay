@@ -149,6 +149,12 @@ The step order stays as the user defined it. Step 1 does not depend on later ste
 > - Mapping stays JSON-to-JSON; conversion happens only at the edges, with Jackson's XML module (Apache-2.0). Conventions: the root element is dropped when reading and named when writing; child elements and attributes both become fields; repeated elements become a list, and a place a response link treats as a list is always a list, also with one item or none; a list is written as repeated elements; text read from XML gets the Output definition's types (numbers, booleans, lists).
 > - Not yet: callers sending XML (they send JSON or query parameters), engine error bodies in XML (they stay JSON), namespaces, writing attributes, and building the API trees from an XML schema (they still come from the Swagger configuration).
 
+> **D-25 The product is called Patchbay (user decision, 2026-10-22; resolves the name part of OQ-006).** User: "use Pathchbay, update documentation, add Pathchbay also to user interface or maybe we can find a good logo for it and use logo in user interface" (spelled Patchbay, as proposed).
+> - A patch bay connects any output to any input with a short cable, which is what the board does. The name is not tied to REST, JSON or Swagger, so it still fits once XML and SOAP are in.
+> - Logo: a teal tile with jacks on both sides and two cables between them; filled jacks are connected, hollow ones free, like the dots on the board. It is in the console header (with the name, linking to Integrations), the browser tab icon and the README.
+> - The documents, the console, the OpenAPI title and the Docker image name (`patchbay`) say Patchbay. Code identifiers keep the old working name (`integrationmapper` package, `mapper.*` properties, `MAPPER_*` variables, the `mapper-config` volume in examples), so existing setups keep working.
+> - Not done: a trademark and registry check of the name, and the Docker Hub organisation.
+
 - **D-1 Home and drafts:** after login the user lands on an **Integrations** list (name, active version, Draft/Published, last edited) with one primary button, "New integration". A new integration starts by asking its name, and the slug is derived from it (editable until first publish). The draft autosaves to `/config` on every change, so a refresh or closed tab loses nothing. Opening a published integration opens its draft (created from the active version if none exists).
 
 - **D-2 Step 4 layout and hierarchy:** first, a one-line status bar under the stepper: "3 required fields unmapped · last test passed 12:04". Each part is a link that jumps to the row or the test result. Second, the two trees side by side at full width. Third, the Test panel as a resizable right drawer, closed until the first link exists and then open by default (its width is remembered). This replaces the wireframe's three equal columns.
@@ -274,7 +280,7 @@ STEP | USER DOES                                  | USER FEELS                  
 - Do users want step 1 at all, or do they prefer to start from the API? The slice supports both. Observe which one people pick.
 - Should the mapping be stored only as the spec's JSON model, or should expert users be able to edit DataSonnet directly (spec FR-026)? Not needed for the slice.
 - UI name for the data model: "Payload definition" (recommended: it says what it is, a JSON shape, and fits API users), "Domain" (fits DDD people, vague to analysts) or "Table" (implies flat rows, which contradicts nested objects and arrays). Pick before writing UI text.
-- Product name and Docker Hub org (spec OQ-006). Still open. "EasyLink" is not recommended.
+- Product name and Docker Hub org (spec OQ-006). Name decided: **Patchbay** (D-25). The Docker Hub org is still open.
 - Kaoto DataMapper in the browser: not available as of Oct 2026. Watch Kaoto releases; if a web build with JSON support ships, evaluate replacing our step-4 board with it (would need DataSonnet output or accepting XSLT).
 
 ## Success Criteria

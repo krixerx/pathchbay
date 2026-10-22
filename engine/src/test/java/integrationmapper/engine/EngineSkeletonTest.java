@@ -27,7 +27,7 @@ class EngineSkeletonTest {
               {"id":"nb-title","name":"title","type":"text","required":true},
               {"id":"nb-pages","name":"pages","type":"integer","required":true},
               {"id":"nb-published","name":"published","type":"datetime"},
-              {"id":"nb-source","name":"source","type":"text","value":"Integration Mapper"}]}""";
+              {"id":"nb-source","name":"source","type":"text","value":"Patchbay"}]}""";
     static final String BOOK_REF = """
             {"id":"book-ref","fields":[
               {"id":"br-bookId","name":"bookId","type":"integer","required":true},
@@ -111,7 +111,7 @@ class EngineSkeletonTest {
         assertThat(r.statusCode()).isEqualTo(200);
         assertThat(Json.MAPPER.readTree(r.body())).isEqualTo(Json.MAPPER.readTree("{\"bookId\":99,\"title\":\"T\"}"));
         assertThat(sentBody()).isEqualTo(Json.MAPPER.readTree(
-                "{\"title\":\"T\",\"pageCount\":42,\"excerpt\":\"Integration Mapper\"}"));
+                "{\"title\":\"T\",\"pageCount\":42,\"excerpt\":\"Patchbay\"}"));
 
         HttpHeaders sent = (HttpHeaders) fake.lastRequest.get("headers");
         assertThat(sent.containsHeader("X-API-Key")).as("caller key must not reach the vendor").isFalse();
@@ -122,7 +122,7 @@ class EngineSkeletonTest {
     @Test
     void constantCannotBeOverriddenByTheCaller() throws Exception {
         post("create-book", "application/json", "{\"title\":\"T\",\"pages\":1,\"source\":\"caller\"}");
-        assertThat(sentBody().path("excerpt").asText()).isEqualTo("Integration Mapper");
+        assertThat(sentBody().path("excerpt").asText()).isEqualTo("Patchbay");
     }
 
     @Test

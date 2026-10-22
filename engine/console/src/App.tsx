@@ -1,5 +1,6 @@
-import { AppShell, Group, NavLink, Text } from '@mantine/core';
+import { AppShell, Group, NavLink, Text, UnstyledButton } from '@mantine/core';
 import { Link, Outlet, createHashRouter, useLocation } from 'react-router-dom';
+import { Logo } from './components/Logo';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { IntegrationPage } from './pages/IntegrationPage';
 import { DefinitionsPage } from './pages/DefinitionsPage';
@@ -15,9 +16,14 @@ function Layout() {
     <AppShell header={{ height: 56 }} padding="lg">
       <AppShell.Header px="lg">
         <Group h="100%" gap="xl">
-          <Text fw={600} size="lg">
-            Integration Mapper
-          </Text>
+          <UnstyledButton component={Link} to="/" aria-label="Patchbay, go to Integrations">
+            <Group gap={8} wrap="nowrap">
+              <Logo />
+              <Text fw={600} size="lg">
+                Patchbay
+              </Text>
+            </Group>
+          </UnstyledButton>
           <Group gap="xs" component="nav" aria-label="Main">
             <NavLink component={Link} to="/" label="Integrations" active={section === 'integrations'} w="auto" />
             <NavLink component={Link} to="/definitions" label="Payload definitions" active={section === 'definitions'} w="auto" />

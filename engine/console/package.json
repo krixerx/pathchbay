@@ -1,5 +1,5 @@
 {
-  "name": "integration-mapper-console",
+  "name": "patchbay-console",
   "private": true,
   "version": "0.0.1",
   "type": "module",

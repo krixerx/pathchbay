@@ -1,8 +1,52 @@
-# Integration Mapper
+<p align="center"><img src="docs/images/patchbay-logo.svg" width="96" alt=""></p>
 
-Connect your own data model to an external REST API without writing code. Import the API's OpenAPI (Swagger) file, link your fields to theirs in the browser, and publish: the result is a live, versioned REST endpoint, served by the engine in the same container.
+<h1 align="center">Patchbay</h1>
 
-Working name; the product name is still open (spec OQ-006).
+<p align="center"><b>Draw lines between two APIs. Get a live endpoint.</b></p>
+
+Connect your own data model to an external REST API without writing code. Import the API's OpenAPI (Swagger) file, draw lines from your fields to theirs in the browser, and press **Publish**. The result is a live, versioned REST endpoint that callers can use, served by the same container.
+
+![The mapping board: the external API's response on the left, your Output on the right, a line for every link](docs/images/mapping-board.png)
+
+The name comes from the patch bay of a studio or server room: a panel where any output is connected to any input with a short cable, without rebuilding anything behind it.
+
+## Why use it
+
+Most integration work is the same small job over and over: take what a caller sends, reshape it into what another system expects, call it, and reshape the answer back. Usually that means a new service, a mapping class, tests, a deployment and a change request every time a field moves. Here it is a board you edit and a button you press.
+
+- **No code to keep alive.** The mapping is plain JSON in a folder. The engine turns it into Apache Camel routes and DataSonnet scripts when it starts or when you publish, so there is nothing generated to maintain.
+- **Your model stays yours.** Callers see your field names and shapes, not the vendor's. When the vendor changes, you move a line, not your callers.
+- **Try before you publish.** **Test** runs a sample through exactly the code a live call uses, against a mock built from the contract or the real system, and shows each step: what the caller sent, the request that went out, the answer, and your Output.
+- **Safe changes.** Every publish is an immutable version. Links that can't work are shown in red and block publishing. Any earlier version can be made live again with one click, without a restart.
+- **JSON or XML.** Send the request to the external system as JSON or XML and return JSON or XML to callers, with one switch per direction. XML answers are read automatically.
+- **See what happened.** **Calls** shows the last live calls step by step, including where a failed one stopped.
+- **Callers get documentation.** Every live integration appears in an OpenAPI document at `/api/openapi.json`, ready for Swagger UI, code generators, or for another integration to call.
+- **One small container.** No database, no message broker. Configuration is files you can keep in Git.
+
+## How a call flows
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as Client
+    box Patchbay engine
+    participant I as Input mapping
+    participant R as Response mapping
+    end
+    participant E as External system
+
+    C->>I: call /api/v1/integrations/slug<br/>JSON body or query parameters
+    Note over I: check against your Input definition<br/>your fields → path, query, headers, body
+    I->>E: request as JSON or XML, with the integration's own credentials
+    E->>R: answer, JSON or XML
+    Note over R: their fields → your Output fields
+    R->>C: your Output as JSON or XML
+```
+
+1. **The client calls the integration** with the same HTTP method as the external operation: a JSON body for POST, PUT and PATCH, query parameters for GET and DELETE. The engine checks the call against your Input definition and answers `400` with every problem listed if it doesn't fit. Then your links build the external request: path parameters, query parameters, headers and body. Fields the caller did not send are left out.
+2. **The request goes out** as JSON or XML. The caller's own headers never reach the external system; the integration adds its own credentials.
+3. **The external system answers** in JSON or XML. If it answers with an error, the caller gets the same status and body; if it is too slow or unreachable, the caller gets `504` or `502`.
+4. **The caller gets your Output.** Your response links turn the answer into your Output, list by list and field by field, and the caller gets it as JSON or XML. The call appears under **Calls** on the board.
 
 ## What you need
 
@@ -17,8 +61,8 @@ No database or other service is needed. Everything is stored as JSON files in on
 
 ```bash
 cd engine
-docker build -t integration-mapper .
-docker run -p 8080:8080 -v mapper-config:/config integration-mapper
+docker build -t patchbay .
+docker run -p 8080:8080 -v mapper-config:/config patchbay
 ```
 
 Open **http://localhost:8080**. Your work is saved in the named volume `mapper-config` and survives restarts and new images. To use a folder on your computer instead, mount it (`-v ./mapper-config:/config`); on Linux create it first and give it to the container user: `mkdir mapper-config && sudo chown 10001 mapper-config`.
@@ -29,7 +73,7 @@ With variables (see the table below):
 docker run -p 8080:8080 -v mapper-config:/config \
   -e INBOUND_API_KEY=choose-a-long-random-value \
   -e MAPPER_SECRET_CREATE_USER=your-gorest-token \
-  integration-mapper
+  patchbay
 ```
 
 ## Run it without Docker
@@ -75,7 +119,7 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 1. **Configuration:** import the external system's Swagger or OpenAPI file (upload or URL). Every integration can use it.
 2. **Payload definitions** (optional): describe what your callers send and get back, by hand or from a pasted JSON sample.
 3. **Integrations → New integration**, then on its board pick the Input, the Output, the Swagger configuration and the operation. Leave Input or Output empty to have it created from the operation, already linked.
-4. **Map:** click a field on the left, then the field on the right it goes into; a line connects them. Red lines can't be published; amber warnings can. **Test** runs a sample through the same code as a live call.
+4. **Map:** click a field on the left, then the field on the right it goes into; a line connects them. Red lines can't be published; amber warnings can. **Test** runs a sample through the same code as a live call. The JSON/XML switch next to the tabs sets how the request goes out and what callers get back.
 5. **Publish:** shows the live URL and a ready `curl` command. Earlier versions can be made active again.
 6. **Calls:** every live call, step by step, with where it stopped if it failed. `docker logs` shows one line per call.
 7. **OpenAPI:** `http://localhost:8080/api/openapi.json` describes every live integration, `/api/openapi/<slug>.json` one of them (linked from the Integrations list and the Publish dialog). Give it to callers, or import it under Configuration so one integration can call another; then set that integration's base URL to the engine itself and, if `INBOUND_API_KEY` is set, its auth to an API key in the `X-API-Key` header.

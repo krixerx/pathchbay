@@ -1,4 +1,4 @@
-# DESIGN.md — Integration Mapper console
+# DESIGN.md — Patchbay console
 
 Decided in the design review (`docs/slice-plan.md`, D-1 … D-20). The console is an app for finishing a task (operate mode): calm surfaces, dense but readable, one accent, colors that always mean the same thing. Implemented in `engine/console/src/theme.ts`.
 
@@ -32,7 +32,7 @@ A color is never the only signal: it always comes with an icon and words (D-16, 
 ## Layout
 
 - Desktop first, from 1280px. Below 1024px the mapping step shows "Use a wider screen to map fields"; other pages work at any width (D-17).
-- Header: product name, then the two areas: **Integrations** and **Payload definitions** (D-1, D-8).
+- Header: the Patchbay logo and name (links to Integrations), then **Integrations**, **Payload definitions** and **Configuration** (D-21, D-25). The logo is a teal (shade 8) tile with jacks on both sides and two cables: filled jacks are connected, hollow ones free, as on the board. Files: `engine/console/src/components/Logo.tsx`, `engine/console/public/favicon.svg`, `docs/images/patchbay-logo.svg`.
 - An integration shows the 5-step stepper: 1 Payload, 2 Import, 3 Operation, 4 Map, 5 Publish. Connection settings live on the integration's Settings page, not in the stepper (D-3).
 
 ## Words

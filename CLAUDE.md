@@ -25,11 +25,11 @@ Main ways the slice differs from the spec: no React Flow canvas (two trees, sour
 
 - Requirements have stable IDs: `FR-xxx`, `NFR-xxx`, `ADR-xxx`, `OQ-xxx`, `TODO-xxx`. Commit messages and tests MUST reference the requirement ID they implement.
 - MUST / SHOULD / MAY follow RFC 2119; FR priorities use MoSCoW.
-- "Integration Mapper" is a working name (OQ-006 is open). Keep it search-and-replace safe: no derived abbreviations baked into identifiers.
+- The product is called **Patchbay** (OQ-006, decided 2026-10-22, D-25). Code identifiers still use the old working name (`integrationmapper` package, `integration-mapper-spec.md`, the `mapper.*` properties and `MAPPER_*` variables); new user-facing text says Patchbay. Keep the name out of identifiers so it stays search-and-replace safe.
 
 ## Planned architecture (from the spec)
 
-Integration Mapper lets an analyst import an external contract (OpenAPI 2/3, API Blueprint, WSDL), define internal entities, map fields visually in both directions, and publish the mapping as a versioned REST endpoint run by Apache Camel. One inbound call always maps to exactly one outbound operation; there is no orchestration in v1 (OQ-001).
+Patchbay lets an analyst import an external contract (OpenAPI 2/3, API Blueprint, WSDL), define internal entities, map fields visually in both directions, and publish the mapping as a versioned REST endpoint run by Apache Camel. One inbound call always maps to exactly one outbound operation; there is no orchestration in v1 (OQ-001).
 
 Planned stack: Java 21, Spring Boot 3, Apache Camel 4 with `camel-datasonnet`, `camel-cxf-soap` for SOAP, swagger-parser; console in React + TypeScript + Vite with React Flow (`@xyflow/react`) for the mapping board (ADR-001, ADR-002). All dependencies must be OSI-approved and Apache-2.0 compatible (NFR-009).
 

@@ -41,7 +41,7 @@ public class OpenApiController {
 
     @GetMapping("/api/openapi.json")
     public ResponseEntity<String> all() {
-        return json(document("Integration Mapper", "live", registry.active().values().stream().toList()));
+        return json(document("Patchbay", "live", registry.active().values().stream().toList()));
     }
 
     @GetMapping("/api/openapi/{slug}.json")

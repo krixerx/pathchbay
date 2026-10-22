@@ -1,4 +1,4 @@
-# Integration Mapper engine
+# Patchbay engine
 
 Spring Boot 4.1.1, Apache Camel 4.23.0, Java 21, with the console (React, in `console/`) built into the same jar. Plan: `../docs/slice-plan.md`.
 
@@ -15,7 +15,7 @@ curl localhost:8080/admin/integrations
 # create-book: POST with a JSON body (your field names → FakeRESTApi's)
 curl -X POST localhost:8080/api/v1/integrations/create-book \
   -H 'Content-Type: application/json' \
-  -d '{"title":"Integration Mapper","summary":"No-code API mapping","pages":42,"published":"2026-10-20T00:00:00Z"}'
+  -d '{"title":"Patchbay","summary":"No-code API mapping","pages":42,"published":"2026-10-20T00:00:00Z"}'
 
 # get-book: GET with query parameters; bookId goes into the external path /api/v1/Books/{id}
 curl "localhost:8080/api/v1/integrations/get-book?bookId=7"
@@ -88,7 +88,7 @@ Reusable shapes for what callers send (Input) and get back (Output). Each field 
   "fields": [
     { "id": "nb-title", "name": "title", "type": "text", "required": true },
     { "id": "nb-pages", "name": "pages", "type": "integer", "required": true },
-    { "id": "nb-source", "name": "source", "type": "text", "value": "Created by Integration Mapper" }
+    { "id": "nb-source", "name": "source", "type": "text", "value": "Created by Patchbay" }
   ]
 }
 ```

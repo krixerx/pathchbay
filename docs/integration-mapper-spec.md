@@ -1,4 +1,4 @@
-# Integration Mapper — Product & Architecture Spec
+# Patchbay (formerly Integration Mapper) — Product & Architecture Spec
 
 Oct 20, 2026 · @Erki
 
@@ -10,7 +10,7 @@ This spec is written to be fed directly to AI coding agents and to humans: every
 
 - Requirement IDs: `FR-xxx` functional, `NFR-xxx` non-functional, `ADR-xxx` architecture decision, `OQ-xxx` open question.
 - Keywords MUST, SHOULD, MAY follow RFC 2119.
-- Working product name: **Integration Mapper** (rename freely; search-and-replace safe).
+- Product name: **Patchbay** (OQ-006, 2026-10-22). It was "Integration Mapper" before; that working name remains in code identifiers and file names.
 - When an agent implements a feature, it MUST reference the requirement ID in commit messages and tests.
 - Anything not stated here is out of scope until added as a requirement.
 
@@ -34,7 +34,7 @@ This spec is written to be fed directly to AI coding agents and to humans: every
 
 ## Product vision, goals and non-goals
 
-Integration Mapper lets an analyst connect two systems without writing code: import the provider's contract, draw lines between fields, publish, and the engine exposes a working, versioned API.
+Patchbay lets an analyst connect two systems without writing code: import the provider's contract, draw lines between fields, publish, and the engine exposes a working, versioned API.
 
 **Goals**
 
@@ -167,7 +167,7 @@ The console and admin API exist only to produce files; the engine reads those fi
 flowchart LR
   analyst["Analyst<br/>browser, basic auth"] --> console
   consumer["Consumer system<br/>REST + API key"] --> engine
-  subgraph image["Integration Mapper, one Docker image"]
+  subgraph image["Patchbay, one Docker image"]
     console["Console<br/>React + React Flow mapping board"] --> admin
     admin["Admin API + generator<br/>mapping model to DataSonnet + Camel"] -- "publish: hot-load route" --> engine
     engine["Engine<br/>Apache Camel 4 + DataSonnet, versioned routes"]
@@ -645,7 +645,7 @@ v1 delivers REST and SOAP one-to-one integrations end to end; protocols and orch
 - [ ] OQ-003 — Resolved: plain JSON files, one per configuration item, linked from one main JSON file (opencode-style). Promotion = copy the folder; Git is optional.
 - [ ] OQ-004 — Resolved: performance goal is "as fast as possible"; the engine is designed for minimum overhead (see Performance design principles), and the NFR numbers are minimum gates checked in CI, not the goal.
 - [ ] OQ-005 — Deferred: v1 inbound is synchronous REST only; async services moved to the TODO list below for later discussion.
-- [ ] OQ-006 — Final product name and Docker Hub organisation. "EasyLink" proposed but not recommended (existing EasyLink integration/messaging brand, see Product name); pick from the candidates after a Docker Hub, GitHub, Maven Central, npm and trademark check.
+- [ ] OQ-006 — Resolved for the name: **Patchbay** (user decision 2026-10-22, slice plan D-25). Still open: the Docker Hub organisation, and a trademark and registry check of the name (Docker Hub, GitHub, npm, Maven Central, domains). Original question: final product name and Docker Hub organisation. "EasyLink" proposed but not recommended (existing EasyLink integration/messaging brand, see Product name); pick from the candidates after a Docker Hub, GitHub, Maven Central, npm and trademark check.
 
 **TODO — to discuss later**
 
