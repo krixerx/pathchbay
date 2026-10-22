@@ -97,7 +97,7 @@ final class InputValidator {
         return out;
     }
 
-    private static JsonNode coerce(String s, String type) {
+    static JsonNode coerce(String s, String type) {
         JsonNodeFactory n = JsonNodeFactory.instance;
         try {
             return switch (type) {

@@ -83,7 +83,7 @@ public class TestRunner {
         }
         String query = IntegrationProcessors.toQuery(mapped.path("query"));
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Accept", "application/json");
+        headers.put("Accept", ci.requestContentType());
         mapped.path("headers").properties().forEach(h -> {
             if (!h.getValue().isNull()) {
                 headers.put(h.getKey(), h.getValue().asText());
@@ -96,7 +96,7 @@ public class TestRunner {
             authQuery = "query".equals(def.auth().in()) ? def.auth().name() : null;
         }
         boolean hasBody = BODY_METHODS.contains(def.target().method());
-        String body = hasBody ? Json.MAPPER.writeValueAsString(mapped.path("body")) : null;
+        String body = hasBody ? ci.requestBody(mapped.path("body")) : null;
 
         Map<String, Object> shownHeaders = new LinkedHashMap<>(headers);
         if (authHeader != null) {
@@ -108,11 +108,12 @@ public class TestRunner {
         request.put("method", def.target().method());
         request.put("url", shownUrl);
         request.put("headers", shownHeaders);
-        request.put("body", hasBody ? mapped.path("body") : null);
+        request.put("body", !hasBody ? null : def.wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : mapped.path("body"));
 
         // 3. The answer: mock from the contract, or the real system.
         int status;
         String responseText;
+        String contentType = "application/json";
         if (!real) {
             Contract.Operation op = operation(def);
             status = op == null || op.responseStatus() == null ? 200 : Integer.parseInt(op.responseStatus());
@@ -139,7 +140,7 @@ public class TestRunner {
                     .method(def.target().method(), hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
             headers.forEach(rb::header);
             if (hasBody) {
-                rb.header("Content-Type", "application/json");
+                rb.header("Content-Type", ci.requestContentType());
             }
             if (authHeader != null) {
                 rb.header(authHeader, "Authorization".equals(authHeader) ? "Bearer " + secret : secret);
@@ -148,6 +149,7 @@ public class TestRunner {
                 HttpResponse<String> r = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
                 status = r.statusCode();
                 responseText = r.body();
+                contentType = r.headers().firstValue("Content-Type").orElse(null);
             } catch (IOException e) {
                 return new Result("response", List.of("The external system did not answer: " + e.getMessage()), request, null, null, false);
             } catch (InterruptedException e) {
@@ -169,7 +171,8 @@ public class TestRunner {
                 ? List.of("The contract does not describe the response of this operation, so the mock answer is empty. Try a real call to see real data.")
                 : List.of();
         try {
-            JsonNode output = Json.MAPPER.readTree(ci.mapResponse(responseText == null || responseText.isBlank() ? "{}" : responseText));
+            String mappedOutput = ci.outputBody(ci.mapResponse(responseText, contentType));
+            JsonNode output = def.wire().outputXml() ? Json.MAPPER.getNodeFactory().textNode(mappedOutput) : Json.MAPPER.readTree(mappedOutput);
             return new Result("done", notes, request, response, output, !real);
         } catch (RuntimeException e) {
             return new Result("output", List.of("Response mapping failed: " + e.getMessage()), request, response, null, !real);

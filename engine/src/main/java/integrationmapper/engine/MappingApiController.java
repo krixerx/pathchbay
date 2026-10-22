@@ -72,6 +72,23 @@ public class MappingApiController {
         return json(d);
     }
 
+    /** Saves the wire formats (D-24); all JSON removes the setting, so drafts that never used XML stay as they were. */
+    @PutMapping("/formats")
+    public ResponseEntity<String> saveFormats(@PathVariable String slug, @RequestBody String body) throws IOException {
+        ServiceDefinition.Formats f = read(body, ServiceDefinition.Formats.class);
+        f.check(slug);
+        ObjectNode d = draft(slug);
+        if (f.requestXml() || f.outputXml()) {
+            ServiceDefinition.Formats kept = new ServiceDefinition.Formats(f.requestXml() ? "xml" : null,
+                    f.requestXml() ? f.requestRoot() : null, f.outputXml() ? "xml" : null, f.outputXml() ? f.outputRoot() : null);
+            d.set("formats", Json.MAPPER.valueToTree(kept));
+        } else {
+            d.remove("formats");
+        }
+        store.writeJson(store.service(slug), d);
+        return json(d);
+    }
+
     record TestRequest(JsonNode input, boolean real) {
     }
 

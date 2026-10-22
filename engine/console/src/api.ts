@@ -3,6 +3,7 @@ import type {
   CallList,
   Contract,
   ContractOperation,
+  Formats,
   ContractSummary,
   TestResult,
   VersionList,
@@ -87,6 +88,7 @@ export const api = {
     ),
   saveLinks: (slug: string, request: { from: string; to: string }[], response: { from: string; to: string }[]) =>
     call<IntegrationDraft>('PUT', `/integrations/${slug}/links`, { request, response }),
+  saveFormats: (slug: string, formats: Formats) => call<IntegrationDraft>('PUT', `/integrations/${slug}/formats`, formats),
   test: (slug: string, input: unknown, real: boolean) => call<TestResult>('POST', `/integrations/${slug}/test`, { input, real }),
   versions: (slug: string) => call<VersionList>('GET', `/integrations/${slug}/versions`),
   calls: (slug: string) => call<CallList>('GET', `/integrations/${slug}/calls`),

@@ -92,7 +92,7 @@ public class IntegrationProcessors {
         msg.setHeader(Exchange.HTTP_METHOD, target.method());
         msg.setHeader(Exchange.HTTP_URI, stripTrailingSlash(target.baseUrl()) + fillPath(target.path(), mapped.path("path")));
         String query = toQuery(mapped.path("query"));
-        msg.setHeader("Accept", "application/json");
+        msg.setHeader("Accept", ci.requestContentType());
         mapped.path("headers").properties().forEach(h -> {
             if (!h.getValue().isNull()) {
                 msg.setHeader(h.getKey(), h.getValue().asText());
@@ -124,17 +124,17 @@ public class IntegrationProcessors {
         if (!query.isEmpty()) {
             msg.setHeader(Exchange.HTTP_QUERY, query);
         }
+        String body = null;
         if (BODY_METHODS.contains(target.method())) {
-            msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
-            msg.setBody(Json.MAPPER.writeValueAsString(mapped.path("body")));
-        } else {
-            msg.setBody(null);
+            body = ci.requestBody(mapped.path("body"));
+            msg.setHeader(Exchange.CONTENT_TYPE, ci.requestContentType());
         }
+        msg.setBody(body);
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("method", target.method());
         request.put("url", msg.getHeader(Exchange.HTTP_URI, String.class) + (shownQuery.isEmpty() ? "" : "?" + shownQuery));
         request.put("headers", shownHeaders);
-        request.put("body", BODY_METHODS.contains(target.method()) ? mapped.path("body") : null);
+        request.put("body", body == null ? null : ci.definition().wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : mapped.path("body"));
         trace.request = request;
         trace.stage = "response";
     }
@@ -144,8 +144,9 @@ public class IntegrationProcessors {
         CompiledIntegration ci = registry.get(exchange.getProperty(SLUG, String.class));
         int status = msg.getHeader(Exchange.HTTP_RESPONSE_CODE, 200, Integer.class);
         String body = msg.getBody(String.class);
+        String contentType = msg.getHeader(Exchange.CONTENT_TYPE, String.class);
         msg.removeHeaders("*");
-        msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
+        msg.setHeader(Exchange.CONTENT_TYPE, ci.outputContentType());
         Trace trace = exchange.getProperty(TRACE, Trace.class);
         if (calls.enabled()) {
             Map<String, Object> response = new LinkedHashMap<>();
@@ -159,13 +160,14 @@ public class IntegrationProcessors {
             // Runtime rule: external errors pass through with their status and body.
             msg.setHeader(Exchange.HTTP_RESPONSE_CODE, status);
             msg.setHeader("X-Integration-Error", "remote");
+            msg.setHeader(Exchange.CONTENT_TYPE, contentType == null ? "application/json" : contentType);
             msg.setBody(body);
             return;
         }
         trace.stage = "output";
         String output;
         try {
-            output = ci.mapResponse(blankToEmptyObject(body));
+            output = ci.outputBody(ci.mapResponse(body, contentType));
         } catch (Exception e) {
             throw new MappingException("response mapping failed: " + e.getMessage(), e);
         }

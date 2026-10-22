@@ -109,6 +109,8 @@ Types: `text`, `number`, `integer`, `boolean`, `date`, `datetime`, `object` (wit
 }
 ```
 
+Optional `"formats": { "request": "xml", "requestRoot": "Book", "output": "xml", "outputRoot": "bookRef" }` (D-24) sends the request body to the external system as XML under `<Book>` and returns XML under `<bookRef>` to callers; either part left out means JSON. The external answer is read as XML or JSON by its Content-Type. When reading XML the root element is dropped, elements and attributes become fields, repeated elements become lists (also a single one where a response link expects a list), and values get the Output definition's types.
+
 Request links go from an Input field id to `path.`, `query.`, `headers.` or `body.` of the external call. Response links go from a dotted path in the external response to an Output field id. The caller uses the same HTTP method as `target.method`: a JSON body for POST/PUT/PATCH, query parameters for GET/DELETE.
 
 ## Lists
@@ -139,4 +141,4 @@ Any broken link (unknown field id) or link that breaks these rules stops the ver
 
 ## Not built yet
 
-JSON ↔ XML (TODO-T4), extra outbound headers (TODO-T3), transforms and conditions (TODO-T1), a CI build of the image.
+XML from callers, XML namespaces and SOAP (rest of TODO-T4), extra outbound headers (TODO-T3), transforms and conditions (TODO-T1), a CI build of the image.

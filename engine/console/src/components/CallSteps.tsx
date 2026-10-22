@@ -31,22 +31,27 @@ export function CallSteps(props: {
           ))}
         </Alert>
       )}
-      {result.input !== undefined && result.input !== null && <Block title="Caller sent">{JSON.stringify(result.input, null, 2)}</Block>}
+      {result.input !== undefined && result.input !== null && <Block title="Caller sent">{show(result.input)}</Block>}
       {result.request && (
         <Block title="Request sent">
           {`${result.request.method} ${result.request.url}\n`}
           {Object.entries(result.request.headers)
             .map(([k, v]) => `${k}: ${v}`)
             .join('\n')}
-          {result.request.body !== null && result.request.body !== undefined ? `\n\n${JSON.stringify(result.request.body, null, 2)}` : ''}
+          {result.request.body !== null && result.request.body !== undefined ? `\n\n${show(result.request.body)}` : ''}
         </Block>
       )}
       {result.response && (
-        <Block title={`Answer ${result.response.status}`}>{JSON.stringify(result.response.body, null, 2) ?? '(empty)'}</Block>
+        <Block title={`Answer ${result.response.status}`}>{show(result.response.body) ?? '(empty)'}</Block>
       )}
-      {result.output !== undefined && result.output !== null && <Block title="Mapped to Output">{JSON.stringify(result.output, null, 2)}</Block>}
+      {result.output !== undefined && result.output !== null && <Block title="Mapped to Output">{show(result.output)}</Block>}
     </Stack>
   );
+}
+
+/** JSON pretty-printed; an XML body arrives as text and is shown as it was sent. */
+function show(v: unknown): string {
+  return typeof v === 'string' ? v : JSON.stringify(v, null, 2);
 }
 
 function Block(props: { title: string; children: React.ReactNode }) {

@@ -39,6 +39,7 @@ import {
   responseRows,
 } from '../../board';
 import { meaning } from '../../theme';
+import { FormatSwitch } from './FormatSwitch';
 
 const ROW_HEIGHT = 34;
 const GUTTER = 120;
@@ -157,18 +158,20 @@ export function MappingBoard(props: {
         onSwitch={() => props.onTab(otherTab)}
       />
 
-      <SegmentedControl
-        value={tab}
-        onChange={(v) => {
-          props.onTab(v as Tab);
-          setSelected(null);
-        }}
-        data={[
-          { value: 'request', label: 'Input → API request' },
-          { value: 'response', label: 'API response → Output' },
-        ]}
-        style={{ alignSelf: 'flex-start' }}
-      />
+      <Group justify="space-between" wrap="nowrap">
+        <SegmentedControl
+          value={tab}
+          onChange={(v) => {
+            props.onTab(v as Tab);
+            setSelected(null);
+          }}
+          data={[
+            { value: 'request', label: 'Input → API request' },
+            { value: 'response', label: 'API response → Output' },
+          ]}
+        />
+        <FormatSwitch draft={draft} tab={tab} onChange={props.onChange} onError={setError} />
+      </Group>
 
       <Text size="sm" c="dimmed" aria-live="polite">
         {sourceRow

@@ -48,6 +48,27 @@ class FakeBooksApi {
         return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1}");
     }
 
+    /** An XML flavour of create (D-24): takes a Book element, answers one. */
+    @PostMapping("/fake/xml/Books")
+    ResponseEntity<String> createXml(@RequestBody String body, @RequestHeader HttpHeaders headers) throws Exception {
+        lastRequest.put("body", body);
+        lastRequest.put("headers", headers);
+        JsonNode in = new com.fasterxml.jackson.dataformat.xml.XmlMapper().readTree(body);
+        return ResponseEntity.ok().header("Content-Type", "application/xml")
+                .body("<Book id=\"99\"><title>" + in.path("title").asText() + "</title><pageCount>" + in.path("pageCount").asText()
+                        + "</pageCount></Book>");
+    }
+
+    /** An XML list of {@code count} books; one book is a single element, which XML can't tell from a non-list. */
+    @GetMapping("/fake/xml/Books")
+    ResponseEntity<String> listXml(@org.springframework.web.bind.annotation.RequestParam int count) {
+        StringBuilder sb = new StringBuilder("<Books>");
+        for (int i = 1; i <= count; i++) {
+            sb.append("<Book><id>").append(i).append("</id><title>Book ").append(i).append("</title></Book>");
+        }
+        return ResponseEntity.ok().header("Content-Type", "text/xml;charset=UTF-8").body(sb.append("</Books>").toString());
+    }
+
     @GetMapping("/fake/api/v1/Books/{id}")
     ResponseEntity<String> get(@PathVariable String id, @RequestHeader HttpHeaders headers) {
         lastRequest.put("path", id);

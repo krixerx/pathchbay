@@ -56,6 +56,11 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
+            <!-- JSON <-> XML at the edges of a call (TODO-T4, D-24); Jackson 2, like Json.MAPPER -->
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-xml</artifactId>
+        </dependency>
+        <dependency>
             <!-- OpenAPI 3 parsing; converts Swagger 2.0 on import (D-5) -->
             <groupId>io.swagger.parser.v3</groupId>
             <artifactId>swagger-parser</artifactId>

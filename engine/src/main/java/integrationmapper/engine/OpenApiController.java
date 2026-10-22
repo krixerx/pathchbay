@@ -98,8 +98,12 @@ public class OpenApiController {
                     .set("schema", object(inputFields));
         }
         ObjectNode responses = op.putObject("responses");
-        responses.putObject("200").put("description", "The Output").putObject("content").putObject("application/json")
-                .set("schema", object(ci.output().fields() == null ? List.of() : ci.output().fields()));
+        ObjectNode outputSchema = object(ci.output().fields() == null ? List.of() : ci.output().fields());
+        if (def.wire().outputXml()) {
+            outputSchema.putObject("xml").put("name", def.wire().outputRoot());
+        }
+        responses.putObject("200").put("description", "The Output").putObject("content").putObject(ci.outputContentType())
+                .set("schema", outputSchema);
         if (keyRequired) {
             responses.set("401", errorResponse("The X-API-Key header is missing or does not match"));
         }

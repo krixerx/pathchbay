@@ -53,6 +53,17 @@ export interface IntegrationSummary {
   problem?: string;
 }
 
+/**
+ * Wire formats (D-24): how the request body goes to the external system and what callers get back. Missing means
+ * JSON. An XML document needs a root element name.
+ */
+export interface Formats {
+  request?: 'json' | 'xml';
+  requestRoot?: string;
+  output?: 'json' | 'xml';
+  outputRoot?: string;
+}
+
 export interface IntegrationDraft {
   id: string;
   name?: string;
@@ -62,6 +73,7 @@ export interface IntegrationDraft {
   contract?: string;
   operationId?: string;
   target?: { baseUrl?: string; method?: string; path?: string };
+  formats?: Formats;
   request?: { links: unknown[] };
   response?: { links: unknown[] };
   /** Only in the answer to choosing an operation: what "fill from the API later" created. */
