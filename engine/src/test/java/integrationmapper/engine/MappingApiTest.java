@@ -121,5 +121,24 @@ class MappingApiTest {
         assertThat(real.path("request").path("headers").path("X-Api-Key").asText()).isEqualTo("***");
         assertThat(((HttpHeaders) fake.lastRequest.get("headers")).getFirst("X-Api-Key")).isEqualTo("k-123");
         assertThat(real.toString()).doesNotContain("k-123");
+
+        // Step 5: publish, publish again, roll back; versions come newest first.
+        JsonNode v1 = send("POST", "/integrations/add-book/publish", null);
+        assertThat(v1.path("activeVersion").asText()).isEqualTo("1.0.0");
+        send("POST", "/integrations/add-book/publish", null);
+        JsonNode rolledBack = send("POST", "/integrations/add-book/versions/1.0.0/activate", null);
+        assertThat(rolledBack.path("activeVersion").asText()).isEqualTo("1.0.0");
+        assertThat(rolledBack.path("versions").findValuesAsText("version")).containsExactly("1.1.0", "1.0.0");
+        assertThat(rolledBack.path("versions").get(0).path("publishedAt").asText()).isNotEmpty();
+
+        // R8: a broken link makes publish impossible, also when the console is bypassed.
+        send("PUT", "/integrations/add-book/links", """
+                {"request":[{"from":"nb-gone","to":"body.title"}],"response":[]}""");
+        HttpResponse<String> refused = http.send(HttpRequest.newBuilder(
+                URI.create("http://localhost:" + port + "/admin/api/integrations/add-book/publish"))
+                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(refused.statusCode()).isEqualTo(400);
+        assertThat(refused.body()).contains("nb-gone");
+        assertThat(send("GET", "/integrations/add-book/versions", null).path("versions")).hasSize(2);
     }
 }

@@ -113,6 +113,12 @@ export interface TestResult {
   mock: boolean;
 }
 
+/** Published versions of one integration, newest first (engine MappingApiController). */
+export interface VersionList {
+  activeVersion: string | null;
+  versions: { version: string; publishedAt: string | null }[];
+}
+
 export type Auth =
   | { type: 'bearer' }
   | { type: 'apiKey'; in: 'header' | 'query'; name: string };

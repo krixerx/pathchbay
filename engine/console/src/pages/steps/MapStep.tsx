@@ -50,12 +50,12 @@ interface BoardData {
 }
 
 /** Step 4, the mapping board (D-2, D-4, D-6, D-7, D-11, D-12, D-15, D-17, D-20). */
-export function MapStep(props: { draft: IntegrationDraft; onChange: (d: IntegrationDraft) => void }) {
+export function MapStep(props: { draft: IntegrationDraft; onChange: (d: IntegrationDraft) => void; initialTab?: Tab }) {
   const { draft } = props;
   const wide = useMediaQuery('(min-width: 1024px)');
   const [data, setData] = useState<BoardData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('request');
+  const [tab, setTab] = useState<Tab>(props.initialTab ?? 'request');
   const [links, setLinks] = useState<Record<Tab, Link[]>>({
     request: (draft.request?.links as Link[]) ?? [],
     response: (draft.response?.links as Link[]) ?? [],

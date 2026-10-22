@@ -30,11 +30,13 @@ public class MappingApiController {
     private final ConfigStore store;
     private final PayloadLibrary library;
     private final TestRunner tests;
+    private final IntegrationPublisher publisher;
 
-    public MappingApiController(ConfigStore store, PayloadLibrary library, TestRunner tests) {
+    public MappingApiController(ConfigStore store, PayloadLibrary library, TestRunner tests, IntegrationPublisher publisher) {
         this.store = store;
         this.library = library;
         this.tests = tests;
+        this.publisher = publisher;
     }
 
     /** The draft, both payload definitions and the chosen operation, in one call. */
@@ -74,6 +76,40 @@ public class MappingApiController {
         TestRequest req = read(body, TestRequest.class);
         draft(slug); // 400 for an unknown integration
         return json(tests.run(slug, req.input() == null ? Json.MAPPER.createObjectNode() : req.input(), req.real()));
+    }
+
+    /** Step 5: publishes the draft as the next version (R8: the engine refuses broken links, with the list). */
+    @PostMapping("/publish")
+    public ResponseEntity<String> publish(@PathVariable String slug) throws Exception {
+        draft(slug);
+        publisher.publishDraft(slug);
+        return versions(slug);
+    }
+
+    /** Step 5 rollback: makes an earlier version live again, without writing a new version file. */
+    @PostMapping("/versions/{version}/activate")
+    public ResponseEntity<String> activate(@PathVariable String slug, @PathVariable String version) throws Exception {
+        draft(slug);
+        publisher.activateVersion(slug, version);
+        return versions(slug);
+    }
+
+    record VersionInfo(String version, String publishedAt) {
+    }
+
+    /** Published versions, newest first, and which one is live. */
+    @GetMapping("/versions")
+    public ResponseEntity<String> versions(@PathVariable String slug) throws IOException {
+        ObjectNode d = draft(slug);
+        List<VersionInfo> list = new java.util.ArrayList<>();
+        for (String v : store.versions(slug).reversed()) {
+            JsonNode snapshot = Json.MAPPER.readTree(store.version(slug, v).toFile());
+            list.add(new VersionInfo(v, snapshot.path("publishedAt").asText(null)));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("activeVersion", d.path("activeVersion").asText(null));
+        out.put("versions", list);
+        return json(out);
     }
 
     // ---- helpers

@@ -1,4 +1,5 @@
 import type { ContractOperation, Field, FieldType, PayloadDefinition } from './model';
+import { TYPE_LABELS } from './model';
 import { checkLink, REASON_TEXT, typesFit } from './linkRules';
 import type { ListLink } from './linkRules';
 
@@ -139,9 +140,15 @@ export function linkStates(links: Link[], sources: Row[], targets: Row[]): LinkS
     if (!t) return { kind: 'broken', reason: `Field ${l.to} no longer exists` };
     const reason = checkLink(s.rule, t.rule, listLinks);
     if (reason) return { kind: 'red', reason: REASON_TEXT[reason] };
-    if (!typesFit(s.type, t.type)) return { kind: 'red', reason: `A ${s.type} can't go into a ${t.type} field` };
+    if (!typesFit(s.type, t.type)) return { kind: 'red', reason: typeReason(s.type, t.type) };
     return { kind: 'ok' };
   });
+}
+
+/** D-6 in plain words, with the same type names as everywhere else (D-4). */
+function typeReason(from?: FieldType, to?: FieldType): string {
+  const label = (t?: FieldType) => (t ? TYPE_LABELS[t] : 'unknown');
+  return `A ${label(from)} value can't go into a ${label(to)} field`;
 }
 
 /** Whether a target row can take a link from the selected source, and why not (D-12 rule 6, D-6). */
@@ -156,7 +163,7 @@ export function canLink(source: Row, target: Row, links: Link[], sources: Row[],
   });
   const reason = checkLink(source.rule, target.rule, listLinks);
   if (reason) return REASON_TEXT[reason];
-  if (!typesFit(source.type, target.type)) return `A ${source.type} can't go into a ${target.type} field`;
+  if (!typesFit(source.type, target.type)) return typeReason(source.type, target.type);
   return null;
 }
 

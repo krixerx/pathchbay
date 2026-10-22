@@ -4,6 +4,7 @@ import type {
   ContractOperation,
   ContractSummary,
   TestResult,
+  VersionList,
   DefinitionSummary,
   IntegrationDraft,
   IntegrationSettings,
@@ -56,6 +57,9 @@ export const api = {
   saveLinks: (slug: string, request: { from: string; to: string }[], response: { from: string; to: string }[]) =>
     call<IntegrationDraft>('PUT', `/integrations/${slug}/links`, { request, response }),
   test: (slug: string, input: unknown, real: boolean) => call<TestResult>('POST', `/integrations/${slug}/test`, { input, real }),
+  versions: (slug: string) => call<VersionList>('GET', `/integrations/${slug}/versions`),
+  publish: (slug: string) => call<VersionList>('POST', `/integrations/${slug}/publish`),
+  activate: (slug: string, version: string) => call<VersionList>('POST', `/integrations/${slug}/versions/${version}/activate`),
   settings: (slug: string) => call<IntegrationSettings>('GET', `/integrations/${slug}/settings`),
   saveSettings: (slug: string, update: { baseUrl?: string; auth: Auth | null; secret?: string; removeSecret?: boolean }) =>
     call<IntegrationSettings>('PUT', `/integrations/${slug}/settings`, update),

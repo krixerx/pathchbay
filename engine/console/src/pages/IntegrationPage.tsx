@@ -9,6 +9,8 @@ import { PayloadStep } from './steps/PayloadStep';
 import { ImportStep } from './steps/ImportStep';
 import { OperationStep } from './steps/OperationStep';
 import { MapStep } from './steps/MapStep';
+import { PublishStep } from './steps/PublishStep';
+import type { Tab } from '../board';
 
 /** One integration: the 5 steps (D-2, D-19). Finished steps can be reopened at any time (D-19). */
 export function IntegrationPage() {
@@ -22,6 +24,8 @@ function Integration({ slug }: { slug: string }) {
   const [active, setActive] = useState(0);
   // The contract chosen in step 2; saved into the draft together with the operation in step 3.
   const [contractId, setContractId] = useState<string | null>(null);
+  // The board tab to open when step 5 sends the user to a problem ("Show").
+  const [mapTab, setMapTab] = useState<Tab>('request');
 
   useEffect(() => {
     api.integration(slug).then(
@@ -45,8 +49,8 @@ function Integration({ slug }: { slug: string }) {
   }
 
   const linkCount = (draft.request?.links?.length ?? 0) + (draft.response?.links?.length ?? 0);
-  // Step 5 is not built yet; step 4 needs the operation from step 3.
-  const reachable = (step: number) => step <= 2 || (step === 3 && !!draft.operationId);
+  // Steps 4 and 5 need the operation from step 3.
+  const reachable = (step: number) => step <= 2 || !!draft.operationId;
 
   return (
     <Stack gap="lg" maw={1200}>
@@ -89,15 +93,19 @@ function Integration({ slug }: { slug: string }) {
           <OperationStep draft={draft} contractId={contractId} linkCount={linkCount} onChange={setDraft} onBack={() => setActive(1)} />
         </Stepper.Step>
         <Stepper.Step label="Map" description="Link fields" allowStepSelect={!!draft.operationId}>
-          <MapStep draft={draft} onChange={setDraft} />
+          <MapStep draft={draft} onChange={setDraft} initialTab={mapTab} />
         </Stepper.Step>
-        <Stepper.Step label="Publish" description="Make it live" allowStepSelect={false} />
+        <Stepper.Step label="Publish" description="Make it live" allowStepSelect={!!draft.operationId}>
+          <PublishStep
+            draft={draft}
+            onChange={setDraft}
+            onShow={(tab) => {
+              setMapTab(tab);
+              setActive(3);
+            }}
+          />
+        </Stepper.Step>
       </Stepper>
-
-      <Text size="sm" c="dimmed">
-        Step 5 (Publish) comes in the next build step. Until then, publish with{' '}
-        <Code>POST /admin/integrations/{draft.id}/publish</Code>.
-      </Text>
     </Stack>
   );
 }
