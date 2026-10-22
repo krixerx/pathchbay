@@ -32,7 +32,7 @@ function Integration({ slug }: { slug: string }) {
       (d) => {
         setDraft(d);
         setContractId(d.contract ?? null);
-        setActive(!d.input || !d.output ? 0 : !d.contract ? 1 : !d.operationId ? 2 : 3);
+        setActive(!d.contract ? (!d.input || !d.output ? 0 : 1) : !d.operationId ? 2 : 3);
       },
       (e: Error) => setError(e.message),
     );
@@ -90,7 +90,7 @@ function Integration({ slug }: { slug: string }) {
           />
         </Stepper.Step>
         <Stepper.Step label="Operation" description="What to call">
-          <OperationStep draft={draft} contractId={contractId} linkCount={linkCount} onChange={setDraft} onBack={() => setActive(1)} />
+          <OperationStep draft={draft} contractId={contractId} linkCount={linkCount} onChange={setDraft} onBack={() => setActive(1)} onNext={() => setActive(3)} />
         </Stepper.Step>
         <Stepper.Step label="Map" description="Link fields" allowStepSelect={!!draft.operationId}>
           <MapStep draft={draft} onChange={setDraft} initialTab={mapTab} />

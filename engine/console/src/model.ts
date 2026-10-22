@@ -64,6 +64,8 @@ export interface IntegrationDraft {
   target?: { baseUrl?: string; method?: string; path?: string };
   request?: { links: unknown[] };
   response?: { links: unknown[] };
+  /** Only in the answer to choosing an operation: what "fill from the API later" created. */
+  notes?: string[];
 }
 
 export interface ContractSummary {

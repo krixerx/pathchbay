@@ -35,11 +35,13 @@ public class ContractApiController {
     private final ConfigStore store;
     private final ContractImporter importer;
     private final SecretResolver secrets;
+    private final PayloadLibrary library;
 
-    public ContractApiController(ConfigStore store, ContractImporter importer, SecretResolver secrets) {
+    public ContractApiController(ConfigStore store, ContractImporter importer, SecretResolver secrets, PayloadLibrary library) {
         this.store = store;
         this.importer = importer;
         this.secrets = secrets;
+        this.library = library;
     }
 
     // ---- contracts (step 2)
@@ -90,7 +92,9 @@ public class ContractApiController {
 
     /**
      * Sets the contract and operation of an integration: method and path come from the operation; the base URL is
-     * kept if set, otherwise the first absolute server URL of the contract (base URL rule).
+     * kept if set, otherwise the first absolute server URL of the contract (base URL rule). An Input or Output left
+     * empty in step 1 ("fill from the API later") is created from the operation, already linked (see {@link Prefill}).
+     * The response is the draft plus {@code notes} about the prefill; the notes are not stored.
      */
     @PutMapping("/integrations/{slug}/operation")
     public ResponseEntity<String> chooseOperation(@PathVariable String slug, @RequestBody String body) throws IOException {
@@ -110,8 +114,49 @@ public class ContractApiController {
                 target.put("baseUrl", first);
             }
         }
+        List<String> notes = new ArrayList<>();
+        String name = d.path("name").asText(slug);
+        if (!d.hasNonNull("input")) {
+            Prefill.Result r = Prefill.input(freeDefinitionId(slug + "-input"), name + " input", op);
+            saveDefinition(r.definition());
+            d.put("input", r.definition().id());
+            d.putObject("request").set("links", Json.MAPPER.valueToTree(r.links()));
+            notes.add("Input " + r.definition().id() + (r.links().isEmpty() ? " was created empty"
+                    : " was created from the operation with " + r.links().size() + " links"));
+            notes.addAll(r.notes());
+        }
+        if (!d.hasNonNull("output")) {
+            Prefill.Result r = Prefill.output(freeDefinitionId(slug + "-output"), name + " output", op);
+            saveDefinition(r.definition());
+            d.put("output", r.definition().id());
+            d.putObject("response").set("links", Json.MAPPER.valueToTree(r.links()));
+            notes.add("Output " + r.definition().id() + (r.links().isEmpty() ? " was created empty"
+                    : " was created from the operation with " + r.links().size() + " links"));
+            notes.addAll(r.notes());
+        }
         store.writeJson(store.service(slug), d);
-        return json(d);
+        ObjectNode out = d.deepCopy();
+        notes.forEach(out.putArray("notes")::add);
+        return json(out);
+    }
+
+    private Path definitionFile(String id) {
+        return store.root().resolve("entities").resolve(id + ".json");
+    }
+
+    /** {@code base}, or {@code base-2}, {@code base-3}, ... so an existing definition is never overwritten. */
+    private String freeDefinitionId(String base) {
+        String id = base;
+        for (int n = 2; Files.exists(definitionFile(id)); n++) {
+            id = base + "-" + n;
+        }
+        return id;
+    }
+
+    private void saveDefinition(PayloadDefinition def) throws IOException {
+        def.check();
+        store.writeJson(definitionFile(def.id()), def);
+        library.put(def);
     }
 
     // ---- settings page (D-3)

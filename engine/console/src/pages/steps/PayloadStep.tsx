@@ -86,7 +86,18 @@ export function PayloadStep(props: { draft: IntegrationDraft; onChange: (d: Inte
         <Button onClick={props.onNext} disabled={!draft.input || !draft.output}>
           Next: import the contract
         </Button>
+        {(!draft.input || !draft.output) && (
+          <Button variant="default" onClick={props.onNext}>
+            Fill from the API later
+          </Button>
+        )}
       </Group>
+      {(!draft.input || !draft.output) && (
+        <Text size="sm" c="dimmed">
+          “Fill from the API later” creates the empty {!draft.input && !draft.output ? 'Input and Output' : !draft.input ? 'Input' : 'Output'}{' '}
+          from the operation you pick in step 3, with every field already linked.
+        </Text>
+      )}
     </Stack>
   );
 }

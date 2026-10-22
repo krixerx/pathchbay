@@ -16,12 +16,15 @@ export function OperationStep(props: {
   linkCount: number;
   onChange: (d: IntegrationDraft) => void;
   onBack: () => void;
+  onNext: () => void;
 }) {
   const { draft, contractId } = props;
   const [contract, setContract] = useState<Contract | null>(null);
   const [query, setQuery] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<ContractOperation | null>(null);
+  // What "fill from the API later" created, shown once after the pick.
+  const [notes, setNotes] = useState<string[]>([]);
 
   useEffect(() => {
     setContract(null);
@@ -36,7 +39,9 @@ export function OperationStep(props: {
     setPending(null);
     setError(null);
     try {
-      props.onChange(await api.chooseOperation(draft.id, contractId!, op.id));
+      const { notes: created, ...next } = await api.chooseOperation(draft.id, contractId!, op.id);
+      setNotes(created ?? []);
+      props.onChange(next);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -129,6 +134,24 @@ export function OperationStep(props: {
         <Alert color={meaning.warning} icon={<IconAlertTriangle />} title="Base URL needed">
           This contract has no absolute server address. Set the base URL on the integration's Settings page.
         </Alert>
+      )}
+
+      {notes.length > 0 && (
+        <Alert color={meaning.accent} title="Filled from the operation">
+          <Stack gap={2}>
+            {notes.map((n) => (
+              <Text key={n} size="sm">
+                {n}
+              </Text>
+            ))}
+            <Text size="sm">You can rename, remove or add fields on the Payload definitions page at any time.</Text>
+          </Stack>
+        </Alert>
+      )}
+      {current && (
+        <Group>
+          <Button onClick={props.onNext}>Next: map fields</Button>
+        </Group>
       )}
 
       <Modal opened={!!pending} onClose={() => setPending(null)} title="Change the operation?">

@@ -11,6 +11,10 @@ import java.util.Map;
  * names (D-18). A link between two lists ({@code ...[]}) maps every item; links inside it run per item, and fields
  * from outside the list are the same for every item (D-12). Every problem is collected and reported at once, and
  * any problem stops the version from compiling, so red or broken links can't be published (R8).
+ * <p>
+ * A key is written only when its source key exists: a field the caller (or the external system) did not send is
+ * left out instead of being sent as null, while an explicit null is passed on, so an update can still reset a field.
+ * An object is left out when nothing inside it was sent. The request parts are always there.
  */
 public final class ScriptGenerator {
 
@@ -47,7 +51,7 @@ public final class ScriptGenerator {
         for (String part : REQUEST_PARTS) {
             root.put(part, new LinkedHashMap<String, Object>());
         }
-        return build(root, resolved, problems);
+        return build(root, resolved, problems, true);
     }
 
     public static String responseScript(List<ServiceDefinition.Link> links, PayloadDefinition output) {
@@ -62,10 +66,14 @@ public final class ScriptGenerator {
             }
             resolved.add(new Resolved(LinkRules.Path.of(link.from()), new LinkRules.Path(target.get().namePath()), null, label));
         }
-        return build(new LinkedHashMap<>(), resolved, problems);
+        return build(new LinkedHashMap<>(), resolved, problems, false);
     }
 
     // ---- building the target tree
+
+    /** A mapped value and the condition under which its key is written; {@code guard} null means always. */
+    private record Value(String expr, String guard) {
+    }
 
     /** A target list: filled by mapping the source list item by item. */
     private static final class ListNode {
@@ -79,7 +87,8 @@ public final class ScriptGenerator {
         }
     }
 
-    private static String build(Map<String, Object> root, List<Resolved> links, List<String> problems) {
+    /** {@code keepRootKeys}: the request parts are always returned, even when empty. */
+    private static String build(Map<String, Object> root, List<Resolved> links, List<String> problems, boolean keepRootKeys) {
         problems.addAll(LinkRules.checkAll(links.stream().map(l -> new LinkRules.Path[] {l.source(), l.target()}).toList()));
         if (problems.isEmpty()) {
             // Lists first, outer before inner, so every item link finds its list node.
@@ -97,7 +106,7 @@ public final class ScriptGenerator {
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException(String.join("; ", problems));
         }
-        return render(root);
+        return render(root, keepRootKeys).expr();
     }
 
     @SuppressWarnings("unchecked")
@@ -125,7 +134,7 @@ public final class ScriptGenerator {
         }
         String last = segs.get(segs.size() - 1);
         Object value = listLink ? new ListNode(r.source(), level + 1)
-                : r.constant() != null ? r.constant() : sourceExpr(r.source());
+                : r.constant() != null ? new Value(r.constant(), null) : sourceValue(r.source());
         if (node.putIfAbsent(name(last), value) != null) {
             throw new IllegalArgumentException("another link already writes to " + r.target());
         }
@@ -143,6 +152,10 @@ public final class ScriptGenerator {
      * source is the item variable to start from.
      */
     static String sourceExpr(LinkRules.Path source) {
+        return sourceValue(source).expr();
+    }
+
+    private static Value sourceValue(LinkRules.Path source) {
         List<String> segs = source.segments();
         int lastList = -1;
         int depth = 0;
@@ -162,13 +175,13 @@ public final class ScriptGenerator {
     }
 
     /**
-     * Null-safe read, so a missing optional field gives null instead of an error. An empty name comes from a bare
-     * {@code []} segment, which means the document itself is the list.
+     * Null-safe read, so a missing optional field gives null instead of an error; the guard says whether the source
+     * key exists. An empty name comes from a bare {@code []} segment, which means the document itself is the list.
      */
-    private static String read(String base, List<String> names) {
+    private static Value read(String base, List<String> names) {
         List<String> path = names.stream().filter(n -> !n.isEmpty()).toList();
         if (path.isEmpty()) {
-            return base;
+            return new Value(base, null);
         }
         StringBuilder guard = new StringBuilder();
         String current = base;
@@ -180,36 +193,48 @@ public final class ScriptGenerator {
                     .append(quote(path.get(i))).append(")");
             current = current + "[" + quote(path.get(i)) + "]";
         }
-        return "(if " + guard + " then " + current + " else null)";
+        return new Value("(if " + guard + " then " + current + " else null)", "(" + guard + ")");
     }
 
+    /**
+     * Renders one object. Each key gets the guard of its value ({@code [if guard then "key" else null]}, which Jsonnet
+     * leaves out); an object's guard is "any of its keys is written". With {@code keepKeys} every key is written.
+     */
     @SuppressWarnings("unchecked")
-    private static String render(Map<String, Object> tree) {
+    private static Value render(Map<String, Object> tree, boolean keepKeys) {
         StringBuilder sb = new StringBuilder("{");
-        boolean first = true;
+        List<String> guards = new ArrayList<>();
+        boolean always = tree.isEmpty();
         for (Map.Entry<String, Object> e : tree.entrySet()) {
-            if (!first) {
+            if (sb.length() > 1) {
                 sb.append(", ");
             }
-            first = false;
-            sb.append(quote(e.getKey())).append(": ");
-            Object v = e.getValue();
-            if (v instanceof ListNode list) {
-                String array = sourceExpr(list.source);
+            Value v;
+            if (e.getValue() instanceof ListNode list) {
+                Value array = sourceValue(list.source);
                 if (list.item.isEmpty()) {
-                    sb.append(array); // list linked without item links: items are copied as they are
+                    v = array; // list linked without item links: items are copied as they are
                 } else {
                     String var = "item" + list.level;
-                    sb.append("(if std.isArray(").append(array).append(") then std.map(function(").append(var).append(") ")
-                            .append(render(list.item)).append(", ").append(array).append(") else null)");
+                    v = new Value("(if std.isArray(" + array.expr() + ") then std.map(function(" + var + ") "
+                            + render(list.item, false).expr() + ", " + array.expr() + ") else " + array.expr() + ")", array.guard());
                 }
-            } else if (v instanceof Map) {
-                sb.append(render((Map<String, Object>) v));
+            } else if (e.getValue() instanceof Map) {
+                v = render((Map<String, Object>) e.getValue(), false);
             } else {
-                sb.append(v);
+                v = (Value) e.getValue();
             }
+            if (keepKeys || v.guard() == null) {
+                sb.append(quote(e.getKey()));
+                always = true;
+            } else {
+                sb.append("[if ").append(v.guard()).append(" then ").append(quote(e.getKey())).append(" else null]");
+                guards.add(v.guard());
+            }
+            sb.append(": ").append(v.expr());
         }
-        return sb.append("}").toString();
+        String guard = always || keepKeys ? null : "(" + String.join(" || ", guards) + ")";
+        return new Value(sb.append("}").toString(), guard);
     }
 
     private static String quote(String s) {

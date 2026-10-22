@@ -65,10 +65,18 @@ class ScriptGeneratorTest {
     }
 
     @Test
-    void missingSourceGivesNullInsteadOfError() throws Exception {
+    void missingSourceLeavesTheKeyOutInsteadOfError() throws Exception {
         CompiledIntegration ci = compile(List.of(), List.of(link("a.b.c", "o-z")));
-        assertThat(Json.MAPPER.readTree(ci.mapResponse("{\"a\":{}}")).get("z").isNull()).isTrue();
-        assertThat(Json.MAPPER.readTree(ci.mapResponse("{\"a\":\"text\"}")).get("z").isNull()).isTrue();
+        assertThat(Json.MAPPER.readTree(ci.mapResponse("{\"a\":{}}")).has("z")).isFalse();
+        assertThat(Json.MAPPER.readTree(ci.mapResponse("{\"a\":\"text\"}")).has("z")).isFalse();
+    }
+
+    @Test
+    void explicitNullIsPassedOnButAMissingFieldIsLeftOut() throws Exception {
+        CompiledIntegration ci = compile(List.of(), List.of(link("deep.value", "o-y"), link("name", "o-z")));
+        // An explicit null resets the field; the missing "deep" leaves out "x" completely, not as {}.
+        assertThat(ci.mapResponse("{\"name\":null}")).isEqualTo("{\"z\":null}");
+        assertThat(Json.MAPPER.readTree(ci.mapResponse("{\"deep\":{\"value\":null}}")).toString()).isEqualTo("{\"x\":{\"y\":null}}");
     }
 
     @Test

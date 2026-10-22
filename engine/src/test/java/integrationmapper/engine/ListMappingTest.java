@@ -70,13 +70,15 @@ class ListMappingTest {
     }
 
     @Test
-    void listWithoutItemLinksIsCopiedAndMissingListGivesNull() throws Exception {
+    void listWithoutItemLinksIsCopiedAndMissingListIsLeftOut() throws Exception {
         List<ServiceDefinition.Link> links = List.of(link("p-tags", "body.TAGS[]"), link("p-addresses", "body.ADDRESSES[]"),
                 link("p-street", "body.ADDRESSES[].line1"));
         assertThat(request(links, PERSON_JSON).path("TAGS").toString()).isEqualTo("[\"a\",\"b\"]");
         JsonNode empty = request(links, "{}");
-        assertThat(empty.path("TAGS").isNull()).isTrue();
-        assertThat(empty.path("ADDRESSES").isNull()).isTrue();
+        assertThat(empty.has("TAGS")).isFalse();
+        assertThat(empty.has("ADDRESSES")).isFalse();
+        JsonNode nulls = request(links, "{\"tags\":null,\"addresses\":null}");
+        assertThat(nulls.toString()).isEqualTo("{\"TAGS\":null,\"ADDRESSES\":null}");
     }
 
     @Test
