@@ -86,6 +86,8 @@ export interface IntegrationDraft {
 export interface ContractSummary {
   id: string;
   name: string;
+  /** Where the file was fetched from; missing for an uploaded file. */
+  sourceUrl?: string;
   operationCount: number;
   servers: string[];
   warningCount: number;
@@ -144,6 +146,7 @@ export interface Contract {
   id: string;
   name: string;
   sourceFile: string;
+  sourceUrl?: string;
   importedAt: string;
   servers: string[];
   operations: ContractOperation[];

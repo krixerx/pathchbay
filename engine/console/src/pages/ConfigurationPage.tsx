@@ -209,8 +209,8 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
   const { existing } = props;
   const [name, setName] = useState(existing?.name ?? '');
   const [file, setFile] = useState<File | null>(null);
-  const [url, setUrl] = useState('');
-  const [mode, setMode] = useState<string | null>('file');
+  const [url, setUrl] = useState(existing?.sourceUrl ?? '');
+  const [mode, setMode] = useState<string | null>(existing?.sourceUrl ? 'url' : 'file');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<(Contract & { notes?: string[] }) | null>(null);
@@ -221,10 +221,11 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
     setResult(null);
     try {
       const source = mode === 'file' ? (file ? { content: await file.text() } : {}) : url.trim() ? { url } : {};
-      setResult(existing ? await api.updateContract(existing.id, name, source) : await api.importContract(name, source));
+      const saved = existing ? await api.updateContract(existing.id, name, source) : await api.importContract(name, source);
+      setResult(saved);
       if (!existing) setName('');
       setFile(null);
-      setUrl('');
+      setUrl(existing ? (saved.sourceUrl ?? '') : '');
       props.onImported();
     } catch (e) {
       setError((e as Error).message);
@@ -251,7 +252,9 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
         />
         {existing && (
           <Text size="sm" c="dimmed">
-            Replace the file (optional): upload a new version or give its URL. Leave both empty to keep the current file.
+            {existing.sourceUrl
+              ? 'Saving reads the file from the URL again, so it picks up changes. Upload a file instead, or clear the URL to keep the current file.'
+              : 'Replace the file (optional): upload a new version or give its URL. Leave both empty to keep the current file.'}
           </Text>
         )}
         <Tabs value={mode} onChange={setMode}>

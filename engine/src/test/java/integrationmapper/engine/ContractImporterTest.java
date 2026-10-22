@@ -31,7 +31,7 @@ class ContractImporterTest {
 
     @Test
     void fakeRestApiIsNormalizedAndBothFilesAreStored() throws Exception {
-        Contract c = importer().importContract("fake-rest-api", "FakeRESTApi", fixture());
+        Contract c = importer().importContract("fake-rest-api", "FakeRESTApi", fixture(), null);
 
         assertThat(c.operations()).hasSizeGreaterThan(20);
         assertThat(c.servers()).containsExactly("/"); // no servers in FakeRESTApi: the parser adds "/", a relative URL, so the base URL must be typed in
@@ -57,7 +57,7 @@ class ContractImporterTest {
                 {"swagger":"2.0","info":{"title":"Old","version":"1"},"host":"api.example.org","basePath":"/v1","schemes":["https"],
                  "paths":{"/people/{id}":{"get":{"operationId":"getPerson","parameters":[{"name":"id","in":"path","required":true,"type":"string"}],
                    "responses":{"200":{"description":"ok","schema":{"type":"object","properties":{"name":{"type":"string"},"born":{"type":"string","format":"date"}}}}}}}}}""";
-        Contract c = importer().importContract("old", "Old", swagger2);
+        Contract c = importer().importContract("old", "Old", swagger2, null);
         assertThat(c.warnings().get(0)).isEqualTo("Swagger 2.0 file converted to OpenAPI 3");
         assertThat(c.servers()).containsExactly("https://api.example.org/v1");
         Contract.Operation get = c.operations().get(0);
@@ -97,7 +97,7 @@ class ContractImporterTest {
                         name: {type: string}
                         child: {$ref: '#/components/schemas/Node'}
                 """;
-        Contract c = importer().importContract("t", "T", spec);
+        Contract c = importer().importContract("t", "T", spec, null);
         Contract.Operation post = c.operations().get(0);
         assertThat(post.id()).isEqualTo("POST /things");
         assertThat(post.requestBody().fields()).extracting(PayloadDefinition.Field::name).containsExactly("a", "b");
@@ -111,7 +111,7 @@ class ContractImporterTest {
 
     @Test
     void notAContractIsRefused() {
-        assertThatThrownBy(() -> importer().importContract("x", "X", "{\"hello\":\"world\"}"))
+        assertThatThrownBy(() -> importer().importContract("x", "X", "{\"hello\":\"world\"}", null))
                 .hasMessageContaining("Not an OpenAPI or Swagger file");
     }
 

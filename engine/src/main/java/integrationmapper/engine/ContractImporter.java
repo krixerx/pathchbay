@@ -74,8 +74,11 @@ public class ContractImporter {
         }
     }
 
-    /** Parses, normalizes and stores the contract under {@code id}; a re-import replaces the previous one. */
-    public Contract importContract(String id, String name, String text) throws IOException {
+    /**
+     * Parses, normalizes and stores the contract under {@code id}; a re-import replaces the previous one.
+     * {@code sourceUrl}: where the text was fetched from, null for an upload.
+     */
+    public Contract importContract(String id, String name, String text, String sourceUrl) throws IOException {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("The contract is empty");
         }
@@ -106,7 +109,7 @@ public class ContractImporter {
         boolean json = text.stripLeading().startsWith("{");
         String sourceFile = id + ".openapi." + (json ? "json" : "yaml");
         store.write(store.root().resolve("contracts").resolve(sourceFile), out -> out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        Contract contract = new Contract(id, name, sourceFile, OffsetDateTime.now(ZoneOffset.UTC).toString(), servers,
+        Contract contract = new Contract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), servers,
                 operations, warnings);
         store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), contract);
         return contract;

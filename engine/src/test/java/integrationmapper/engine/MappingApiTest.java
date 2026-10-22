@@ -182,6 +182,10 @@ class MappingApiTest {
         assertThat(self.path("operations").get(0).path("method").asText()).isEqualTo("POST");
         assertThat(self.path("operations").get(0).path("path").asText()).isEqualTo("/api/v1/integrations/add-book");
         assertThat(self.path("servers").get(0).asText()).isEqualTo("http://localhost:" + port);
+        // The URL is kept, so editing the configuration can offer it again; a rename keeps it too.
+        assertThat(self.path("sourceUrl").asText()).isEqualTo("http://localhost:" + port + "/api/openapi.json");
+        assertThat(send("PUT", "/contracts/" + self.path("id").asText(), Map.of("name", "Mapper renamed")).path("sourceUrl").asText())
+                .isEqualTo("http://localhost:" + port + "/api/openapi.json");
         assertThat(status("DELETE", "/admin/api/contracts/" + self.path("id").asText())).isEqualTo(204);
 
         // Configuration: a contract in use can't be deleted; deleting the integration takes its endpoint down.

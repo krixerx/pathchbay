@@ -60,8 +60,9 @@ public class ContractApiController {
     /**
      * {@code usedBy}: integrations whose draft calls an operation of this contract. {@code baseUrl}: its connection's
      * address in this environment, null when not set; {@code baseUrlInEnv} when it comes from the environment.
+     * {@code sourceUrl}: where the file was fetched from, null for an upload.
      */
-    public record ContractSummary(String id, String name, int operationCount, List<String> servers, int warningCount,
+    public record ContractSummary(String id, String name, String sourceUrl, int operationCount, List<String> servers, int warningCount,
             String importedAt, List<String> usedBy, String baseUrl, boolean baseUrlInEnv) {
     }
 
@@ -69,7 +70,7 @@ public class ContractApiController {
     public ResponseEntity<String> contracts() throws IOException {
         List<ContractSummary> out = new ArrayList<>();
         for (Contract c : allContracts()) {
-            out.add(new ContractSummary(c.id(), c.name(), c.operations().size(), c.servers(),
+            out.add(new ContractSummary(c.id(), c.name(), c.sourceUrl(), c.operations().size(), c.servers(),
                     c.warnings() == null ? 0 : c.warnings().size(), c.importedAt(), usedBy(c.id()), connections.baseUrl(c.id()),
                     connections.fromEnv(c.id()) != null));
         }
@@ -122,6 +123,14 @@ public class ContractApiController {
     record ImportRequest(String name, String url, String content) {
     }
 
+    /** The URL the file is read from: none when content was uploaded, which wins over a URL. */
+    private static String sourceUrl(ImportRequest req) {
+        if (req.content() != null && !req.content().isBlank()) {
+            return null;
+        }
+        return req.url() == null || req.url().isBlank() ? null : req.url().strip();
+    }
+
     /** Import from pasted/uploaded text, or from a URL fetched by the engine. Same name = re-import (replaces). */
     @PostMapping("/contracts")
     public ResponseEntity<String> importContract(@RequestBody String body) throws IOException {
@@ -130,13 +139,12 @@ public class ContractApiController {
         if (id.isEmpty()) {
             throw new IllegalArgumentException("Give the contract a name, for example the name of the external system");
         }
-        String text = req.content() != null && !req.content().isBlank() ? req.content()
-                : req.url() != null && !req.url().isBlank() ? importer.fetch(req.url().strip())
-                : null;
+        String url = sourceUrl(req);
+        String text = req.content() != null && !req.content().isBlank() ? req.content() : url != null ? importer.fetch(url) : null;
         if (text == null) {
             throw new IllegalArgumentException("Upload a file or give a URL");
         }
-        return json(importer.importContract(id, req.name().strip(), text));
+        return json(importer.importContract(id, req.name().strip(), text, url));
     }
 
     /**
@@ -149,15 +157,15 @@ public class ContractApiController {
         Contract old = readContract(id);
         ImportRequest req = read(body, ImportRequest.class);
         String name = req.name() == null || req.name().isBlank() ? old.name() : req.name().strip();
-        String text = req.content() != null && !req.content().isBlank() ? req.content()
-                : req.url() != null && !req.url().isBlank() ? importer.fetch(req.url().strip())
-                : null;
+        String url = sourceUrl(req);
+        String text = req.content() != null && !req.content().isBlank() ? req.content() : url != null ? importer.fetch(url) : null;
         Contract updated;
         if (text == null) {
-            updated = new Contract(id, name, old.sourceFile(), old.importedAt(), old.servers(), old.operations(), old.warnings());
+            updated = new Contract(id, name, old.sourceFile(), old.sourceUrl(), old.importedAt(), old.servers(), old.operations(),
+                    old.warnings());
             store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), updated);
         } else {
-            updated = importer.importContract(id, name, text);
+            updated = importer.importContract(id, name, text, url);
             if (old.sourceFile() != null && !old.sourceFile().equals(updated.sourceFile())) {
                 Files.deleteIfExists(store.root().resolve("contracts").resolve(old.sourceFile()));
             }

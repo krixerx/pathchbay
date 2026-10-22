@@ -7,9 +7,10 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 /**
  * An imported contract as stored in {@code config/contracts/<id>.json}: the operations normalized into field trees
  * (spec FR-004). The original file sits next to it unchanged as {@code <id>.openapi.json|yaml} (FR-005).
+ * {@code sourceUrl} is where the file was fetched from, null for an uploaded file; the edit form offers it again.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record Contract(String id, String name, String sourceFile, String importedAt, List<String> servers,
+public record Contract(String id, String name, String sourceFile, String sourceUrl, String importedAt, List<String> servers,
         List<Operation> operations, List<String> warnings) {
 
     /**
