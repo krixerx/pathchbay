@@ -1,9 +1,27 @@
 import { useEffect, useState } from 'react';
-import { Alert, Anchor, Badge, Button, Code, Group, Modal, Skeleton, Stack, Table, Text, TextInput, Title } from '@mantine/core';
-import { IconAlertTriangle, IconApi, IconPlus, IconTrash } from '@tabler/icons-react';
+import {
+  Alert,
+  Anchor,
+  Badge,
+  Button,
+  Checkbox,
+  Code,
+  FileButton,
+  Group,
+  List,
+  Modal,
+  Skeleton,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  Title,
+} from '@mantine/core';
+import { IconAlertTriangle, IconApi, IconDownload, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
-import { api } from '../api';
-import type { IntegrationSummary } from '../model';
+import { api, ApiError } from '../api';
+import { ImportResult } from '../components/ImportResult';
+import type { ImportReport, IntegrationSummary } from '../model';
 import { slugify } from '../tree';
 import { meaning } from '../theme';
 
@@ -13,14 +31,25 @@ const STATUS: Record<IntegrationSummary['status'], { color: string; label: strin
   broken: { color: meaning.broken, label: 'Broken' },
 };
 
-/** Home (D-1): every integration with its status; "New integration" is the one primary action. */
+/**
+ * Home (D-1): every integration with its status; "New integration" is the one primary action. Ticked integrations
+ * can be exported as a package for another environment, and a package imported here (D-28).
+ */
 export function IntegrationsPage() {
   const [items, setItems] = useState<IntegrationSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<IntegrationSummary | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const [imported, setImported] = useState<ImportReport | null>(null);
+  const [refused, setRefused] = useState<ApiError | null>(null);
 
-  const load = () => api.integrations().then(setItems, (e: Error) => setError(e.message));
+  const load = () =>
+    api.integrations().then((list) => {
+      setItems(list);
+      setPicked((old) => new Set([...old].filter((id) => list.some((it) => it.id === id))));
+    }, (e: Error) => setError(e.message));
   useEffect(() => {
     load();
   }, []);
@@ -36,11 +65,60 @@ export function IntegrationsPage() {
     }
   };
 
+  const exportPicked = async () => {
+    setBusy('export');
+    setError(null);
+    try {
+      const { name, blob } = await api.exportPackage([...picked]);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const importFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy('import');
+    setError(null);
+    try {
+      setImported(await api.importPackage(file));
+      load();
+    } catch (e) {
+      setRefused(e instanceof ApiError ? e : new ApiError((e as Error).message));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <Stack gap="lg" maw={1100}>
       <Group justify="space-between">
         <Title order={2}>Integrations</Title>
         <Group gap="xs">
+          <Button
+            variant="default"
+            leftSection={<IconDownload size={16} />}
+            disabled={picked.size === 0}
+            loading={busy === 'export'}
+            onClick={exportPicked}
+            title={picked.size === 0 ? 'Tick the integrations to export first' : undefined}
+          >
+            Export{picked.size > 0 ? ` ${picked.size}` : ''}
+          </Button>
+          <FileButton onChange={importFile} accept=".zip,application/zip">
+            {(p) => (
+              <Button {...p} variant="default" leftSection={<IconUpload size={16} />} loading={busy === 'import'}>
+                Import
+              </Button>
+            )}
+          </FileButton>
           <Button variant="default" leftSection={<IconApi size={16} />} component="a" href="/api/openapi.json" target="_blank">
             OpenAPI of all live integrations
           </Button>
@@ -67,9 +145,24 @@ export function IntegrationsPage() {
         </Stack>
       )}
 
-      {items && items.length > 0 && <IntegrationTable items={items} onDelete={setDeleting} />}
+      {items && items.length > 0 && <IntegrationTable items={items} onDelete={setDeleting} picked={picked} onPick={setPicked} />}
 
       <NewIntegrationModal opened={creating} onClose={() => setCreating(false)} />
+      <Modal opened={!!imported} onClose={() => setImported(null)} title="Imported" size="lg">
+        {imported && <ImportResult report={imported} onChanged={load} />}
+      </Modal>
+      <Modal opened={!!refused} onClose={() => setRefused(null)} title="Nothing was imported" size="lg">
+        <Stack>
+          <Text size="sm">{refused?.message}</Text>
+          {refused && refused.problems.length > 0 && (
+            <List size="sm">
+              {refused.problems.map((p) => (
+                <List.Item key={p}>{p}</List.Item>
+              ))}
+            </List>
+          )}
+        </Stack>
+      </Modal>
       <Modal opened={!!deleting} onClose={() => setDeleting(null)} title="Delete this integration?">
         <Stack>
           <Text>
@@ -96,12 +189,36 @@ export function IntegrationsPage() {
   );
 }
 
-function IntegrationTable({ items, onDelete }: { items: IntegrationSummary[]; onDelete: (it: IntegrationSummary) => void }) {
+function IntegrationTable({
+  items,
+  onDelete,
+  picked,
+  onPick,
+}: {
+  items: IntegrationSummary[];
+  onDelete: (it: IntegrationSummary) => void;
+  picked: Set<string>;
+  onPick: (picked: Set<string>) => void;
+}) {
   const navigate = useNavigate();
+  const toggle = (id: string) => {
+    const next = new Set(picked);
+    if (!next.delete(id)) next.add(id);
+    onPick(next);
+  };
+  const all = items.every((it) => picked.has(it.id));
   return (
     <Table highlightOnHover verticalSpacing="sm">
       <Table.Thead>
         <Table.Tr>
+          <Table.Th w={40}>
+            <Checkbox
+              aria-label="Pick all for export"
+              checked={all}
+              indeterminate={!all && picked.size > 0}
+              onChange={() => onPick(all ? new Set() : new Set(items.map((it) => it.id)))}
+            />
+          </Table.Th>
           <Table.Th>Name</Table.Th>
           <Table.Th>Input → Output</Table.Th>
           <Table.Th>Method</Table.Th>
@@ -119,6 +236,9 @@ function IntegrationTable({ items, onDelete }: { items: IntegrationSummary[]; on
             onClick={() => navigate(`/integrations/${it.id}`)}
             onKeyDown={(e) => e.key === 'Enter' && navigate(`/integrations/${it.id}`)}
           >
+            <Table.Td onClick={(e) => e.stopPropagation()}>
+              <Checkbox aria-label={`Pick ${it.name ?? it.id} for export`} checked={picked.has(it.id)} onChange={() => toggle(it.id)} />
+            </Table.Td>
             <Table.Td>
               <Text fw={500}>{it.name ?? it.id}</Text>
               <Code>{it.id}</Code>

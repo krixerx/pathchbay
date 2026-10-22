@@ -179,6 +179,28 @@ export interface CallList {
   calls: CallRecord[];
 }
 
+/**
+ * What an import stored for one integration (D-28). `needs`: what this environment must set before it can go live;
+ * `warnings`: versions published before connections, which call their old address literally.
+ */
+export interface ImportedIntegration {
+  id: string;
+  name: string;
+  versionsAdded: string[];
+  versionsAlreadyHere: string[];
+  exportedActiveVersion: string | null;
+  liveVersion: string | null;
+  needs: string[];
+  warnings: string[];
+}
+
+export interface ImportReport {
+  exportedAt: string | null;
+  integrations: ImportedIntegration[];
+  definitions: string[];
+  contracts: string[];
+}
+
 /** Published versions of one integration, newest first (engine MappingApiController). */
 export interface VersionList {
   activeVersion: string | null;

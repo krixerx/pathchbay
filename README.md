@@ -132,6 +132,8 @@ Authentication and the secret are on the integration's **Settings** page; the ba
 
 Integrations and their versions never contain an address or a secret: they name a connection, and each environment sets that connection's base URL (`MAPPER_URL_<ID>` or **Connection** under Configuration) and the integrations' secrets (`MAPPER_SECRET_<SLUG>` or Settings). So the same version file can run in DEV, TEST and LIVE. The folders `connections/` and `secrets/` in the configuration folder belong to their environment and are not copied along. Integrations published before connections existed keep their literal base URL in those older version files until they are published again.
 
+To move integrations, tick them on the Integrations list and click **Export**: you get a ZIP with their drafts, all their versions, and the payload definitions and Swagger configurations they use. In the other environment, **Import** stores it and shows per integration what that environment still needs (a base URL, a secret, header values). Nothing goes live until you click **Make active** there.
+
 ## More
 
 - `engine/README.md`: file formats, admin calls, lists, error shapes, known behavior.

@@ -44,6 +44,18 @@ Order of a publish (R9): build and compile first; only if that works, write the 
 
 When editing a draft by hand, keep its `activeVersion` line: without it the integration is treated as never published at the next start.
 
+## Moving integrations between environments
+
+A package (D-28) is a ZIP laid out like the config folder: `manifest.json`, and per integration its draft (without `activeVersion`) and every version file, plus the payload definitions and Swagger configurations its draft uses. Connections and secrets are never in it.
+
+```bash
+curl -X POST localhost:8080/admin/api/export -H 'Content-Type: application/json' \
+     -d '{"integrations":["get-book","create-book"]}' -o package.zip
+curl -X POST localhost:8080/admin/api/import -H 'Content-Type: application/zip' --data-binary @package.zip
+```
+
+Import checks every file first and writes nothing if anything is wrong; the answer then lists every problem. A version that exists with other content is refused, because published versions never change. Versions already there are skipped, payload definitions and Swagger configurations are replaced, drafts are replaced but keep this environment's `activeVersion`. Nothing goes live: the answer lists per integration what this environment still needs (base URL, secret, header values) and which version was live where the package came from; `versions/<version>/activate` makes it live.
+
 ## Outbound auth and secrets
 
 A service can authenticate to the external system:
@@ -147,4 +159,4 @@ Any broken link (unknown field id) or link that breaks these rules stops the ver
 
 ## Not built yet
 
-XML from callers, XML namespaces and SOAP (rest of TODO-T4), extra outbound headers (TODO-T3), transforms and conditions (TODO-T1), a CI build of the image.
+XML from callers, XML namespaces and SOAP (rest of TODO-T4), transforms and conditions (TODO-T1), Git sync of packages, a CI build of the image.

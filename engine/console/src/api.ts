@@ -12,11 +12,19 @@ import type {
   IntegrationDraft,
   IntegrationSettings,
   IntegrationSummary,
+  ImportReport,
   PayloadDefinition,
 } from './model';
 
-/** Error with the engine's plain-language detail, shown as is (D-6). */
-export class ApiError extends Error {}
+/** Error with the engine's plain-language detail, shown as is (D-6); `problems` lists each one when there are several. */
+export class ApiError extends Error {
+  problems: string[];
+
+  constructor(message: string, problems: string[] = []) {
+    super(message);
+    this.problems = problems;
+  }
+}
 
 /**
  * The engine's INBOUND_API_KEY, typed once per browser tab when the engine asks for it (401). Kept in
@@ -42,22 +50,30 @@ export function setInboundKey(key: string) {
 /** Fired when the engine answers 401; KeyPrompt listens for it. */
 export const UNAUTHORIZED_EVENT = 'mapper:unauthorized';
 
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request(method: string, path: string, body?: BodyInit, contentType?: string): Promise<Response> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (contentType) headers['Content-Type'] = contentType;
   if (inboundKey) headers['X-API-Key'] = inboundKey;
-  const res = await fetch(`/admin/api${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  const res = await fetch(`/admin/api${path}`, { method, headers, body });
   if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   if (!res.ok) {
-    throw new ApiError(data?.detail ?? `${res.status} ${res.statusText}`);
+    const text = await res.text();
+    let data: { detail?: string; problems?: string[] } | null = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      // not the engine's JSON error, e.g. a proxy page: the status says enough
+    }
+    throw new ApiError(data?.detail ?? `${res.status} ${res.statusText}`, data?.problems ?? []);
   }
-  return data as T;
+  return res;
+}
+
+async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const json = body === undefined ? undefined : JSON.stringify(body);
+  const res = await request(method, path, json, json === undefined ? undefined : 'application/json');
+  const text = await res.text();
+  return (text ? JSON.parse(text) : null) as T;
 }
 
 export const api = {
@@ -102,6 +118,13 @@ export const api = {
   connection: (id: string) => call<Connection>('GET', `/connections/${id}`),
   saveConnection: (id: string, baseUrl: string, headers: { name: string; value: string; secret: boolean }[]) =>
     call<Connection>('PUT', `/connections/${id}`, { baseUrl, headers }),
+  /** The picked integrations as a package (D-28), with the file name the engine suggests. */
+  exportPackage: async (slugs: string[]) => {
+    const res = await request('POST', '/export', JSON.stringify({ integrations: slugs }), 'application/json');
+    const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? 'patchbay.zip';
+    return { name, blob: await res.blob() };
+  },
+  importPackage: async (file: File) => (await (await request('POST', '/import', file, 'application/zip')).json()) as ImportReport,
   saveSettings: (slug: string, update: { baseUrl?: string; auth: Auth | null; secret?: string; removeSecret?: boolean }) =>
     call<IntegrationSettings>('PUT', `/integrations/${slug}/settings`, update),
 };
