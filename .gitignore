@@ -1,0 +1,6 @@
+# Editor and IDE files
+.project
+.settings/
+.idea/
+.vscode/
+*.iml

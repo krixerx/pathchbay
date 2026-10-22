@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-The engine lives in `engine/` (Java 21, Spring Boot 4.1.1, Apache Camel 4.23.0, Maven). There is no console yet. Commands, run from `engine/`:
+The engine lives in `engine/` (Java 21, Spring Boot 4.1.1, Apache Camel 4.23.0, Maven), with the console built into it. Commands, run from `engine/`:
 
 - `mvn test` runs all tests; `mvn test -Dtest=ListMappingTest` runs one class, `-Dtest=ListMappingTest#nestedListsAreMappedLevelByLevel` one method. Tests need no internet (a local fake of FakeRESTApi's Books endpoints).
 - `mvn package && java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config` starts the engine on port 8080 with the example integrations, which call the public FakeRESTApi. `engine/README.md` has the curl calls and the config file formats.
@@ -14,10 +14,10 @@ The console is in `engine/console/` (React 19, TypeScript, Vite, Mantine 9; toke
 `rules/link-cases.json` is the shared table of linking rules (D-12, R5): the engine's `LinkCasesTest` runs every case, and the console must run the same file. Change a rule there first.
 
 - `docs/integration-mapper-spec.md`: the product spec, the long-term source of truth for requirements.
-- `docs/slice-plan.md`: the reviewed build plan for the first vertical slice (office hours, design review and eng review, 2026-10-20). **Where it differs from the spec, the slice plan wins for current work.** Its UI decisions are D-1…D-20, its engineering decisions are R1…R12 in the "Decision ledger", deferred work is TODO-T1…T4, and the build order is "Eng Review: Implementation Tasks" (E1…E5).
+- `docs/slice-plan.md`: the reviewed build plan for the first vertical slice (office hours, design review and eng review, 2026-10-20). **Where it differs from the spec, the slice plan wins for current work.** Its UI and product decisions are D-1…D-25 (D-21 onwards are later user decisions at the top of "UI Design Decisions"), its engineering decisions are R1…R12 in the "Decision ledger", deferred work is TODO-T1…T4, and the build order is "Eng Review: Implementation Tasks" (E1…E5).
 - `docs/test-plan.md`: the tests the slice must pass.
 
-Anything in neither document is out of scope until it is added as a requirement. One engineering decision is still open: R7 (one fixed route vs one Camel route per integration) waits for the routing spike, task E1, which comes before other engine work.
+Anything in neither document is out of scope until it is added as a requirement. All engineering decisions are made; R7 was settled by the routing spike (task E1): one Camel route per published integration, swapped behind an in-flight gate (`IntegrationGate`). The spike code itself was removed; its results are in the slice plan under R7.
 
 Main ways the slice differs from the spec: no React Flow canvas (two trees, source-then-target linking); no transforms or conditions (constants live in payload definitions); payload definitions are a reusable library; one Camel route template per HTTP method; GET/DELETE integrations take flat query parameters; red or broken links block publish; unit tests only (JUnit 5 + WireMock, Vitest).
 
