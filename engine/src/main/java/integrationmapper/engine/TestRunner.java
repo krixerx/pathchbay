@@ -127,17 +127,23 @@ public class TestRunner {
             authQuery = "query".equals(def.auth().in()) ? def.auth().name() : null;
         }
         boolean hasBody = BODY_METHODS.contains(def.target().method());
-        boolean fileBody = hasBody && def.wire().requestBinary();
-        String body = hasBody && !fileBody ? ci.requestBody(mapped.path("body")) : null;
-        byte[] fileBytes = null;
-        if (fileBody) {
+        // A file or a multipart form goes out as bytes (D-29); JSON and XML as text.
+        boolean bytesBody = hasBody && (def.wire().requestBinary() || def.wire().requestMultipart());
+        String body = hasBody && !bytesBody ? ci.requestBody(mapped.path("body")) : null;
+        byte[] bodyBytes = null;
+        if (hasBody && def.wire().requestBinary()) {
             // As in the route: one file as the raw body, with its type and name (D-29).
             JsonNode file = mapped.path("body");
-            fileBytes = file.isObject() ? Blobs.bytes(file) : new byte[0];
+            bodyBytes = file.isObject() ? Blobs.bytes(file) : new byte[0];
             headers.put("Content-Type", file.path("contentType").asText(Blobs.DEFAULT_TYPE));
             if (file.hasNonNull("fileName")) {
                 headers.put("Content-Disposition", Blobs.contentDisposition(file.get("fileName").asText()));
             }
+        } else if (hasBody && def.wire().requestMultipart()) {
+            // As in the route: one part per body field (D-29).
+            Multipart.Body form = Multipart.write(mapped.path("body"));
+            bodyBytes = form.bytes();
+            headers.put("Content-Type", form.contentType());
         }
 
         Map<String, Object> shownHeaders = new LinkedHashMap<>(headers);
@@ -188,7 +194,7 @@ public class TestRunner {
             }
             HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url + (realQuery.isEmpty() ? "" : "?" + realQuery)))
                     .timeout(Duration.ofSeconds(10))
-                    .method(def.target().method(), fileBody ? HttpRequest.BodyPublishers.ofByteArray(fileBytes)
+                    .method(def.target().method(), bytesBody ? HttpRequest.BodyPublishers.ofByteArray(bodyBytes)
                             : hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
             String auth = authHeader;
             headers.forEach((k, v) -> {
@@ -196,7 +202,7 @@ public class TestRunner {
                     rb.header(k, v);
                 }
             });
-            if (hasBody && !fileBody) {
+            if (hasBody && !bytesBody) {
                 rb.header("Content-Type", ci.requestContentType());
             }
             if (authHeader != null) {

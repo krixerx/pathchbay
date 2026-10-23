@@ -11,6 +11,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -100,6 +101,9 @@ class VersionLifecycleTest {
             write("entities/doc-content.json", """
                     {"id":"doc-content","fields":[{"id":"dc-id","name":"documentId","type":"text","required":true},
                       {"id":"dc-content","name":"content","type":"blob","required":true}]}""");
+            write("entities/doc-upload.json", """
+                    {"id":"doc-upload","fields":[{"id":"du-title","name":"title","type":"text"},{"id":"du-pages","name":"pages","type":"integer"},
+                      {"id":"du-file","name":"file","type":"blob","required":true}]}""");
             write("entities/doc-id.json", """
                     {"id":"doc-id","fields":[{"id":"di-id","name":"documentId","type":"text","required":true}]}""");
             write("entities/doc-file.json", """
@@ -422,6 +426,84 @@ class VersionLifecycleTest {
         HttpResponse<byte[]> plain = get("file-get-plain?documentId=x");
         assertThat(plain.statusCode()).isEqualTo(500);
         assertThat(new String(plain.body())).contains("mapping-error");
+    }
+
+    void publishUpload(String slug, String format, String requestLinks) throws Exception {
+        write("services/" + slug + ".json", """
+                {"id":"%s","input":"doc-upload","output":"stored",
+                 "target":{"baseUrl":"http://localhost:%d/fake","method":"POST","path":"/upload"},%s
+                 "request":{"links":[%s]},
+                 "response":{"links":[{"from":"documentId","to":"st-id"},{"from":"status","to":"st-status"}]}}""".formatted(slug, PORT,
+                format == null ? "" : "\"formats\":{\"request\":\"" + format + "\"},", requestLinks));
+        publisher.publishDraft(slug);
+    }
+
+    static Multipart.Body form(String title, String pages, String fileField, String fileName, byte[] file) {
+        com.fasterxml.jackson.databind.node.ObjectNode parts = Json.MAPPER.createObjectNode().put("title", title).put("pages", pages);
+        parts.putObject(fileField).put("fileName", fileName).put("contentType", "application/pdf")
+                .put("data", java.util.Base64.getEncoder().encodeToString(file));
+        return Multipart.write(parts);
+    }
+
+    /** D-29: multipart from callers is read by Patchbay, and with request format multipart it goes out as multipart. */
+    @Test
+    void multipartGoesInAndOut() throws Exception {
+        publishUpload("upload-mp", "multipart", "{\"from\":\"du-title\",\"to\":\"body.title\"},{\"from\":\"du-pages\",\"to\":\"body.pages\"},"
+                + "{\"from\":\"du-file\",\"to\":\"body.document\"}");
+        publishUpload("upload-json", null, "{\"from\":\"du-file.fileName\",\"to\":\"body.name\"},{\"from\":\"du-file.data\",\"to\":\"body.base64\"}");
+
+        Multipart.Body in = form("Contract", "7", "file", "a.pdf", FakeBooksApi.ALL_BYTES);
+        HttpResponse<String> r = callRaw("POST", "upload-mp", in.contentType(), in.bytes());
+        assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
+        assertThat(r.body()).isEqualTo("{\"documentId\":\"UP-1\",\"status\":\"STORED\"}");
+        HttpHeaders sent = (HttpHeaders) fake.lastRequest.get("headers");
+        List<Multipart.Part> parts = Multipart.read((byte[]) fake.lastRequest.get("bytes"), sent.getFirst("Content-Type"));
+        assertThat(parts).extracting(Multipart.Part::name).containsExactly("title", "pages", "document");
+        assertThat(new String(parts.get(0).bytes())).isEqualTo("Contract");
+        assertThat(new String(parts.get(1).bytes())).isEqualTo("7");
+        assertThat(parts.get(2).fileName()).isEqualTo("a.pdf");
+        assertThat(parts.get(2).contentType()).isEqualTo("application/pdf");
+        assertThat(parts.get(2).bytes()).isEqualTo(FakeBooksApi.ALL_BYTES);
+
+        // JSON in, multipart out.
+        String json = "{\"title\":\"From JSON\",\"file\":{\"fileName\":\"b.pdf\",\"data\":\""
+                + java.util.Base64.getEncoder().encodeToString(FakeBooksApi.ALL_BYTES) + "\"}}";
+        assertThat(call("POST", "upload-mp", json).statusCode()).isEqualTo(200);
+        sent = (HttpHeaders) fake.lastRequest.get("headers");
+        parts = Multipart.read((byte[]) fake.lastRequest.get("bytes"), sent.getFirst("Content-Type"));
+        assertThat(parts).extracting(Multipart.Part::name).containsExactly("title", "document");
+        assertThat(parts.get(1).fileName()).isEqualTo("b.pdf");
+        assertThat(parts.get(1).bytes()).isEqualTo(FakeBooksApi.ALL_BYTES);
+
+        // Multipart in, base64 JSON out.
+        assertThat(callRaw("POST", "upload-json", in.contentType(), in.bytes()).statusCode()).isEqualTo(200);
+        sent = (HttpHeaders) fake.lastRequest.get("headers");
+        assertThat(sent.getFirst("Content-Type")).startsWith("application/json");
+        JsonNode body = Json.MAPPER.readTree((byte[]) fake.lastRequest.get("bytes"));
+        assertThat(body.path("name").asText()).isEqualTo("a.pdf");
+        assertThat(java.util.Base64.getDecoder().decode(body.path("base64").asText())).isEqualTo(FakeBooksApi.ALL_BYTES);
+    }
+
+    /** D-29: what multipart can't do: a missing file, a wrong type, a broken body, an integration without files. */
+    @Test
+    void multipartThatDoesNotFit() throws Exception {
+        publishUpload("upload-mp", "multipart", "{\"from\":\"du-title\",\"to\":\"body.title\"},{\"from\":\"du-file\",\"to\":\"body.document\"}");
+        fake.lastRequest.clear();
+
+        Multipart.Body noFile = form("T", "seven", "other", "x.pdf", new byte[] {1});
+        HttpResponse<String> missing = callRaw("POST", "upload-mp", noFile.contentType(), noFile.bytes());
+        assertThat(missing.statusCode()).isEqualTo(400);
+        assertThat(missing.body()).contains("file: required").contains("pages: must be a whole number");
+
+        HttpResponse<String> broken = callRaw("POST", "upload-mp", "multipart/form-data; boundary=abc", "not multipart".getBytes());
+        assertThat(broken.statusCode()).isEqualTo(400);
+        assertThat(broken.body()).contains("The multipart body could not be read");
+        assertThat(fake.lastRequest).isEmpty();
+
+        write("services/plain-book.json", service("plain-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("plain-book");
+        Multipart.Body any = form("T", "1", "file", "x.pdf", new byte[] {1});
+        assertThat(callRaw("POST", "plain-book", any.contentType(), any.bytes()).statusCode()).isEqualTo(415);
     }
 
     @Test

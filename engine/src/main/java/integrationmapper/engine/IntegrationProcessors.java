@@ -75,7 +75,14 @@ public class IntegrationProcessors {
         JsonNode input;
         String contentType = msg.getHeader(Exchange.CONTENT_TYPE, String.class);
         PayloadDefinition.Field file = Blobs.onlyFile(ci.input());
-        if (BODY_METHODS.contains(target.method()) && file != null && contentType != null
+        if (BODY_METHODS.contains(target.method()) && Multipart.isMultipart(contentType)) {
+            // Multipart (D-29): one part per Input field, files as file parts.
+            try {
+                input = Multipart.toInput(Multipart.read(msg.getBody(byte[].class), contentType), ci.input());
+            } catch (IllegalArgumentException e) {
+                throw new BadInputException(e.getMessage());
+            }
+        } else if (BODY_METHODS.contains(target.method()) && file != null && contentType != null
                 && !contentType.toLowerCase().startsWith("application/json")) {
             // A raw file (D-29): the body is the Input's file, its other fields come as query parameters.
             ObjectNode fromQuery = InputValidator.coerceQuery(queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class)), ci.input());
@@ -156,6 +163,12 @@ public class IntegrationProcessors {
                 shownHeaders.put("Content-Disposition", msg.getHeader("Content-Disposition"));
             }
             msg.setBody(bytes);
+        } else if (hasBody && ci.definition().wire().requestMultipart()) {
+            // One part per body field, files as file parts (D-29).
+            Multipart.Body form = Multipart.write(mapped.path("body"));
+            msg.setHeader(Exchange.CONTENT_TYPE, form.contentType());
+            shownHeaders.put(Exchange.CONTENT_TYPE, form.contentType());
+            msg.setBody(form.bytes());
         } else if (hasBody) {
             msg.setHeader(Exchange.CONTENT_TYPE, ci.requestContentType());
             msg.setBody(ci.requestBody(mapped.path("body")));

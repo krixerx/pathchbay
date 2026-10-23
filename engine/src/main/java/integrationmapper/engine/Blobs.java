@@ -93,6 +93,11 @@ final class Blobs {
         return Base64.getDecoder().decode(file.path("data").asText(""));
     }
 
+    /** How many file fields a definition has. */
+    static long fileCount(PayloadDefinition def) {
+        return def.fields() == null ? 0 : def.fields().stream().filter(f -> "blob".equals(f.type())).count();
+    }
+
     /** The only file field of a definition, or null when it has none or several (a raw body needs exactly one). */
     static PayloadDefinition.Field onlyFile(PayloadDefinition def) {
         List<PayloadDefinition.Field> files = def.fields() == null ? List.of()
@@ -146,6 +151,11 @@ final class Blobs {
      * UTF-8 when the name has other characters.
      */
     static String contentDisposition(String fileName) {
+        return "attachment; " + fileNameParameters(fileName);
+    }
+
+    /** {@code filename="…"}, plus {@code filename*=UTF-8''…} when the name is not plain ASCII (RFC 6266). */
+    static String fileNameParameters(String fileName) {
         StringBuilder ascii = new StringBuilder();
         boolean other = false;
         for (char c : fileName.toCharArray()) {
@@ -156,7 +166,7 @@ final class Blobs {
                 ascii.append(c == '"' || c == '\\' ? "\\" + c : String.valueOf(c));
             }
         }
-        String header = "attachment; filename=\"" + ascii + "\"";
+        String header = "filename=\"" + ascii + "\"";
         if (!other) {
             return header;
         }

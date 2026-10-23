@@ -17,8 +17,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * Front door for {@code /api/v1/integrations/**}. Keeps callers away from an integration's route while it is
  * replaced (R2, R7; verified in spike E1), and refuses bodies the integration can't take: anything but JSON, except
- * a raw file for an Input with exactly one file (D-29), which is refused unread when it declares more bytes than
- * {@code mapper.max-blob-bytes}.
+ * multipart for an Input with files and a raw file for an Input with exactly one (D-29); those are refused unread
+ * when they declare more bytes than {@code mapper.max-blob-bytes} allows.
  * A call counts itself in-flight before checking the gate, so swap() can close the gate, wait for
  * admitted calls to drain and replace the route with nobody inside it.
  */
@@ -46,24 +46,27 @@ public class IntegrationGate extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         String slug = request.getRequestURI().substring(INTEGRATIONS.length());
-        // Camel's platform-http consumer parses form bodies before the route runs and answers with an HTML 500,
-        // so a body the integration can't take is refused here with the JSON error shape.
+        // A body the integration can't take is refused here with the JSON error shape. Multipart is read by the route
+        // itself (Spring's parsing is off), url-encoded forms are not taken at all.
         String contentType = request.getContentType();
         if (request.getContentLengthLong() != 0 && contentType != null
                 && !contentType.toLowerCase().startsWith("application/json")) {
             CompiledIntegration ci = registry.find(slug);
-            boolean takesFile = ci != null && Blobs.onlyFile(ci.input()) != null;
+            long files = ci == null ? 0 : Blobs.fileCount(ci.input());
             String type = contentType.toLowerCase();
-            boolean form = type.startsWith("multipart/") || type.startsWith("application/x-www-form-urlencoded");
-            if (form || !takesFile) {
-                refuse(response, 415, "unsupported-media-type", slug, takesFile
-                        ? "Send the request body as application/json, or the file as the raw body"
-                        : "Send the request body as application/json");
+            boolean multipart = Multipart.isMultipart(contentType);
+            boolean otherForm = !multipart && (type.startsWith("multipart/") || type.startsWith("application/x-www-form-urlencoded"));
+            boolean accepted = multipart ? files > 0 : !otherForm && files == 1;
+            if (!accepted) {
+                refuse(response, 415, "unsupported-media-type", slug, files == 0 ? "Send the request body as application/json"
+                        : "Send the request body as application/json or multipart/form-data" + (files == 1 ? ", or the file as the raw body" : ""));
                 return;
             }
-            if (request.getContentLengthLong() > maxBlobBytes) {
-                refuse(response, 413, "payload-too-large", slug, "The file is " + request.getContentLengthLong()
-                        + " bytes, more than the limit of " + maxBlobBytes + " bytes");
+            // Raw: the body is the file. Multipart: room for every file plus 1 MiB of text parts; each file is checked later.
+            long allowed = multipart ? files * maxBlobBytes + (1 << 20) : maxBlobBytes;
+            if (request.getContentLengthLong() > allowed) {
+                refuse(response, 413, "payload-too-large", slug, (multipart ? "The body is " : "The file is ")
+                        + request.getContentLengthLong() + " bytes, more than the limit of " + allowed + " bytes");
                 return;
             }
         }

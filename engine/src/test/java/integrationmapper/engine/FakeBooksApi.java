@@ -73,6 +73,14 @@ class FakeBooksApi {
         };
     }
 
+    /** Takes a multipart upload (D-29) and remembers its raw bytes and Content-Type, to be read back by the test. */
+    @PostMapping("/fake/upload")
+    ResponseEntity<String> upload(@RequestBody byte[] body, @RequestHeader HttpHeaders headers) {
+        lastRequest.put("bytes", body);
+        lastRequest.put("headers", headers);
+        return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"documentId\":\"UP-1\",\"status\":\"STORED\"}");
+    }
+
     /** The same file as base64 inside JSON. */
     @GetMapping("/fake/files/{id}/base64")
     ResponseEntity<String> getFileBase64(@PathVariable String id) {
