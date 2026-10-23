@@ -84,4 +84,28 @@ class PrefillTest {
         JsonNode r = run(op, "{}", "[{\"id\":1,\"title\":\"A\"},{\"id\":2,\"title\":\"B\"}]");
         assertThat(r.at("/output").toString()).isEqualTo("{\"items\":[{\"id\":1,\"title\":\"A\"},{\"id\":2,\"title\":\"B\"}]}");
     }
+
+    /** D-29: a multipart file part and a raw body become top-level blobs; a blob nested deeper is left out with a note. */
+    @Test
+    void blobsArePrefilledAtTheTopLevelOnly() throws Exception {
+        Contract.Operation multipart = new Contract.Operation("upload", "POST", "/documents", null, List.of(),
+                object("body", f("title", "text", false), f("file", "blob", true), object("meta", f("scan", "blob", false))),
+                "201", null);
+        Prefill.Result in = Prefill.input("u-input", "U input", multipart);
+        in.definition().check();
+        assertThat(in.definition().fields()).extracting(PayloadDefinition.Field::name, PayloadDefinition.Field::type)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("title", "text"), org.assertj.core.groups.Tuple.tuple("file", "blob"),
+                        org.assertj.core.groups.Tuple.tuple("meta", "object"));
+        assertThat(in.definition().fields().get(2).fields()).isEmpty();
+        assertThat(in.links()).extracting(ServiceDefinition.Link::to).containsExactly("body.title", "body.file");
+        assertThat(in.notes()).anyMatch(n -> n.contains("meta.scan") && n.contains("blob"));
+
+        Contract.Operation raw = new Contract.Operation("replace", "PUT", "/documents/{id}/content", null,
+                List.of(new Contract.Parameter("id", "path", true, "text")), f("body", "blob", true), "200", null);
+        Prefill.Result rawIn = Prefill.input("r-input", "R input", raw);
+        rawIn.definition().check();
+        assertThat(rawIn.definition().fields()).extracting(PayloadDefinition.Field::name, PayloadDefinition.Field::type)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("id", "text"), org.assertj.core.groups.Tuple.tuple("body", "blob"));
+        assertThat(rawIn.links()).extracting(ServiceDefinition.Link::to).containsExactly("path.id", "body");
+    }
 }

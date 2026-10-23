@@ -88,6 +88,8 @@ export function problems(fields: Field[], at = ''): string[] {
     if (!f.name?.trim()) out.push(`${where}: give the field a name`);
     else if (names.has(f.name)) out.push(`${where}: two fields with the same name`);
     names.add(f.name ?? '');
+    if (at && f.type === 'blob') out.push(`${where}: a blob can only be a top-level field`);
+    if (f.type === 'list' && f.items?.type === 'blob') out.push(`${where}: a list can't hold blobs`);
     const kids = children(f);
     if (kids) out.push(...problems(kids, where + (f.type === 'list' ? '[].' : '.')));
   }

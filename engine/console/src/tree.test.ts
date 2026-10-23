@@ -44,6 +44,15 @@ describe('tree edits', () => {
     expect(problems(bad)).toEqual(['a: two fields with the same name', 'l[].(no name): give the field a name']);
   });
 
+  it('allows a blob only at the top level, like the engine (D-29)', () => {
+    const fields: Field[] = [
+      { id: '1', name: 'file', type: 'blob' },
+      { id: '2', name: 'meta', type: 'object', fields: [{ id: '3', name: 'scan', type: 'blob' }] },
+      { id: '4', name: 'files', type: 'list', items: { type: 'blob' } },
+    ];
+    expect(problems(fields)).toEqual(['meta.scan: a blob can only be a top-level field', "files: a list can't hold blobs"]);
+  });
+
   it('slugify matches the engine', () => {
     expect(slugify('Register Person!')).toBe('register-person');
   });

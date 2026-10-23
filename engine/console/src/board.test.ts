@@ -136,4 +136,9 @@ describe('filters and example input', () => {
   it('example input leaves constants out', () => {
     expect(exampleInput(person)).toEqual({ name: 'name', born: '2026-01-01', addresses: [{ city: 'city' }] });
   });
+
+  it('example input sends a blob as its JSON form', () => {
+    const upload: PayloadDefinition = { id: 'upload', name: 'Upload', fields: [{ id: 'u-file', name: 'file', type: 'blob' }] };
+    expect(exampleInput(upload)).toEqual({ file: { fileName: 'example.txt', contentType: 'text/plain', data: 'ZXhhbXBsZQ==' } });
+  });
 });

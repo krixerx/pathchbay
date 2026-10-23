@@ -13,7 +13,8 @@ interface Props {
 }
 
 const typeOptions = ALL_TYPES.map((t) => ({ value: t, label: TYPE_LABELS[t] }));
-const itemTypeOptions = ALL_TYPES.filter((t) => t !== 'list').map((t) => ({ value: t, label: TYPE_LABELS[t] }));
+const nestedTypeOptions = typeOptions.filter((o) => o.value !== 'blob');
+const itemTypeOptions = nestedTypeOptions.filter((o) => o.value !== 'list');
 
 /**
  * The payload definition editor (D-13): one row per field with name | type | required | format | value. Objects
@@ -99,7 +100,7 @@ function Rows({ fields, path, depth, all, onChange, onAdd }: RowsProps) {
                 <Group gap={4} wrap="nowrap">
                   <NativeSelect
                     size="xs"
-                    data={typeOptions}
+                    data={here.length === 1 ? typeOptions : nestedTypeOptions}
                     value={f.type}
                     aria-label={`Type of ${label}`}
                     onChange={(e) => onChange(updateField(all, here, { type: e.currentTarget.value as FieldType }))}

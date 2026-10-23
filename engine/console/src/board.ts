@@ -218,6 +218,8 @@ export function exampleInput(def: PayloadDefinition | null): unknown {
         return '2026-01-01';
       case 'datetime':
         return '2026-01-01T10:00:00Z';
+      case 'blob':
+        return { fileName: 'example.txt', contentType: 'text/plain', data: 'ZXhhbXBsZQ==' };
       default:
         return f.name ?? 'text';
     }

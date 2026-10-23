@@ -47,6 +47,27 @@ class PayloadDefinitionTest {
                 .hasMessageContaining("list has no valid item type");
     }
 
+    /** D-29: a blob is a file at the top level of a definition, never nested, listed, constant or a query parameter. */
+    @Test
+    void aBlobIsATopLevelFileOnly() throws Exception {
+        PayloadDefinition upload = parse("""
+                {"id":"upload","fields":[{"id":"t","name":"title","type":"text"},{"id":"f","name":"file","type":"blob","required":true}]}""");
+        upload.check();
+        assertThat(upload.isFlat()).isFalse();
+
+        PayloadDefinition bad = parse("""
+                {"id":"bad","fields":[
+                  {"id":"o","name":"meta","type":"object","fields":[{"id":"o-f","name":"scan","type":"blob"}]},
+                  {"id":"l","name":"files","type":"list","items":{"type":"blob"}},
+                  {"id":"li","name":"attachments","type":"list","items":{"type":"object","fields":[{"id":"li-f","name":"file","type":"blob"}]}},
+                  {"id":"c","name":"logo","type":"blob","value":"x"}]}""");
+        assertThatThrownBy(bad::check)
+                .hasMessageContaining("meta.scan: a blob can only be a top-level field")
+                .hasMessageContaining("files: a list can't hold blobs")
+                .hasMessageContaining("attachments[].file: a blob can only be a top-level field")
+                .hasMessageContaining("logo: only simple fields can be constants");
+    }
+
     @Test
     void findResolvesIdsToCurrentNamePaths() throws Exception {
         PayloadDefinition p = parse(PERSON);

@@ -1,9 +1,10 @@
 // Shapes of the config files and API responses (engine: PayloadDefinition, ConsoleApiController).
 
-export type FieldType = 'text' | 'number' | 'integer' | 'boolean' | 'date' | 'datetime' | 'object' | 'list';
+export type FieldType = 'text' | 'number' | 'integer' | 'boolean' | 'date' | 'datetime' | 'object' | 'list' | 'blob';
 
 export const SIMPLE_TYPES: FieldType[] = ['text', 'number', 'integer', 'boolean', 'date', 'datetime'];
-export const ALL_TYPES: FieldType[] = [...SIMPLE_TYPES, 'object', 'list'];
+/** A blob (a file, D-29) is only offered for top-level fields. */
+export const ALL_TYPES: FieldType[] = [...SIMPLE_TYPES, 'object', 'list', 'blob'];
 
 /** One vocabulary in every view (D-4). */
 export const TYPE_LABELS: Record<FieldType, string> = {
@@ -15,6 +16,7 @@ export const TYPE_LABELS: Record<FieldType, string> = {
   datetime: 'date-time',
   object: 'object',
   list: 'list',
+  blob: 'file (blob)',
 };
 
 export interface Field {

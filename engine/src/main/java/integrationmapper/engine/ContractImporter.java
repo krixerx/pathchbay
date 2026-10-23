@@ -252,6 +252,7 @@ public class ContractImporter {
         return null;
     }
 
+    /** {@code format: binary} is a file (D-29); {@code format: byte} is base64 text on the wire and stays text. */
     private static String simpleType(String type, String format) {
         if (type == null) {
             return "text";
@@ -260,7 +261,12 @@ public class ContractImporter {
             case "integer" -> "integer";
             case "number" -> "number";
             case "boolean" -> "boolean";
-            case "string" -> "date".equals(format) ? "date" : "date-time".equals(format) ? "datetime" : "text";
+            case "string" -> switch (format == null ? "" : format) {
+                case "date" -> "date";
+                case "date-time" -> "datetime";
+                case "binary" -> "blob";
+                default -> "text";
+            };
             default -> "text";
         };
     }

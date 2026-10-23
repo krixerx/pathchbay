@@ -17,8 +17,8 @@ import com.fasterxml.jackson.databind.JsonNode;
  */
 public record PayloadDefinition(String id, String name, List<Field> fields) {
 
-    /** Types from D-4, as stored in files. */
-    public static final Set<String> TYPES = Set.of("text", "number", "integer", "boolean", "date", "datetime", "object", "list");
+    /** Types from D-4, as stored in files, and {@code blob}, a file (D-29). */
+    public static final Set<String> TYPES = Set.of("text", "number", "integer", "boolean", "date", "datetime", "object", "list", "blob");
     static final Set<String> SIMPLE = Set.of("text", "number", "integer", "boolean", "date", "datetime");
 
     /**
@@ -48,13 +48,14 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
         if (id == null || id.isBlank()) {
             problems.add("definition has no id");
         }
-        checkFields(fields == null ? List.of() : fields, "", new HashSet<>(), problems);
+        checkFields(fields == null ? List.of() : fields, "", true, new HashSet<>(), problems);
         if (!problems.isEmpty()) {
             throw new IllegalArgumentException("Payload definition " + id + ": " + String.join("; ", problems));
         }
     }
 
-    private static void checkFields(List<Field> fields, String at, Set<String> ids, List<String> problems) {
+    /** {@code topLevel}: fields directly in the definition, the only place for a blob (a whole body or a multipart part). */
+    private static void checkFields(List<Field> fields, String at, boolean topLevel, Set<String> ids, List<String> problems) {
         Set<String> names = new HashSet<>();
         for (Field f : fields) {
             String where = at + (f.name() == null ? "?" : f.name());
@@ -75,14 +76,19 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
             if (f.isConstant() && !SIMPLE.contains(f.type())) {
                 problems.add(where + ": only simple fields can be constants");
             }
+            if ("blob".equals(f.type()) && !topLevel) {
+                problems.add(where + ": a blob can only be a top-level field");
+            }
             if ("object".equals(f.type())) {
-                checkFields(f.children(), where + ".", ids, problems);
+                checkFields(f.children(), where + ".", false, ids, problems);
             }
             if ("list".equals(f.type())) {
                 if (f.items() == null || !TYPES.contains(f.items().type())) {
                     problems.add(where + ": list has no valid item type");
+                } else if ("blob".equals(f.items().type())) {
+                    problems.add(where + ": a list can't hold blobs");
                 } else if ("object".equals(f.items().type())) {
-                    checkFields(f.items().children(), where + "[].", ids, problems);
+                    checkFields(f.items().children(), where + "[].", false, ids, problems);
                 }
             }
         }

@@ -115,6 +115,67 @@ class ContractImporterTest {
                 .hasMessageContaining("Not an OpenAPI or Swagger file");
     }
 
+    /** D-29: format binary is a file (blob) in multipart parts, raw bodies and raw answers; format byte (base64) stays text. */
+    @Test
+    void binaryBecomesABlobAndBase64StaysText() throws Exception {
+        String docs = """
+                openapi: 3.0.3
+                info: { title: Docs, version: "1" }
+                paths:
+                  /documents:
+                    post:
+                      operationId: upload
+                      requestBody:
+                        content:
+                          multipart/form-data:
+                            schema:
+                              type: object
+                              properties:
+                                title: { type: string }
+                                file: { type: string, format: binary }
+                      responses: { "201": { description: ok } }
+                  /documents/base64:
+                    post:
+                      operationId: uploadBase64
+                      requestBody:
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                              properties:
+                                contentBase64: { type: string, format: byte }
+                      responses: { "201": { description: ok } }
+                  /documents/{id}/content:
+                    parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+                    put:
+                      operationId: replace
+                      requestBody:
+                        content:
+                          application/pdf:
+                            schema: { type: string, format: binary }
+                      responses: { "200": { description: ok } }
+                    get:
+                      operationId: download
+                      responses:
+                        "200":
+                          description: the file
+                          content:
+                            application/pdf:
+                              schema: { type: string, format: binary }
+                """;
+        Contract c = importer().importContract("docs", "Docs", docs, null);
+
+        assertThat(op(c, "POST", "/documents").requestBody().fields())
+                .extracting(PayloadDefinition.Field::name, PayloadDefinition.Field::type)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("title", "text"), org.assertj.core.groups.Tuple.tuple("file", "blob"));
+        PayloadDefinition.Field base64 = op(c, "POST", "/documents/base64").requestBody().fields().getFirst();
+        assertThat(base64.type()).isEqualTo("text");
+        assertThat(base64.format()).isEqualTo("byte");
+        assertThat(op(c, "PUT", "/documents/{id}/content").requestBody().type()).isEqualTo("blob");
+        assertThat(op(c, "GET", "/documents/{id}/content").response().type()).isEqualTo("blob");
+        assertThat(c.warnings()).isEmpty();
+    }
+
     @Test
     void unreachableUrlSaysUploadTheFileInstead() {
         assertThatThrownBy(() -> importer().fetch("http://localhost:1/swagger.json"))
