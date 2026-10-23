@@ -41,6 +41,23 @@ class FakeBooksApi {
         return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1,\"title\":\"secure\"}");
     }
 
+    final java.util.concurrent.atomic.AtomicInteger busyCalls = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Always 503 with Retry-After, the answer an HTTP client retries by default; counts how often it was called. */
+    @GetMapping("/fake/busy")
+    ResponseEntity<String> busy() {
+        busyCalls.incrementAndGet();
+        return ResponseEntity.status(503).header("Retry-After", "1").header("Content-Type", "text/plain").body("maintenance");
+    }
+
+    /** Sets a cookie on every answer and records the headers it got, to see whether a cookie comes back. */
+    @GetMapping("/fake/cookie")
+    ResponseEntity<String> cookie(@RequestHeader HttpHeaders headers) {
+        lastRequest.put("headers", headers);
+        return ResponseEntity.ok().header("Content-Type", "application/json").header("Set-Cookie", "vendor=1; Path=/")
+                .body("{\"id\":1,\"title\":\"cookie\"}");
+    }
+
     /** Answers after 1.5 s, longer than the timeout the version tests configure. */
     @GetMapping("/fake/slow")
     ResponseEntity<String> slow() throws InterruptedException {

@@ -229,6 +229,28 @@ class VersionLifecycleTest {
         assertThat(ms).isLessThan(1500);
     }
 
+    /** Runtime rule: an error of the external system passes through; the external system is called once, not retried. */
+    @Test
+    void remoteErrorIsPassedThroughWithoutARetry() throws Exception {
+        write("services/busy-book.json", service("busy-book", "GET", "/busy", null, null));
+        publisher.publishDraft("busy-book");
+        fake.busyCalls.set(0);
+        HttpResponse<String> r = call("GET", "busy-book", null);
+        assertThat(r.statusCode()).isEqualTo(503);
+        assertThat(r.headers().firstValue("X-Integration-Error")).contains("remote");
+        assertThat(fake.busyCalls.get()).isEqualTo(1);
+    }
+
+    /** OV-8: the outbound request carries only mapped headers and auth, so a cookie the external system set never comes back. */
+    @Test
+    void cookiesFromTheRemoteAreNotSentOnLaterCalls() throws Exception {
+        write("services/cookie-book.json", service("cookie-book", "GET", "/cookie", null, null));
+        publisher.publishDraft("cookie-book");
+        call("GET", "cookie-book", null);
+        call("GET", "cookie-book", null);
+        assertThat(((HttpHeaders) fake.lastRequest.get("headers")).get("Cookie")).isNull();
+    }
+
     @Test
     void adminPublishAndVersionsOverHttp() throws Exception {
         write("services/admin-book.json", service("admin-book", "POST", "/api/v1/Books", "body.title", null));

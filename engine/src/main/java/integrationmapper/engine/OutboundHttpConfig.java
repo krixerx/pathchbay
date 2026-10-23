@@ -11,6 +11,11 @@ import org.springframework.context.annotation.Configuration;
  * Outbound timeouts for external calls (runtime rule: 10 seconds). Camel's defaults are 3 minutes, and the Spring
  * Boot starter only exposes properties for the {@code http} component, so both {@code http} and {@code https} are
  * set here. A timeout surfaces as 504 (IntegrationProcessors).
+ * <p>
+ * Apache HttpClient's defaults are switched off too: automatic retries (it repeats a call after 429/503 and after
+ * I/O errors, waiting for Retry-After), because an error of the external system passes through after exactly one
+ * call; and the cookie store, which would send a cookie one call received on every later call, also of other
+ * integrations and callers (OV-8: only mapped headers and auth go out).
  */
 @Configuration
 public class OutboundHttpConfig {
@@ -26,6 +31,8 @@ public class OutboundHttpConfig {
                     http.setConnectionRequestTimeout(timeoutMs);
                     http.setResponseTimeout(timeoutMs);
                     http.setSoTimeout(timeoutMs);
+                    http.setAutomaticRetriesDisabled(true);
+                    http.setCookieManagementDisabled(true);
                 }
             }
 
