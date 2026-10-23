@@ -13,6 +13,11 @@ public class IntegrationRegistry {
     private final Map<String, CompiledIntegration> active = new ConcurrentHashMap<>();
     private final Map<String, String> broken = new ConcurrentHashMap<>();
 
+    /** The live version, or null when the integration has none. */
+    CompiledIntegration find(String slug) {
+        return active.get(slug);
+    }
+
     CompiledIntegration get(String slug) {
         CompiledIntegration ci = active.get(slug);
         if (ci == null) {

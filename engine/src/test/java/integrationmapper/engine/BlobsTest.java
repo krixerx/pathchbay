@@ -45,6 +45,17 @@ class BlobsTest {
     }
 
     @Test
+    void theFileNameComesFromContentDisposition() {
+        assertThat(Blobs.fileName("attachment; filename=\"a b.pdf\"")).isEqualTo("a b.pdf");
+        assertThat(Blobs.fileName("inline; filename=plain.txt")).isEqualTo("plain.txt");
+        assertThat(Blobs.fileName("attachment; filename=\"x.pdf\"; filename*=UTF-8''r%C3%A4%C3%A4k.pdf")).isEqualTo("rääk.pdf");
+        assertThat(Blobs.fileName("attachment")).isNull();
+        assertThat(Blobs.fileName(null)).isNull();
+        assertThat(Blobs.contentDisposition("a \"b\".pdf")).isEqualTo("attachment; filename=\"a \\\"b\\\".pdf\"");
+        assertThat(Blobs.contentDisposition("rääk.pdf")).isEqualTo("attachment; filename=\"r__k.pdf\"; filename*=UTF-8''r%C3%A4%C3%A4k.pdf");
+    }
+
+    @Test
     void theLogShowsTheSizeInsteadOfTheData() throws Exception {
         JsonNode logged = Blobs.forLog(json("{\"title\":\"T\",\"file\":{\"fileName\":\"a.pdf\",\"size\":3,\"data\":\"QUJD\"},"
                 + "\"nested\":{\"doc\":{\"contentType\":\"x\",\"data\":\"QUJDRA==\"}},\"other\":{\"data\":\"kept\"}}"));

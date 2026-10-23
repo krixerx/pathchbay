@@ -187,6 +187,11 @@ public final class CompiledIntegration {
         return definition.wire().requestXml() ? "application/xml" : "application/json";
     }
 
+    /** What the external system may answer with: the request's own format, anything after a raw file (D-29). */
+    String accept() {
+        return definition.wire().requestBinary() ? "*/*" : requestContentType();
+    }
+
     /** The mapped Output as callers get it. */
     String outputBody(String outputJson) throws JsonProcessingException {
         ServiceDefinition.Formats f = definition.wire();

@@ -41,6 +41,14 @@ class FakeBooksApi {
         return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1,\"title\":\"secure\"}");
     }
 
+    /** Takes a file as the raw body (D-29) and remembers its exact bytes and headers. */
+    @org.springframework.web.bind.annotation.PutMapping("/fake/files/{id}")
+    ResponseEntity<String> putFile(@PathVariable String id, @RequestBody byte[] body, @RequestHeader HttpHeaders headers) {
+        lastRequest.put("bytes", body);
+        lastRequest.put("headers", headers);
+        return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"documentId\":\"" + id + "\",\"status\":\"STORED\"}");
+    }
+
     final java.util.concurrent.atomic.AtomicInteger busyCalls = new java.util.concurrent.atomic.AtomicInteger();
 
     /** Always 503 with Retry-After, the answer an HTTP client retries by default; counts how often it was called. */

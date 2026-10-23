@@ -97,6 +97,11 @@ class VersionLifecycleTest {
             write("entities/no-input.json", NO_INPUT);
             write("entities/upload.json", """
                     {"id":"upload","fields":[{"id":"u-file","name":"file","type":"blob","required":true}]}""");
+            write("entities/doc-content.json", """
+                    {"id":"doc-content","fields":[{"id":"dc-id","name":"documentId","type":"text","required":true},
+                      {"id":"dc-content","name":"content","type":"blob","required":true}]}""");
+            write("entities/stored.json", """
+                    {"id":"stored","fields":[{"id":"st-id","name":"documentId","type":"text"},{"id":"st-status","name":"status","type":"text"}]}""");
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -280,6 +285,71 @@ class VersionLifecycleTest {
         String calls = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/admin/api/integrations/upload-book/calls"))
                 .build(), HttpResponse.BodyHandlers.ofString()).body();
         assertThat(calls).contains("<3 bytes, base64>").doesNotContain("QUJD");
+    }
+
+    HttpResponse<String> callRaw(String method, String slugAndQuery, String contentType, byte[] body, String... headers) throws Exception {
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slugAndQuery))
+                .header("Content-Type", contentType).method(method, HttpRequest.BodyPublishers.ofByteArray(body));
+        for (int i = 0; i < headers.length; i += 2) {
+            b.header(headers[i], headers[i + 1]);
+        }
+        return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    static void publishFilePut() throws Exception {
+        write("services/file-put.json", """
+                {"id":"file-put","input":"doc-content","output":"stored",
+                 "target":{"baseUrl":"http://localhost:%d/fake","method":"PUT","path":"/files/{id}"},
+                 "formats":{"request":"binary"},
+                 "request":{"links":[{"from":"dc-id","to":"path.id"},{"from":"dc-content","to":"body"}]},
+                 "response":{"links":[{"from":"documentId","to":"st-id"},{"from":"status","to":"st-status"}]}}""".formatted(PORT));
+    }
+
+    /** D-29: a raw body from the caller and a JSON file both go to the external system as the raw body, byte for byte. */
+    @Test
+    void aFileGoesOutAsTheRawBodyWhetherItCameRawOrAsJson() throws Exception {
+        publishFilePut();
+        publisher.publishDraft("file-put");
+        byte[] bytes = new byte[256];
+        for (int i = 0; i < bytes.length; i++) {
+            bytes[i] = (byte) i; // every byte value, so nothing may pass through text
+        }
+
+        HttpResponse<String> raw = callRaw("PUT", "file-put?documentId=D-1", "application/pdf", bytes,
+                "Content-Disposition", "attachment; filename=\"a.pdf\"");
+        assertThat(raw.statusCode()).as(raw.body()).isEqualTo(200);
+        assertThat(raw.body()).isEqualTo("{\"documentId\":\"D-1\",\"status\":\"STORED\"}");
+        assertThat((byte[]) fake.lastRequest.get("bytes")).isEqualTo(bytes);
+        HttpHeaders sent = (HttpHeaders) fake.lastRequest.get("headers");
+        assertThat(sent.getFirst("Content-Type")).isEqualTo("application/pdf");
+        assertThat(sent.getFirst("Content-Disposition")).isEqualTo("attachment; filename=\"a.pdf\"");
+
+        fake.lastRequest.clear();
+        String json = "{\"documentId\":\"D-2\",\"content\":{\"fileName\":\"b.bin\",\"data\":\""
+                + java.util.Base64.getEncoder().encodeToString(bytes) + "\"}}";
+        HttpResponse<String> fromJson = call("PUT", "file-put", json);
+        assertThat(fromJson.statusCode()).as(fromJson.body()).isEqualTo(200);
+        assertThat((byte[]) fake.lastRequest.get("bytes")).isEqualTo(bytes);
+        sent = (HttpHeaders) fake.lastRequest.get("headers");
+        assertThat(sent.getFirst("Content-Type")).isEqualTo("application/octet-stream");
+        assertThat(sent.getFirst("Content-Disposition")).isEqualTo("attachment; filename=\"b.bin\"");
+    }
+
+    /** D-29: a raw body only goes where the Input has a file; a declared length over the limit is refused unread. */
+    @Test
+    void aRawBodyNeedsAFileInTheInputAndFitsTheLimit() throws Exception {
+        write("services/plain-book.json", service("plain-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("plain-book");
+        HttpResponse<String> noFile = callRaw("POST", "plain-book", "text/plain", "hello".getBytes());
+        assertThat(noFile.statusCode()).isEqualTo(415);
+
+        publishFilePut();
+        publisher.publishDraft("file-put");
+        fake.lastRequest.clear();
+        HttpResponse<String> tooLarge = callRaw("PUT", "file-put?documentId=D-3", "application/octet-stream", new byte[1500]);
+        assertThat(tooLarge.statusCode()).isEqualTo(413);
+        assertThat(tooLarge.body()).contains("payload-too-large");
+        assertThat(fake.lastRequest).isEmpty();
     }
 
     @Test

@@ -73,7 +73,15 @@ public class IntegrationProcessors {
         trace.method = target.method();
 
         JsonNode input;
-        if (BODY_METHODS.contains(target.method())) {
+        String contentType = msg.getHeader(Exchange.CONTENT_TYPE, String.class);
+        PayloadDefinition.Field file = Blobs.onlyFile(ci.input());
+        if (BODY_METHODS.contains(target.method()) && file != null && contentType != null
+                && !contentType.toLowerCase().startsWith("application/json")) {
+            // A raw file (D-29): the body is the Input's file, its other fields come as query parameters.
+            ObjectNode fromQuery = InputValidator.coerceQuery(queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class)), ci.input());
+            fromQuery.set(file.name(), Blobs.fromRaw(msg.getBody(byte[].class), contentType, msg.getHeader("Content-Disposition", String.class)));
+            input = fromQuery;
+        } else if (BODY_METHODS.contains(target.method())) {
             input = parseObject(blankToEmptyObject(msg.getBody(String.class)));
         } else {
             input = InputValidator.coerceQuery(queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class)), ci.input());
@@ -101,7 +109,7 @@ public class IntegrationProcessors {
         msg.setHeader(Exchange.HTTP_METHOD, target.method());
         msg.setHeader(Exchange.HTTP_URI, stripTrailingSlash(ci.baseUrl()) + fillPath(target.path(), mapped.path("path")));
         String query = toQuery(mapped.path("query"));
-        msg.setHeader("Accept", ci.requestContentType());
+        msg.setHeader("Accept", ci.accept());
         mapped.path("headers").properties().forEach(h -> {
             if (!h.getValue().isNull()) {
                 msg.setHeader(h.getKey(), h.getValue().asText());
@@ -136,17 +144,31 @@ public class IntegrationProcessors {
         if (!query.isEmpty()) {
             msg.setHeader(Exchange.HTTP_QUERY, query);
         }
-        String body = null;
-        if (BODY_METHODS.contains(target.method())) {
-            body = ci.requestBody(mapped.path("body"));
+        boolean hasBody = BODY_METHODS.contains(target.method());
+        if (hasBody && ci.definition().wire().requestBinary()) {
+            // One file as the raw body, with its type and name (D-29).
+            JsonNode sentFile = mapped.path("body");
+            byte[] bytes = sentFile.isObject() ? Blobs.bytes(sentFile) : new byte[0];
+            msg.setHeader(Exchange.CONTENT_TYPE, sentFile.path("contentType").asText(Blobs.DEFAULT_TYPE));
+            shownHeaders.put(Exchange.CONTENT_TYPE, msg.getHeader(Exchange.CONTENT_TYPE));
+            if (sentFile.hasNonNull("fileName")) {
+                msg.setHeader("Content-Disposition", Blobs.contentDisposition(sentFile.get("fileName").asText()));
+                shownHeaders.put("Content-Disposition", msg.getHeader("Content-Disposition"));
+            }
+            msg.setBody(bytes);
+        } else if (hasBody) {
             msg.setHeader(Exchange.CONTENT_TYPE, ci.requestContentType());
+            msg.setBody(ci.requestBody(mapped.path("body")));
+        } else {
+            msg.setBody(null);
         }
-        msg.setBody(body);
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("method", target.method());
         request.put("url", msg.getHeader(Exchange.HTTP_URI, String.class) + (shownQuery.isEmpty() ? "" : "?" + shownQuery));
         request.put("headers", shownHeaders);
-        request.put("body", body == null ? null : ci.definition().wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : Blobs.forLog(mapped.path("body")));
+        request.put("body", !hasBody ? null
+                : ci.definition().wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(msg.getBody(String.class))
+                : Blobs.forLog(mapped.path("body")));
         trace.request = request;
         trace.stage = "response";
     }

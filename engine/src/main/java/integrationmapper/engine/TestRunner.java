@@ -109,7 +109,7 @@ public class TestRunner {
         }
         String query = IntegrationProcessors.toQuery(mapped.path("query"));
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Accept", ci.requestContentType());
+        headers.put("Accept", ci.accept());
         mapped.path("headers").properties().forEach(h -> {
             if (!h.getValue().isNull()) {
                 headers.put(h.getKey(), h.getValue().asText());
@@ -127,7 +127,18 @@ public class TestRunner {
             authQuery = "query".equals(def.auth().in()) ? def.auth().name() : null;
         }
         boolean hasBody = BODY_METHODS.contains(def.target().method());
-        String body = hasBody ? ci.requestBody(mapped.path("body")) : null;
+        boolean fileBody = hasBody && def.wire().requestBinary();
+        String body = hasBody && !fileBody ? ci.requestBody(mapped.path("body")) : null;
+        byte[] fileBytes = null;
+        if (fileBody) {
+            // As in the route: one file as the raw body, with its type and name (D-29).
+            JsonNode file = mapped.path("body");
+            fileBytes = file.isObject() ? Blobs.bytes(file) : new byte[0];
+            headers.put("Content-Type", file.path("contentType").asText(Blobs.DEFAULT_TYPE));
+            if (file.hasNonNull("fileName")) {
+                headers.put("Content-Disposition", Blobs.contentDisposition(file.get("fileName").asText()));
+            }
+        }
 
         Map<String, Object> shownHeaders = new LinkedHashMap<>(headers);
         IntegrationProcessors.maskSecrets(shownHeaders, connectionHeaders);
@@ -171,14 +182,15 @@ public class TestRunner {
             }
             HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url + (realQuery.isEmpty() ? "" : "?" + realQuery)))
                     .timeout(Duration.ofSeconds(10))
-                    .method(def.target().method(), hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
+                    .method(def.target().method(), fileBody ? HttpRequest.BodyPublishers.ofByteArray(fileBytes)
+                            : hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
             String auth = authHeader;
             headers.forEach((k, v) -> {
                 if (auth == null || !k.equalsIgnoreCase(auth)) {
                     rb.header(k, v);
                 }
             });
-            if (hasBody) {
+            if (hasBody && !fileBody) {
                 rb.header("Content-Type", ci.requestContentType());
             }
             if (authHeader != null) {

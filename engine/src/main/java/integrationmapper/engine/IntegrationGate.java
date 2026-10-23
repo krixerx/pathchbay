@@ -10,12 +10,15 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Front door for {@code /api/v1/integrations/**}. Keeps callers away from an integration's route while it is
- * replaced (R2, R7; verified in spike E1), and refuses non-JSON bodies.
+ * replaced (R2, R7; verified in spike E1), and refuses bodies the integration can't take: anything but JSON, except
+ * a raw file for an Input with exactly one file (D-29), which is refused unread when it declares more bytes than
+ * {@code mapper.max-blob-bytes}.
  * A call counts itself in-flight before checking the gate, so swap() can close the gate, wait for
  * admitted calls to drain and replace the route with nobody inside it.
  */
@@ -26,6 +29,13 @@ public class IntegrationGate extends OncePerRequestFilter {
 
     private final ConcurrentHashMap<String, AtomicInteger> inFlight = new ConcurrentHashMap<>();
     private final Set<String> closed = ConcurrentHashMap.newKeySet();
+    private final IntegrationRegistry registry;
+    private final long maxBlobBytes;
+
+    public IntegrationGate(IntegrationRegistry registry, @Value("${mapper.max-blob-bytes:52428800}") long maxBlobBytes) {
+        this.registry = registry;
+        this.maxBlobBytes = maxBlobBytes;
+    }
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -37,14 +47,25 @@ public class IntegrationGate extends OncePerRequestFilter {
             throws ServletException, IOException {
         String slug = request.getRequestURI().substring(INTEGRATIONS.length());
         // Camel's platform-http consumer parses form bodies before the route runs and answers with an HTML 500,
-        // so a body that isn't JSON is refused here with the JSON error shape.
+        // so a body the integration can't take is refused here with the JSON error shape.
         String contentType = request.getContentType();
         if (request.getContentLengthLong() != 0 && contentType != null
                 && !contentType.toLowerCase().startsWith("application/json")) {
-            response.setStatus(415);
-            response.setContentType("application/json");
-            response.getWriter().write(Json.error("unsupported-media-type", slug, "Send the request body as application/json"));
-            return;
+            CompiledIntegration ci = registry.find(slug);
+            boolean takesFile = ci != null && Blobs.onlyFile(ci.input()) != null;
+            String type = contentType.toLowerCase();
+            boolean form = type.startsWith("multipart/") || type.startsWith("application/x-www-form-urlencoded");
+            if (form || !takesFile) {
+                refuse(response, 415, "unsupported-media-type", slug, takesFile
+                        ? "Send the request body as application/json, or the file as the raw body"
+                        : "Send the request body as application/json");
+                return;
+            }
+            if (request.getContentLengthLong() > maxBlobBytes) {
+                refuse(response, 413, "payload-too-large", slug, "The file is " + request.getContentLengthLong()
+                        + " bytes, more than the limit of " + maxBlobBytes + " bytes");
+                return;
+            }
         }
         AtomicInteger count = inFlight.computeIfAbsent(slug, k -> new AtomicInteger());
         count.incrementAndGet();
@@ -61,6 +82,12 @@ public class IntegrationGate extends OncePerRequestFilter {
         } finally {
             count.decrementAndGet();
         }
+    }
+
+    private static void refuse(HttpServletResponse response, int status, String error, String slug, String detail) throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.getWriter().write(Json.error(error, slug, detail));
     }
 
     /** Close the gate for one integration, wait until no admitted call is inside it, run the swap, reopen. */

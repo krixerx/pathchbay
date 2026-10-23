@@ -93,6 +93,85 @@ final class Blobs {
         return Base64.getDecoder().decode(file.path("data").asText(""));
     }
 
+    /** The only file field of a definition, or null when it has none or several (a raw body needs exactly one). */
+    static PayloadDefinition.Field onlyFile(PayloadDefinition def) {
+        List<PayloadDefinition.Field> files = def.fields() == null ? List.of()
+                : def.fields().stream().filter(f -> "blob".equals(f.type())).toList();
+        return files.size() == 1 ? files.get(0) : null;
+    }
+
+    /** A raw body as a file: its bytes, its Content-Type and the file name from its Content-Disposition. */
+    static ObjectNode fromRaw(byte[] bytes, String contentType, String contentDisposition) {
+        ObjectNode file = Json.MAPPER.createObjectNode();
+        String name = fileName(contentDisposition);
+        if (name != null) {
+            file.put("fileName", name);
+        }
+        if (contentType != null && !contentType.isBlank()) {
+            file.put("contentType", contentType);
+        }
+        return file.put("data", Base64.getEncoder().encodeToString(bytes == null ? new byte[0] : bytes));
+    }
+
+    /** The file name of a Content-Disposition header: {@code filename*} (RFC 5987) wins over {@code filename}; null if none. */
+    static String fileName(String contentDisposition) {
+        if (contentDisposition == null) {
+            return null;
+        }
+        String plain = null;
+        for (String part : contentDisposition.split(";")) {
+            int eq = part.indexOf('=');
+            if (eq < 0) {
+                continue;
+            }
+            String key = part.substring(0, eq).trim().toLowerCase();
+            String value = part.substring(eq + 1).trim();
+            if (key.equals("filename*")) {
+                int quote = value.indexOf("''");
+                if (quote >= 0) {
+                    return java.net.URLDecoder.decode(value.substring(quote + 2).replace("+", "%2B"),
+                            java.nio.charset.StandardCharsets.UTF_8);
+                }
+            } else if (key.equals("filename")) {
+                plain = value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")
+                        ? value.substring(1, value.length() - 1).replace("\\\"", "\"").replace("\\\\", "\\")
+                        : value;
+            }
+        }
+        return plain;
+    }
+
+    /**
+     * A Content-Disposition for a file name (RFC 6266): a quoted ASCII {@code filename}, plus {@code filename*} in
+     * UTF-8 when the name has other characters.
+     */
+    static String contentDisposition(String fileName) {
+        StringBuilder ascii = new StringBuilder();
+        boolean other = false;
+        for (char c : fileName.toCharArray()) {
+            if (c < 0x20 || c > 0x7e) {
+                ascii.append('_');
+                other = true;
+            } else {
+                ascii.append(c == '"' || c == '\\' ? "\\" + c : String.valueOf(c));
+            }
+        }
+        String header = "attachment; filename=\"" + ascii + "\"";
+        if (!other) {
+            return header;
+        }
+        StringBuilder encoded = new StringBuilder();
+        for (byte b : fileName.getBytes(java.nio.charset.StandardCharsets.UTF_8)) {
+            char c = (char) (b & 0xff);
+            if (c < 0x80 && (Character.isLetterOrDigit(c) || "!#$&+-.^_`|~".indexOf(c) >= 0)) {
+                encoded.append(c);
+            } else {
+                encoded.append('%').append(String.format("%02X", b & 0xff));
+            }
+        }
+        return header + "; filename*=UTF-8''" + encoded;
+    }
+
     /** A file-shaped object: text {@code data} next to a {@code fileName}, {@code contentType} or {@code size}. */
     static boolean isFile(JsonNode v) {
         return v.isObject() && v.path("data").isTextual()
