@@ -56,13 +56,14 @@ export interface IntegrationSummary {
 }
 
 /**
- * Wire formats (D-24): how the request body goes to the external system and what callers get back. Missing means
- * JSON. An XML document needs a root element name.
+ * Wire formats (D-24, D-29): how the request body goes to the external system and what callers get back. Missing
+ * means JSON. An XML document needs a root element name. `binary` is one file as the raw body; `multipart` sends
+ * one part per body field.
  */
 export interface Formats {
-  request?: 'json' | 'xml';
+  request?: 'json' | 'xml' | 'binary' | 'multipart';
   requestRoot?: string;
-  output?: 'json' | 'xml';
+  output?: 'json' | 'xml' | 'binary';
   outputRoot?: string;
 }
 

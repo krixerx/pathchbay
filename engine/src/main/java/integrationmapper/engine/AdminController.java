@@ -8,6 +8,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.HandlerMapping;
+
+import jakarta.servlet.http.HttpServletRequest;
 
 /** Admin calls until the console exists: status, publish a draft, list versions, make a version active. */
 @RestController
@@ -45,10 +48,12 @@ public class AdminController {
         return Map.of("integration", slug, "activeVersion", version);
     }
 
-    /** Publish problems (broken links, missing secret, unknown version) come back as one readable 400. */
+    /** Publish problems (broken links, missing secret, unknown version) come back as one readable 400, naming the integration. */
     @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<String> badRequest(IllegalArgumentException e) {
+    public ResponseEntity<String> badRequest(IllegalArgumentException e, HttpServletRequest request) {
+        Object vars = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+        String slug = vars instanceof Map<?, ?> m && m.get("slug") instanceof String s ? s : null;
         return ResponseEntity.badRequest().header("Content-Type", "application/json")
-                .body(Json.error("publish-failed", null, e.getMessage()));
+                .body(Json.error("publish-failed", slug, e.getMessage()));
     }
 }

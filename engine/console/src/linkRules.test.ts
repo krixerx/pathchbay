@@ -2,16 +2,27 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { checkLink, typesFit } from './linkRules';
+import type { FieldType } from './model';
 
 // The same table the engine's LinkCasesTest runs (R5).
 const file = JSON.parse(readFileSync(resolve(__dirname, '../../../rules/link-cases.json'), 'utf-8')) as {
-  cases: { name: string; source: string; target: string; listLinks: [string, string][]; reason: string | null }[];
+  cases: {
+    name: string;
+    source: string;
+    target: string;
+    sourceType?: FieldType;
+    targetType?: FieldType;
+    requestFormat?: string;
+    listLinks: [string, string][];
+    reason: string | null;
+  }[];
 };
 
 describe('shared link cases (rules/link-cases.json)', () => {
   it.each(file.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
     const listLinks = c.listLinks.map(([source, target]) => ({ source, target }));
-    expect(checkLink(c.source, c.target, listLinks)).toBe(c.reason);
+    const ctx = { sourceType: c.sourceType, targetType: c.targetType, requestFormat: c.requestFormat };
+    expect(checkLink(c.source, c.target, listLinks, ctx)).toBe(c.reason);
   });
 });
 

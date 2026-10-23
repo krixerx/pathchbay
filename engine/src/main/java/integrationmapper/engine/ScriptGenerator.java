@@ -15,58 +15,123 @@ import java.util.Map;
  * A key is written only when its source key exists: a field the caller (or the external system) did not send is
  * left out instead of being sent as null, while an explicit null is passed on, so an update can still reset a field.
  * An object is left out when nothing inside it was sent. The request parts are always there.
+ * <p>
+ * Files (D-29) are JSON here: a blob is the object {@code {contentType, fileName, size, data}}, a link end
+ * {@code <field id>.<part>} reads or writes one of its keys, {@code body} alone is the whole request body and
+ * {@code $body} the whole answer. The runtime puts raw and multipart files into that shape before mapping.
  */
 public final class ScriptGenerator {
 
     /** Top-level keys the request script always returns (eng review OV-4). */
     static final List<String> REQUEST_PARTS = List.of("path", "query", "headers", "body");
 
+    /** The parts of a file and their types (D-29). */
+    static final Map<String, String> BLOB_PARTS = Map.of("data", "text", "fileName", "text", "contentType", "text", "size", "integer");
+
     private ScriptGenerator() {
     }
 
-    /** A resolved link: source and target paths, plus a literal when the source is a constant (R11). */
-    private record Resolved(LinkRules.Path source, LinkRules.Path target, String constant, String label) {
+    /**
+     * A resolved link: source and target paths with their types where known, plus a literal when the source is a
+     * constant (R11).
+     */
+    private record Resolved(LinkRules.Path source, String sourceType, LinkRules.Path target, String targetType, String constant,
+            String label) {
+    }
+
+    /** The payload end of a link: a field, or one part of a file field ({@code part} set). */
+    private record End(LinkRules.Path path, String type, PayloadDefinition.Field field, String part) {
     }
 
     public static String requestScript(List<ServiceDefinition.Link> links, PayloadDefinition input) {
+        return requestScript(links, input, null);
+    }
+
+    /** {@code requestFormat}: json (null), xml, binary or multipart; the file rules depend on it. */
+    public static String requestScript(List<ServiceDefinition.Link> links, PayloadDefinition input, String requestFormat) {
         List<String> problems = new ArrayList<>();
         List<Resolved> resolved = new ArrayList<>();
         for (ServiceDefinition.Link link : links) {
             String label = link.from() + " → " + link.to();
             LinkRules.Path target = LinkRules.Path.of(link.to());
-            if (!REQUEST_PARTS.contains(target.segments().get(0)) || target.segments().size() < 2) {
+            boolean wholeBody = target.segments().equals(List.of(LinkRules.BODY));
+            if (!REQUEST_PARTS.contains(target.segments().get(0)) || (target.segments().size() < 2 && !wholeBody)) {
                 problems.add(label + ": target must be inside one of " + REQUEST_PARTS);
                 continue;
             }
-            var source = input.find(link.from());
-            if (source.isEmpty()) {
-                problems.add(label + ": " + link.from() + " is not a field of " + input.id());
+            End source = resolve(input, link.from(), label, problems);
+            if (source == null) {
                 continue;
             }
-            String constant = source.get().field().isConstant()
-                    ? Json.MAPPER.valueToTree(source.get().field().value()).toString() : null;
-            resolved.add(new Resolved(new LinkRules.Path(source.get().namePath()), target, constant, label));
+            String constant = source.part() == null && source.field().isConstant()
+                    ? Json.MAPPER.valueToTree(source.field().value()).toString() : null;
+            resolved.add(new Resolved(source.path(), source.type(), target, null, constant, label));
         }
         Map<String, Object> root = new LinkedHashMap<>();
         for (String part : REQUEST_PARTS) {
             root.put(part, new LinkedHashMap<String, Object>());
         }
-        return build(root, resolved, problems, true);
+        return build(root, resolved, problems, true, requestFormat);
     }
 
     public static String responseScript(List<ServiceDefinition.Link> links, PayloadDefinition output) {
         List<String> problems = new ArrayList<>();
         List<Resolved> resolved = new ArrayList<>();
+        Map<String, List<String>> fileParts = new LinkedHashMap<>();
         for (ServiceDefinition.Link link : links) {
             String label = link.from() + " → " + link.to();
-            var target = output.find(link.to());
-            if (target.isEmpty()) {
-                problems.add(label + ": " + link.to() + " is not a field of " + output.id());
+            End target = resolve(output, link.to(), label, problems);
+            if (target == null) {
                 continue;
             }
-            resolved.add(new Resolved(LinkRules.Path.of(link.from()), new LinkRules.Path(target.get().namePath()), null, label));
+            if ("size".equals(target.part())) {
+                problems.add(label + ": size is worked out from the data and can't be linked to");
+                continue;
+            }
+            if (target.part() != null) {
+                fileParts.computeIfAbsent(String.join(".", target.path().segments().subList(0, target.path().segments().size() - 1)),
+                        k -> new ArrayList<>()).add(target.part());
+            }
+            LinkRules.Path source = LinkRules.Path.of(link.from());
+            resolved.add(new Resolved(source, answerType(source), target.path(), target.type(), null, label));
         }
-        return build(new LinkedHashMap<>(), resolved, problems, false);
+        fileParts.forEach((file, parts) -> {
+            if (!parts.contains("data")) {
+                problems.add(file + ": link the file's data (base64) too");
+            }
+        });
+        return build(new LinkedHashMap<>(), resolved, problems, false, null);
+    }
+
+    /** A field id, or {@code <file field id>.<part>}; null with a problem added when it is neither. */
+    private static End resolve(PayloadDefinition def, String ref, String label, List<String> problems) {
+        var field = def.find(ref);
+        if (field.isPresent()) {
+            return new End(new LinkRules.Path(field.get().namePath()), field.get().field().type(), field.get().field(), null);
+        }
+        int dot = ref.lastIndexOf('.');
+        var file = dot > 0 ? def.find(ref.substring(0, dot)) : java.util.Optional.<PayloadDefinition.Located>empty();
+        if (file.isPresent() && "blob".equals(file.get().field().type())) {
+            String part = ref.substring(dot + 1);
+            if (!BLOB_PARTS.containsKey(part)) {
+                problems.add(label + ": " + part + " is not a part of a file (data, fileName, contentType, size)");
+                return null;
+            }
+            List<String> path = new ArrayList<>(file.get().namePath());
+            path.add(part);
+            return new End(new LinkRules.Path(path), BLOB_PARTS.get(part), file.get().field(), part);
+        }
+        problems.add(label + ": " + ref + " is not a field of " + def.id());
+        return null;
+    }
+
+    /** The type of an answer path where it is known: the whole answer is a file, {@code $body.<part>} one of its parts. */
+    private static String answerType(LinkRules.Path source) {
+        List<String> segs = source.segments();
+        if (!LinkRules.WHOLE_ANSWER.equals(segs.get(0))) {
+            return null;
+        }
+        return segs.size() == 1 ? "blob" : segs.size() == 2 ? BLOB_PARTS.get(segs.get(1)) : null;
     }
 
     // ---- building the target tree
@@ -88,8 +153,10 @@ public final class ScriptGenerator {
     }
 
     /** {@code keepRootKeys}: the request parts are always returned, even when empty. */
-    private static String build(Map<String, Object> root, List<Resolved> links, List<String> problems, boolean keepRootKeys) {
-        problems.addAll(LinkRules.checkAll(links.stream().map(l -> new LinkRules.Path[] {l.source(), l.target()}).toList()));
+    private static String build(Map<String, Object> root, List<Resolved> links, List<String> problems, boolean keepRootKeys,
+            String requestFormat) {
+        problems.addAll(LinkRules.checkAll(links.stream()
+                .map(l -> new LinkRules.Typed(l.source(), l.sourceType(), l.target(), l.targetType())).toList(), requestFormat));
         if (problems.isEmpty()) {
             // Lists first, outer before inner, so every item link finds its list node.
             List<Resolved> ordered = new ArrayList<>(links);
@@ -113,6 +180,14 @@ public final class ScriptGenerator {
     private static void place(Map<String, Object> root, Resolved r) {
         List<String> segs = r.target().segments();
         boolean listLink = r.source().isList() && r.target().isList();
+        if (segs.equals(List.of(LinkRules.BODY))) {
+            // The whole body (a file, D-29): only when nothing else writes into the body.
+            if (root.get(LinkRules.BODY) instanceof Map<?, ?> body && !body.isEmpty()) {
+                throw new IllegalArgumentException("another link already writes to " + r.target());
+            }
+            root.put(LinkRules.BODY, sourceValue(r.source()));
+            return;
+        }
         Map<String, Object> node = root;
         int level = 0;
         for (int i = 0; i < segs.size() - 1; i++) {

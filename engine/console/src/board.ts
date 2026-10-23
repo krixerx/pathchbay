@@ -1,7 +1,7 @@
 import type { ContractOperation, Field, FieldType, PayloadDefinition } from './model';
 import { TYPE_LABELS } from './model';
 import { checkLink, REASON_TEXT, typesFit } from './linkRules';
-import type { ListLink } from './linkRules';
+import type { LinkContext, ListLink } from './linkRules';
 
 /**
  * The mapping board's model (D-2, D-4, D-6, D-7, D-11, D-12, D-20) as pure functions.
@@ -20,7 +20,20 @@ export interface Row {
   isList: boolean;
   /** A header added on the board, not declared in the contract (D-27). */
   added?: boolean;
+  /**
+   * The type as the engine's link rules know it (D-29): set for payload fields and the whole answer, not for
+   * external paths, whose type only comes from the contract.
+   */
+  ruleType?: FieldType;
 }
+
+/** The parts of a file (D-29) and their types, as the engine's ScriptGenerator.BLOB_PARTS. */
+export const BLOB_PARTS: [string, FieldType][] = [
+  ['data', 'text'],
+  ['fileName', 'text'],
+  ['contentType', 'text'],
+  ['size', 'integer'],
+];
 
 export interface Link {
   from: string;
@@ -29,15 +42,19 @@ export interface Link {
 
 export type Tab = 'request' | 'response';
 
-/** Payload definition → rows keyed by field id; lists use `name[]` in their rule path, like the engine. */
+/**
+ * Payload definition → rows keyed by field id; lists use `name[]` in their rule path, like the engine. A file
+ * (blob) also gets one row per part, keyed `<field id>.<part>` (D-29).
+ */
 export function payloadRows(def: PayloadDefinition | null): Row[] {
   const rows: Row[] = [];
   const walk = (fields: Field[], prefix: string, depth: number) => {
     for (const f of fields) {
       const seg = f.type === 'list' ? `${f.name}[]` : (f.name ?? '');
       const rule = prefix ? `${prefix}.${seg}` : seg;
+      const key = f.id ?? rule;
       rows.push({
-        key: f.id ?? rule,
+        key,
         label: f.name ?? '',
         type: f.type,
         required: !!f.required,
@@ -45,13 +62,31 @@ export function payloadRows(def: PayloadDefinition | null): Row[] {
         depth,
         rule,
         isList: f.type === 'list',
+        ruleType: f.type,
       });
+      if (f.type === 'blob') rows.push(...blobPartRows(key, rule, depth + 1));
       const kids = f.type === 'object' ? f.fields : f.type === 'list' && f.items?.type === 'object' ? f.items.fields : undefined;
       if (kids) walk(kids, rule, depth + 1);
     }
   };
   walk(def?.fields ?? [], '', 0);
   return rows;
+}
+
+/** One row per part of a file: `key`/`rule` are the file's, followed by `.data`, `.fileName`, … (D-29). */
+function blobPartRows(key: string, rule: string, depth: number, group?: Row['group']): Row[] {
+  return BLOB_PARTS.map(([part, type]) => ({
+    key: `${key}.${part}`,
+    label: part,
+    type,
+    required: false,
+    constant: false,
+    depth,
+    group,
+    rule: `${rule}.${part}`,
+    isList: false,
+    ruleType: type,
+  }));
 }
 
 /** A contract field tree → rows keyed by dotted external path; `root` is '' for a response, 'body' for a request body. */
@@ -116,7 +151,23 @@ export function requestRows(op: ContractOperation | null, added: string[] = []):
   return rows;
 }
 
+/** The API response side; an answer that is a file is the row `$body` with its parts (D-29). */
 export function responseRows(op: ContractOperation | null): Row[] {
+  if (op?.response?.type === 'blob') {
+    const whole: Row = {
+      key: '$body',
+      label: 'the whole answer (file)',
+      type: 'blob',
+      required: false,
+      constant: false,
+      depth: 0,
+      group: 'Response',
+      rule: '$body',
+      isList: false,
+      ruleType: 'blob',
+    };
+    return [whole, ...blobPartRows('$body', '$body', 1, 'Response')];
+  }
   return treeRows(op?.response, '', 'Response', 0);
 }
 
@@ -125,8 +176,9 @@ export type LinkState = { kind: 'ok' } | { kind: 'red'; reason: string } | { kin
 /**
  * Each link's state (D-6, D-7, D-12): broken if an end no longer exists, red if rules or types don't allow it.
  * A side with no rows is one the contract doesn't describe (e.g. no response schema); only the other end is checked.
+ * `requestFormat` is the draft's request format, which the file rules need (D-29).
  */
-export function linkStates(links: Link[], sources: Row[], targets: Row[]): LinkState[] {
+export function linkStates(links: Link[], sources: Row[], targets: Row[], requestFormat?: string): LinkState[] {
   if (sources.length === 0 || targets.length === 0) {
     const known = new Set((sources.length === 0 ? targets : sources).map((r) => r.key));
     return links.map((l) => {
@@ -147,7 +199,7 @@ export function linkStates(links: Link[], sources: Row[], targets: Row[]): LinkS
     const t = tgt.get(l.to);
     if (!s) return { kind: 'broken', reason: `Field ${l.from} no longer exists` };
     if (!t) return { kind: 'broken', reason: `Field ${l.to} no longer exists` };
-    const reason = checkLink(s.rule, t.rule, listLinks);
+    const reason = checkLink(s.rule, t.rule, listLinks, context(s, t, requestFormat));
     if (reason) return { kind: 'red', reason: REASON_TEXT[reason] };
     if (!typesFit(s.type, t.type)) return { kind: 'red', reason: typeReason(s.type, t.type) };
     return { kind: 'ok' };
@@ -160,17 +212,21 @@ function typeReason(from?: FieldType, to?: FieldType): string {
   return `A ${label(from)} value can't go into a ${label(to)} field`;
 }
 
-/** Whether a target row can take a link from the selected source, and why not (D-12 rule 6, D-6). */
-export function canLink(source: Row, target: Row, links: Link[], sources: Row[], targets: Row[]): string | null {
+function context(source: Row, target: Row, requestFormat?: string): LinkContext {
+  return { sourceType: source.ruleType, targetType: target.ruleType, requestFormat };
+}
+
+/** Whether a target row can take a link from the selected source, and why not (D-12 rule 6, D-6, D-29). */
+export function canLink(source: Row, target: Row, links: Link[], sources: Row[], targets: Row[], requestFormat?: string): string | null {
   const others = links.filter((l) => l.to !== target.key);
-  const states = linkStates(others, sources, targets);
+  const states = linkStates(others, sources, targets, requestFormat);
   const listLinks: ListLink[] = [];
   others.forEach((l, i) => {
     const s = sources.find((r) => r.key === l.from);
     const t = targets.find((r) => r.key === l.to);
     if (s && t && s.isList && t.isList && states[i].kind === 'ok') listLinks.push({ source: s.rule, target: t.rule });
   });
-  const reason = checkLink(source.rule, target.rule, listLinks);
+  const reason = checkLink(source.rule, target.rule, listLinks, context(source, target, requestFormat));
   if (reason) return REASON_TEXT[reason];
   if (!typesFit(source.type, target.type)) return typeReason(source.type, target.type);
   return null;

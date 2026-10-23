@@ -25,8 +25,9 @@ class LinkCasesTest {
                 c.get("listLinks").forEach(l -> listLinks.add(
                         new LinkRules.ListLink(LinkRules.Path.of(l.get(0).asText()), LinkRules.Path.of(l.get(1).asText()))));
                 String expected = c.get("reason").isNull() ? null : c.get("reason").asText();
-                String actual = LinkRules.check(LinkRules.Path.of(c.get("source").asText()),
-                        LinkRules.Path.of(c.get("target").asText()), listLinks).map(r -> r.code).orElse(null);
+                String actual = LinkRules.check(LinkRules.Path.of(c.get("source").asText()), c.path("sourceType").asText(null),
+                        LinkRules.Path.of(c.get("target").asText()), c.path("targetType").asText(null),
+                        c.path("requestFormat").asText(null), listLinks).map(r -> r.code).orElse(null);
                 assertThat(actual).isEqualTo(expected);
             }));
         }

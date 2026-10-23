@@ -264,6 +264,6 @@ class VersionLifecycleTest {
                 URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/versions/9.9.9/activate"))
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(bad.statusCode()).isEqualTo(400);
-        assertThat(bad.body()).contains("has no version 9.9.9");
+        assertThat(bad.body()).contains("has no version 9.9.9").contains("\"integration\":\"admin-book\"");
     }
 }

@@ -11,7 +11,13 @@ export type ReasonCode =
   | 'upward-from-nested-list'
   | 'list-level-mismatch'
   | 'list-not-linked'
-  | 'different-list';
+  | 'different-list'
+  | 'whole-body-needs-blob'
+  | 'whole-body-needs-binary'
+  | 'blob-outside-body'
+  | 'multipart-not-flat'
+  | 'whole-answer-needs-blob'
+  | 'blob-to-simple';
 
 export const REASON_TEXT: Record<ReasonCode, string> = {
   'list-to-single': 'A list can only be linked to a list',
@@ -20,7 +26,23 @@ export const REASON_TEXT: Record<ReasonCode, string> = {
   'list-level-mismatch': 'Lists can only be linked at the same nesting level',
   'list-not-linked': 'Link the surrounding list first',
   'different-list': 'The surrounding list is linked to a different list',
+  'whole-body-needs-blob': 'Only a file (blob) can be the whole body',
+  'whole-body-needs-binary': 'A file as the whole body needs the request format binary',
+  'blob-outside-body': 'A file can only go into the body',
+  'multipart-not-flat': 'Multipart parts are single fields: body.<name>, no lists or objects',
+  'whole-answer-needs-blob': 'The whole answer can only go into a file (blob)',
+  'blob-to-simple': 'A file only fits a file; link its data (base64), fileName or contentType instead',
 };
+
+/**
+ * What the file rules (D-29) need besides the paths: the ends' types where the engine knows them (payload fields
+ * and the whole answer, not external paths) and the request format (json when absent).
+ */
+export interface LinkContext {
+  sourceType?: FieldType;
+  targetType?: FieldType;
+  requestFormat?: string;
+}
 
 export interface ListLink {
   source: string;
@@ -41,8 +63,27 @@ function listPrefix(path: string, level: number): string {
   throw new Error(`${path} has no list level ${level}`);
 }
 
-/** Checks one link against the list links that exist; null when allowed. */
-export function checkLink(source: string, target: string, listLinks: ListLink[]): ReasonCode | null {
+/** Checks one link against the list links that exist, then the file rules; null when allowed. */
+export function checkLink(source: string, target: string, listLinks: ListLink[], ctx: LinkContext = {}): ReasonCode | null {
+  return checkLists(source, target, listLinks) ?? checkFiles(source, target, ctx);
+}
+
+function checkFiles(source: string, target: string, { sourceType, targetType, requestFormat }: LinkContext): ReasonCode | null {
+  const sourceBlob = sourceType === 'blob';
+  const targetBlob = targetType === 'blob';
+  const t = segments(target);
+  if (target === 'body') {
+    if (!sourceBlob) return 'whole-body-needs-blob';
+    return requestFormat === 'binary' ? null : 'whole-body-needs-binary';
+  }
+  if (sourceBlob && ['path', 'query', 'headers'].includes(t[0])) return 'blob-outside-body';
+  if (requestFormat === 'multipart' && t[0] === 'body' && (t.length !== 2 || isList(target))) return 'multipart-not-flat';
+  if (source === '$body' && !targetBlob) return 'whole-answer-needs-blob';
+  if (sourceType && targetType && sourceBlob !== targetBlob) return 'blob-to-simple';
+  return null;
+}
+
+function checkLists(source: string, target: string, listLinks: ListLink[]): ReasonCode | null {
   if (isList(source) !== isList(target)) return isList(source) ? 'list-to-single' : 'single-to-list';
   const listLink = isList(source);
   const k = depth(source);

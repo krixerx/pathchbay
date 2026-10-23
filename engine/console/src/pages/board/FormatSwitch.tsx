@@ -5,8 +5,9 @@ import type { Formats, IntegrationDraft } from '../../model';
 import type { Tab } from '../../board';
 
 /**
- * JSON or XML for the current tab (D-24): on the request tab how the body goes to the API, on the response tab what
- * callers get back. XML needs a root element name. The API's answer is read by its Content-Type either way.
+ * The format for the current tab (D-24, D-29): on the request tab how the body goes to the API (JSON, XML, one file
+ * as the raw body, or multipart), on the response tab what callers get back (JSON, XML or one file as raw bytes).
+ * XML needs a root element name. The API's answer is read by its Content-Type either way.
  */
 export function FormatSwitch(props: {
   draft: IntegrationDraft;
@@ -61,6 +62,8 @@ export function FormatSwitch(props: {
         data={[
           { value: 'json', label: 'JSON' },
           { value: 'xml', label: 'XML' },
+          { value: 'binary', label: 'File' },
+          ...(tab === 'request' ? [{ value: 'multipart', label: 'Multipart' }] : []),
         ]}
       />
       {format === 'xml' && (
@@ -88,7 +91,7 @@ export function FormatSwitch(props: {
       )}
       {tab === 'response' && (
         <Text size="xs" c="dimmed">
-          The API's answer is read as JSON or XML by its Content-Type.
+          The API's answer is read as JSON, XML or a file by its Content-Type.
         </Text>
       )}
     </Group>

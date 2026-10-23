@@ -141,4 +141,44 @@ describe('filters and example input', () => {
     const upload: PayloadDefinition = { id: 'upload', name: 'Upload', fields: [{ id: 'u-file', name: 'file', type: 'blob' }] };
     expect(exampleInput(upload)).toEqual({ file: { fileName: 'example.txt', contentType: 'text/plain', data: 'ZXhhbXBsZQ==' } });
   });
+
+  // D-29: files on the board
+  const upload: PayloadDefinition = { id: 'upload', name: 'Upload', fields: [{ id: 'u-file', name: 'file', type: 'blob' }] };
+  const raw: ContractOperation = {
+    id: 'replace',
+    method: 'PUT',
+    path: '/docs/{id}',
+    parameters: [{ name: 'X-Name', in: 'header', required: false, type: 'text' }],
+    requestBody: { name: 'body', type: 'blob' },
+    response: { name: 'response', type: 'blob' },
+  };
+
+  it('a file has a row per part, keyed by field id and part', () => {
+    const rows = payloadRows(upload);
+    expect(rows.map((r) => [r.key, r.rule, r.type])).toEqual([
+      ['u-file', 'file', 'blob'],
+      ['u-file.data', 'file.data', 'text'],
+      ['u-file.fileName', 'file.fileName', 'text'],
+      ['u-file.contentType', 'file.contentType', 'text'],
+      ['u-file.size', 'file.size', 'integer'],
+    ]);
+  });
+
+  it('a file answer is the row $body with its parts', () => {
+    expect(responseRows(raw).map((r) => r.key)).toEqual(['$body', '$body.data', '$body.fileName', '$body.contentType', '$body.size']);
+  });
+
+  it('the file rules use the request format and the known types', () => {
+    const sources = payloadRows(upload);
+    const targets = requestRows(raw);
+    const file = sources[0];
+    const body = targets.find((r) => r.key === 'body')!;
+    const header = targets.find((r) => r.key === 'headers.X-Name')!;
+    expect(canLink(file, body, [], sources, targets)).toBe('A file as the whole body needs the request format binary');
+    expect(canLink(file, body, [], sources, targets, 'binary')).toBeNull();
+    expect(canLink(file, header, [], sources, targets, 'binary')).toBe('A file can only go into the body');
+    expect(canLink(sources[2], header, [], sources, targets, 'binary')).toBeNull();
+    expect(linkStates([{ from: '$body', to: 'u-file' }], responseRows(raw), payloadRows(upload))).toEqual([{ kind: 'ok' }]);
+    expect(linkStates([{ from: '$body.fileName', to: 'u-file' }], responseRows(raw), payloadRows(upload))[0].kind).toBe('red');
+  });
 });

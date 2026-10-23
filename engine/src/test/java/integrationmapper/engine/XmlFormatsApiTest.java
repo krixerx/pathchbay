@@ -80,5 +80,12 @@ class XmlFormatsApiTest {
         // Back to JSON: the setting disappears from the draft.
         HttpResponse<String> json = send("PUT", "/formats", "{\"request\":\"json\",\"requestRoot\":\"Book\"}");
         assertThat(Json.MAPPER.readTree(json.body()).has("formats")).isFalse();
+
+        // Files (D-29): binary and multipart are kept, without XML roots; an unknown format is refused.
+        HttpResponse<String> binary = send("PUT", "/formats", "{\"request\":\"multipart\",\"requestRoot\":\"Book\",\"output\":\"binary\"}");
+        assertThat(Json.MAPPER.readTree(binary.body()).path("formats").toString()).isEqualTo("{\"request\":\"multipart\",\"output\":\"binary\"}");
+        HttpResponse<String> pdf = send("PUT", "/formats", "{\"output\":\"pdf\"}");
+        assertThat(pdf.statusCode()).isEqualTo(400);
+        assertThat(pdf.body()).contains("output format must be json, xml or binary, not pdf");
     }
 }

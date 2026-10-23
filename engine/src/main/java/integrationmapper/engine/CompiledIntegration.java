@@ -1,5 +1,6 @@
 package integrationmapper.engine;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -62,12 +63,54 @@ public final class CompiledIntegration {
             String secret, String baseUrl, List<Connections.Header> headers) {
         try {
             def.wire().check(def.id());
-            String req = ScriptGenerator.requestScript(def.request().links(), input);
-            String res = ScriptGenerator.responseScript(def.response().links(), output);
+            checkFiles(def, input, output);
+            // Both scripts are generated before failing, so the problems of request and response come at once (R8).
+            String req = null;
+            String res = null;
+            List<String> problems = new ArrayList<>();
+            try {
+                req = ScriptGenerator.requestScript(def.request().links(), input, def.wire().request());
+            } catch (IllegalArgumentException e) {
+                problems.add(e.getMessage());
+            }
+            try {
+                res = ScriptGenerator.responseScript(def.response().links(), output);
+            } catch (IllegalArgumentException e) {
+                problems.add(e.getMessage());
+            }
+            if (!problems.isEmpty()) {
+                throw new IllegalArgumentException(String.join("; ", problems));
+            }
             return new CompiledIntegration(def, input, output, secret, baseUrl, headers, build(req), build(res));
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Integration " + def.id() + " " + def.version() + " does not compile: " + e.getMessage(), e);
         }
+    }
+
+    /** How files and formats fit together (D-29); the single links are checked by {@link LinkRules}. */
+    private static void checkFiles(ServiceDefinition def, PayloadDefinition input, PayloadDefinition output) {
+        ServiceDefinition.Formats f = def.wire();
+        if ((f.requestBinary() || f.requestMultipart()) && !List.of("POST", "PUT", "PATCH").contains(def.target().method())) {
+            throw new IllegalArgumentException("Integration " + def.id() + ": request format " + f.request()
+                    + " needs POST, PUT or PATCH, which send a body");
+        }
+        if ((f.requestXml() && hasFile(input)) || (f.outputXml() && hasFile(output))) {
+            throw new IllegalArgumentException("Integration " + def.id() + ": files (blobs) can't go into XML yet");
+        }
+        if (f.outputBinary()) {
+            List<PayloadDefinition.Field> fields = output.fields() == null ? List.of() : output.fields();
+            boolean oneFile = fields.size() == 1 && "blob".equals(fields.get(0).type());
+            boolean linked = oneFile && def.response().links().stream()
+                    .anyMatch(l -> l.to().equals(fields.get(0).id()) || l.to().startsWith(fields.get(0).id() + "."));
+            if (!linked) {
+                throw new IllegalArgumentException("Integration " + def.id()
+                        + ": with output binary, the Output must be one linked file (blob); " + output.id() + " is not");
+            }
+        }
+    }
+
+    private static boolean hasFile(PayloadDefinition def) {
+        return def.fields() != null && def.fields().stream().anyMatch(fd -> "blob".equals(fd.type()));
     }
 
     private static Mapper build(String script) {

@@ -103,7 +103,11 @@ export function MappingBoard(props: {
   }, [data, tab, added]);
 
   const current = links[tab];
-  const states = useMemo(() => (sides ? linkStates(current, sides.sources, sides.targets) : []), [current, sides]);
+  const requestFormat = draft.formats?.request;
+  const states = useMemo(
+    () => (sides ? linkStates(current, sides.sources, sides.targets, requestFormat) : []),
+    [current, sides, requestFormat],
+  );
   const unmapped = useMemo(() => (sides ? requiredUnmapped(sides.targets, current) : []), [sides, current]);
   const redCount = states.filter((s) => s.kind !== 'ok').length;
   const otherTab: Tab = tab === 'request' ? 'response' : 'request';
@@ -141,7 +145,7 @@ export function MappingBoard(props: {
   const clickSource = (r: Row) => setSelected(selected === r.key ? null : r.key);
   const clickTarget = (r: Row) => {
     if (!sourceRow) return;
-    if (canLink(sourceRow, r, current, sides.sources, sides.targets)) return;
+    if (canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat)) return;
     save({ ...links, [tab]: addLink(current, sourceRow.key, r.key) });
     setSelected(null);
   };
@@ -162,7 +166,7 @@ export function MappingBoard(props: {
       <StatusBar
         unmapped={unmapped.length}
         red={redCount}
-        other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab, added)).filter((s) => s.kind !== 'ok').length }}
+        other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab, added), requestFormat).filter((s) => s.kind !== 'ok').length }}
         lastTest={lastTest}
         saved={saved}
         onShowUnmapped={() => document.getElementById(`row-target-${unmapped[0]?.key}`)?.scrollIntoView({ block: 'center' })}
@@ -225,7 +229,7 @@ export function MappingBoard(props: {
           partners={sides.sources}
           selected={null}
           onClick={clickTarget}
-          isDisabled={(r) => (sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets) : null)}
+          isDisabled={(r) => (sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat) : null)}
           unmapped={new Set(unmapped.map((r) => r.key))}
           anchor={gutter}
           onLayout={onLayout}

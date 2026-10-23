@@ -55,14 +55,18 @@ public record ServiceDefinition(String id, String version, String activeVersion,
     }
 
     /**
-     * Wire formats (D-24). {@code request}: how the body goes to the external system, {@code json} or {@code xml};
-     * its answer is read by its Content-Type either way. {@code output}: what callers get back. Missing means json.
-     * An XML document needs one root element: {@code requestRoot} and {@code outputRoot} name it.
+     * Wire formats (D-24, D-29). {@code request}: how the body goes to the external system, {@code json},
+     * {@code xml}, {@code binary} (one file as the raw body) or {@code multipart}; its answer is read by its
+     * Content-Type either way. {@code output}: what callers get back, {@code json}, {@code xml} or {@code binary}
+     * (one file as raw bytes). Missing means json. An XML document needs one root element: {@code requestRoot} and
+     * {@code outputRoot} name it.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Formats(String request, String requestRoot, String output, String outputRoot) {
 
         static final Formats JSON = new Formats(null, null, null, null);
+        static final List<String> REQUEST = List.of("json", "xml", "binary", "multipart");
+        static final List<String> OUTPUT = List.of("json", "xml", "binary");
 
         boolean requestXml() {
             return "xml".equals(request);
@@ -72,11 +76,25 @@ public record ServiceDefinition(String id, String version, String activeVersion,
             return "xml".equals(output);
         }
 
+        boolean requestBinary() {
+            return "binary".equals(request);
+        }
+
+        boolean requestMultipart() {
+            return "multipart".equals(request);
+        }
+
+        boolean outputBinary() {
+            return "binary".equals(output);
+        }
+
         void check(String slug) {
-            for (String f : new String[] {request, output}) {
-                if (f != null && !Set.of("json", "xml").contains(f)) {
-                    throw new IllegalArgumentException("Integration " + slug + ": format must be json or xml, not " + f);
-                }
+            if (request != null && !REQUEST.contains(request)) {
+                throw new IllegalArgumentException("Integration " + slug + ": request format must be json, xml, binary or multipart, not "
+                        + request);
+            }
+            if (output != null && !OUTPUT.contains(output)) {
+                throw new IllegalArgumentException("Integration " + slug + ": output format must be json, xml or binary, not " + output);
             }
             if (requestXml()) {
                 XmlFormat.checkRoot(requestRoot, "request root element");

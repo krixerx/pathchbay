@@ -77,15 +77,20 @@ public class MappingApiController {
         return json(d);
     }
 
-    /** Saves the wire formats (D-24); all JSON removes the setting, so drafts that never used XML stay as they were. */
+    /**
+     * Saves the wire formats (D-24, D-29); all JSON removes the setting, so drafts that never used XML or files stay
+     * as they were. Root elements are kept only for XML.
+     */
     @PutMapping("/formats")
     public ResponseEntity<String> saveFormats(@PathVariable String slug, @RequestBody String body) throws IOException {
         ServiceDefinition.Formats f = read(body, ServiceDefinition.Formats.class);
         f.check(slug);
         ObjectNode d = draft(slug);
-        if (f.requestXml() || f.outputXml()) {
-            ServiceDefinition.Formats kept = new ServiceDefinition.Formats(f.requestXml() ? "xml" : null,
-                    f.requestXml() ? f.requestRoot() : null, f.outputXml() ? "xml" : null, f.outputXml() ? f.outputRoot() : null);
+        String request = "json".equals(f.request()) ? null : f.request();
+        String output = "json".equals(f.output()) ? null : f.output();
+        if (request != null || output != null) {
+            ServiceDefinition.Formats kept = new ServiceDefinition.Formats(request, f.requestXml() ? f.requestRoot() : null, output,
+                    f.outputXml() ? f.outputRoot() : null);
             d.set("formats", Json.MAPPER.valueToTree(kept));
         } else {
             d.remove("formats");

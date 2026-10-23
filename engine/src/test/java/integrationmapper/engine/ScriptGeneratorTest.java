@@ -88,9 +88,98 @@ class ScriptGeneratorTest {
     @Test
     void invalidLinksAreRejected() {
         assertThatThrownBy(() -> compile(List.of(link("i-id", "elsewhere.a")), List.of())).hasMessageContaining("inside one of");
-        assertThatThrownBy(() -> compile(List.of(link("i-id", "body")), List.of())).hasMessageContaining("inside one of");
+        assertThatThrownBy(() -> compile(List.of(link("i-id", "body")), List.of())).hasMessageContaining("Only a file (blob) can be the whole body");
         assertThatThrownBy(() -> compile(List.of(link("nope", "body.a")), List.of())).hasMessageContaining("not a field of in");
         assertThatThrownBy(() -> compile(List.of(), List.of(link("a", "nope")))).hasMessageContaining("not a field of out");
         assertThatThrownBy(() -> compile(List.of(), List.of(link("a", "o-z"), link("b", "o-z")))).hasMessageContaining("another link already writes to");
+    }
+
+    // ---- files (D-29): inside the scripts a blob is the JSON object {contentType, fileName, size, data}
+
+    static final PayloadDefinition UPLOAD = parse("""
+            {"id":"upload","fields":[{"id":"u-title","name":"title","type":"text"},{"id":"u-file","name":"file","type":"blob"}]}""");
+    static final PayloadDefinition FILE = parse("""
+            {"id":"file","fields":[{"id":"f-content","name":"content","type":"blob"}]}""");
+    static final PayloadDefinition STORED = parse("""
+            {"id":"stored","fields":[{"id":"s-name","name":"name","type":"text"},{"id":"s-file","name":"file","type":"blob"}]}""");
+    static final String BLOB = "{\"fileName\":\"a.pdf\",\"contentType\":\"application/pdf\",\"data\":\"QUJD\"}";
+
+    static CompiledIntegration compile(String method, ServiceDefinition.Formats formats, PayloadDefinition in, PayloadDefinition out,
+            List<ServiceDefinition.Link> request, List<ServiceDefinition.Link> response) {
+        return CompiledIntegration.compile(new ServiceDefinition("t", "1.0.0", null, in.id(), out.id(),
+                new ServiceDefinition.Target("http://x", method, "/"), null,
+                new ServiceDefinition.Mapping(request), new ServiceDefinition.Mapping(response), formats), in, out);
+    }
+
+    static ServiceDefinition.Formats formats(String request, String output) {
+        return new ServiceDefinition.Formats(request, null, output, null);
+    }
+
+    @Test
+    void aFileGoesAsAWholeOrInPartsIntoJson() throws Exception {
+        CompiledIntegration parts = compile("POST", null, UPLOAD, STORED, List.of(link("u-file.data", "body.contentBase64"),
+                link("u-file.fileName", "body.fileName"), link("u-title", "headers.X-Title")), List.of());
+        assertThat(Json.MAPPER.readTree(parts.mapRequest("{\"title\":\"T\",\"file\":" + BLOB + "}")).path("body").toString())
+                .isEqualTo("{\"contentBase64\":\"QUJD\",\"fileName\":\"a.pdf\"}");
+
+        CompiledIntegration whole = compile("POST", null, UPLOAD, STORED, List.of(link("u-file", "body.document")), List.of());
+        assertThat(Json.MAPPER.readTree(whole.mapRequest("{\"file\":" + BLOB + "}")).path("body").path("document"))
+                .isEqualTo(Json.MAPPER.readTree(BLOB));
+    }
+
+    @Test
+    void aFileIsTheWholeBodyOrTheWholeAnswer() throws Exception {
+        CompiledIntegration raw = compile("PUT", formats("binary", null), UPLOAD, STORED, List.of(link("u-file", "body")), List.of());
+        assertThat(Json.MAPPER.readTree(raw.mapRequest("{\"file\":" + BLOB + "}")).path("body")).isEqualTo(Json.MAPPER.readTree(BLOB));
+
+        CompiledIntegration download = compile("GET", formats(null, "binary"), FILE, FILE, List.of(), List.of(link("$body", "f-content")));
+        assertThat(Json.MAPPER.readTree(download.mapResponse("{\"$body\":" + BLOB + "}")).path("content"))
+                .isEqualTo(Json.MAPPER.readTree(BLOB));
+
+        CompiledIntegration name = compile("GET", null, FILE, STORED, List.of(), List.of(link("$body.fileName", "s-name")));
+        assertThat(name.mapResponse("{\"$body\":" + BLOB + "}")).isEqualTo("{\"name\":\"a.pdf\"}");
+    }
+
+    @Test
+    void aFileCanBeBuiltFromBase64Fields() throws Exception {
+        CompiledIntegration ci = compile("GET", formats(null, "binary"), FILE, FILE, List.of(),
+                List.of(link("contentBase64", "f-content.data"), link("fileName", "f-content.fileName")));
+        assertThat(ci.mapResponse("{\"contentBase64\":\"QUJD\",\"fileName\":\"a.pdf\"}"))
+                .isEqualTo("{\"content\":{\"data\":\"QUJD\",\"fileName\":\"a.pdf\"}}");
+    }
+
+    @Test
+    void fileLinksThatCantWorkAreAllReported() {
+        assertThatThrownBy(() -> compile("POST", null, UPLOAD, STORED,
+                List.of(link("u-file", "body"), link("u-file", "headers.X-File"), link("u-file.colour", "body.c")),
+                List.of(link("$body", "s-name"))))
+                .hasMessageContaining("A file as the whole body needs the request format binary")
+                .hasMessageContaining("A file can only go into the body")
+                .hasMessageContaining("colour is not a part of a file (data, fileName, contentType, size)")
+                .hasMessageContaining("The whole answer can only go into a file (blob)");
+        assertThatThrownBy(() -> compile("POST", formats("multipart", null), UPLOAD, STORED,
+                List.of(link("u-title", "body.meta.title")), List.of()))
+                .hasMessageContaining("Multipart parts are single fields");
+        assertThatThrownBy(() -> compile("GET", null, FILE, FILE, List.of(), List.of(link("fileName", "f-content.fileName"))))
+                .hasMessageContaining("content: link the file's data (base64) too");
+        assertThatThrownBy(() -> compile("GET", null, FILE, FILE, List.of(), List.of(link("data", "f-content.data"), link("n", "f-content.size"))))
+                .hasMessageContaining("size is worked out from the data and can't be linked to");
+        assertThatThrownBy(() -> compile("GET", null, FILE, STORED, List.of(), List.of(link("$body", "s-file"), link("a", "s-file"))))
+                .hasMessageContaining("another link already writes to");
+    }
+
+    @Test
+    void formatsMustFitTheMethodAndTheOutput() {
+        assertThatThrownBy(() -> compile("GET", formats("binary", null), FILE, FILE, List.of(), List.of()))
+                .hasMessageContaining("request format binary needs POST, PUT or PATCH");
+        assertThatThrownBy(() -> compile("GET", formats(null, "binary"), FILE, STORED, List.of(), List.of(link("$body", "s-file"))))
+                .hasMessageContaining("with output binary, the Output must be one linked file (blob)");
+        assertThatThrownBy(() -> compile("GET", formats(null, "binary"), FILE, FILE, List.of(), List.of()))
+                .hasMessageContaining("with output binary, the Output must be one linked file (blob)");
+        assertThatThrownBy(() -> compile("POST", new ServiceDefinition.Formats("xml", "Doc", null, null), UPLOAD, STORED,
+                List.of(link("u-title", "body.title")), List.of()))
+                .hasMessageContaining("files (blobs) can't go into XML yet");
+        assertThatThrownBy(() -> compile("POST", formats("pdf", null), UPLOAD, STORED, List.of(), List.of()))
+                .hasMessageContaining("request format must be json, xml, binary or multipart, not pdf");
     }
 }
