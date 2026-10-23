@@ -31,6 +31,8 @@ public final class CompiledIntegration {
     private final Mapper response;
     /** Where the external answer has lists, for reading XML answers (D-24). */
     private final List<String> responseLists;
+    /** Whether the response links read the whole answer as a file ({@code $body}, D-29). */
+    private final boolean readsWholeAnswer;
 
     private CompiledIntegration(ServiceDefinition definition, PayloadDefinition input, PayloadDefinition output,
             String secret, String baseUrl, List<Connections.Header> headers, Mapper request, Mapper response) {
@@ -43,6 +45,74 @@ public final class CompiledIntegration {
         this.request = request;
         this.response = response;
         this.responseLists = XmlFormat.listPaths(definition.response().links().stream().map(ServiceDefinition.Link::from).toList());
+        this.readsWholeAnswer = definition.response().links().stream()
+                .anyMatch(l -> l.from().equals(LinkRules.WHOLE_ANSWER) || l.from().startsWith(LinkRules.WHOLE_ANSWER + "."));
+    }
+
+    /** What callers get back: the body, its Content-Type and, for a file, its Content-Disposition (else null). */
+    record Answer(byte[] body, String contentType, String contentDisposition) {
+    }
+
+    /** A file answer the integration can't pass on: too large, or missing where output binary needs one. Gives 502. */
+    static final class RemoteFileException extends RuntimeException {
+        RemoteFileException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * An answer is a file when the response links read {@code $body} and its Content-Type is neither JSON nor XML
+     * (D-29); every other answer is mapped as JSON or XML, as before files existed.
+     */
+    boolean isFileAnswer(String contentType) {
+        if (!readsWholeAnswer || contentType == null) {
+            return false;
+        }
+        String t = contentType.toLowerCase();
+        return !(t.startsWith("application/json") || t.contains("+json") || t.contains("xml"));
+    }
+
+    /** Maps the external answer as it came over the wire, bytes and headers, into the Output JSON. */
+    public String mapAnswer(byte[] bytes, String contentType, String contentDisposition, long maxBlobBytes) {
+        byte[] body = bytes == null ? new byte[0] : bytes;
+        if (!isFileAnswer(contentType)) {
+            return mapResponse(new String(body, charset(contentType)), contentType);
+        }
+        if (body.length > maxBlobBytes) {
+            throw new RemoteFileException("The answer is a file of " + body.length + " bytes, more than the limit of " + maxBlobBytes + " bytes");
+        }
+        ObjectNode file = Blobs.fromRaw(body, contentType, contentDisposition).put("size", body.length);
+        return completeFiles(mapResponse(Json.MAPPER.createObjectNode().set(LinkRules.WHOLE_ANSWER, file).toString()));
+    }
+
+    /** The mapped Output as callers get it: JSON, XML, or with output binary its one file as raw bytes (D-29). */
+    Answer answer(String outputJson) throws JsonProcessingException {
+        if (!definition.wire().outputBinary()) {
+            return new Answer(outputBody(outputJson).getBytes(java.nio.charset.StandardCharsets.UTF_8), outputContentType(), null);
+        }
+        JsonNode file = Json.MAPPER.readTree(outputJson).path(output.fields().get(0).name());
+        if (!file.isObject() || !file.path("data").isTextual()) {
+            throw new RemoteFileException("The answer had no file to return");
+        }
+        return new Answer(Blobs.bytes(file), file.path("contentType").asText(Blobs.DEFAULT_TYPE),
+                file.hasNonNull("fileName") ? Blobs.contentDisposition(file.get("fileName").asText()) : null);
+    }
+
+    /** The charset of a Content-Type, UTF-8 when it names none or an unknown one. */
+    static java.nio.charset.Charset charset(String contentType) {
+        if (contentType != null) {
+            for (String part : contentType.split(";")) {
+                String p = part.trim();
+                if (p.toLowerCase().startsWith("charset=")) {
+                    try {
+                        return java.nio.charset.Charset.forName(p.substring(8).replace("\"", "").trim());
+                    } catch (RuntimeException e) {
+                        break;
+                    }
+                }
+            }
+        }
+        return java.nio.charset.StandardCharsets.UTF_8;
     }
 
     public static CompiledIntegration compile(ServiceDefinition def, PayloadDefinition input, PayloadDefinition output) {
@@ -157,21 +227,25 @@ public final class CompiledIntegration {
     public String mapResponse(String body, String contentType) {
         String text = body == null || body.isBlank() ? "{}" : body;
         if (!XmlFormat.isXml(contentType, body) || body == null || body.isBlank()) {
-            String mapped = mapResponse(text);
-            if (!hasFile(output)) {
-                return mapped;
-            }
-            try {
-                ObjectNode out = (ObjectNode) Json.MAPPER.readTree(mapped);
-                Blobs.complete(out, output, Long.MAX_VALUE);
-                return out.toString();
-            } catch (JsonProcessingException e) {
-                throw new IllegalStateException(e);
-            }
+            return completeFiles(mapResponse(text));
         }
         String mapped = run(response, XmlFormat.read(text, responseLists).toString());
         try {
             return XmlFormat.typed(Json.MAPPER.readTree(mapped), output.fields()).toString();
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** Files in the mapped Output get their size; broken base64 fails the mapping. */
+    private String completeFiles(String mapped) {
+        if (!hasFile(output)) {
+            return mapped;
+        }
+        try {
+            ObjectNode out = (ObjectNode) Json.MAPPER.readTree(mapped);
+            Blobs.complete(out, output, Long.MAX_VALUE);
+            return out.toString();
         } catch (JsonProcessingException e) {
             throw new IllegalStateException(e);
         }

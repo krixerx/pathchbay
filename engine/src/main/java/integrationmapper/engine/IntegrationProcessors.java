@@ -177,35 +177,46 @@ public class IntegrationProcessors {
         Message msg = exchange.getMessage();
         CompiledIntegration ci = registry.get(exchange.getProperty(SLUG, String.class));
         int status = msg.getHeader(Exchange.HTTP_RESPONSE_CODE, 200, Integer.class);
-        String body = msg.getBody(String.class);
+        // Read as bytes: the answer may be a file (D-29); text is decoded with its own charset.
+        byte[] bytes = msg.getBody(byte[].class);
+        bytes = bytes == null ? new byte[0] : bytes;
         String contentType = msg.getHeader(Exchange.CONTENT_TYPE, String.class);
+        String contentDisposition = msg.getHeader("Content-Disposition", String.class);
         msg.removeHeaders("*");
-        msg.setHeader(Exchange.CONTENT_TYPE, ci.outputContentType());
         Trace trace = exchange.getProperty(TRACE, Trace.class);
         if (calls.enabled()) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", status);
-            response.put("body", Blobs.forLog(parseOrText(body)));
+            response.put("body", ci.isFileAnswer(contentType) ? Blobs.describe(bytes, contentType, contentDisposition)
+                    : Blobs.forLog(parseOrText(new String(bytes, CompiledIntegration.charset(contentType)))));
             trace.response = response;
         }
 
         if (status >= 400) {
             trace.problems = List.of("The external system answered " + status + "; the caller got this status and body");
-            // Runtime rule: external errors pass through with their status and body.
+            // Runtime rule: external errors pass through with their status and body, byte for byte.
             msg.setHeader(Exchange.HTTP_RESPONSE_CODE, status);
             msg.setHeader("X-Integration-Error", "remote");
             msg.setHeader(Exchange.CONTENT_TYPE, contentType == null ? "application/json" : contentType);
-            msg.setBody(body);
+            msg.setBody(bytes);
             return;
         }
         trace.stage = "output";
         String output;
+        CompiledIntegration.Answer answer;
         try {
-            output = ci.outputBody(ci.mapResponse(body, contentType));
+            output = ci.mapAnswer(bytes, contentType, contentDisposition, maxBlobBytes);
+            answer = ci.answer(output);
+        } catch (CompiledIntegration.RemoteFileException e) {
+            throw e;
         } catch (Exception e) {
             throw new MappingException("response mapping failed: " + e.getMessage(), e);
         }
-        msg.setBody(output);
+        msg.setHeader(Exchange.CONTENT_TYPE, answer.contentType());
+        if (answer.contentDisposition() != null) {
+            msg.setHeader("Content-Disposition", answer.contentDisposition());
+        }
+        msg.setBody(answer.body());
         msg.setHeader(Exchange.HTTP_RESPONSE_CODE, 200);
         if (calls.enabled()) {
             trace.output = Blobs.forLog(parseOrText(output));
@@ -224,6 +235,9 @@ public class IntegrationProcessors {
         } else if (hasCause(e, Blobs.TooLargeException.class)) {
             status = 413;
             error = "payload-too-large";
+        } else if (hasCause(e, CompiledIntegration.RemoteFileException.class)) {
+            status = 502;
+            error = "remote-failure";
         } else if (hasCause(e, MappingException.class)) {
             status = 500;
             error = "mapping-error";

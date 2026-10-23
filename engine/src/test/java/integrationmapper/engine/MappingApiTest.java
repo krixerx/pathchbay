@@ -37,6 +37,10 @@ class MappingApiTest {
                       {"id":"nb-pages","name":"pages","type":"integer"}]}""");
             Files.writeString(CONFIG.resolve("entities/book-ref.json"), """
                     {"id":"book-ref","fields":[{"id":"br-id","name":"bookId","type":"integer"},{"id":"br-title","name":"title","type":"text"}]}""");
+            Files.writeString(CONFIG.resolve("entities/doc-id.json"), """
+                    {"id":"doc-id","fields":[{"id":"di-id","name":"documentId","type":"text","required":true}]}""");
+            Files.writeString(CONFIG.resolve("entities/doc-file.json"), """
+                    {"id":"doc-file","fields":[{"id":"df-content","name":"content","type":"blob"}]}""");
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -212,6 +216,45 @@ class MappingApiTest {
         assertThat(CONFIG.resolve("secrets/add-book.json")).doesNotExist();
         assertThat(status("DELETE", "/admin/api/contracts/fake-rest-api")).isEqualTo(204);
         assertThat(send("GET", "/contracts", null)).isEmpty();
+    }
+
+    /** D-29: the Test drawer mocks a file answer as $body and reads a real one as bytes; neither shows the file's data. */
+    @Test
+    void testRunsWithAFileAnswer() throws Exception {
+        String docs = """
+                openapi: 3.0.3
+                info: { title: Docs, version: "1" }
+                servers: [ { url: "http://localhost:%d/fake" } ]
+                paths:
+                  /files/{id}/content:
+                    get:
+                      operationId: download
+                      parameters: [ { name: id, in: path, required: true, schema: { type: string } } ]
+                      responses:
+                        "200":
+                          description: the file
+                          content:
+                            application/pdf:
+                              schema: { type: string, format: binary }
+                """.formatted(port);
+        send("POST", "/contracts", Map.of("name", "Docs", "content", docs));
+        send("POST", "/integrations", Map.of("name", "Download"));
+        send("PUT", "/integrations/download/payloads", Map.of("input", "doc-id", "output", "doc-file"));
+        send("PUT", "/integrations/download/operation", Map.of("contract", "docs", "operationId", "download"));
+        send("PUT", "/integrations/download/links", """
+                {"request":[{"from":"di-id","to":"path.id"}],"response":[{"from":"$body","to":"df-content"}]}""");
+        send("PUT", "/integrations/download/formats", Map.of("output", "binary"));
+
+        JsonNode mock = send("POST", "/integrations/download/test", Map.of("input", Map.of("documentId", "x")));
+        assertThat(mock.path("stage").asText()).as(mock.toString()).isEqualTo("done");
+        assertThat(mock.path("output").path("content").path("fileName").asText()).isEqualTo("response.txt");
+        assertThat(mock.path("output").path("content").path("data").asText()).isEqualTo("<7 bytes, base64>");
+
+        JsonNode real = send("POST", "/integrations/download/test", Map.of("input", Map.of("documentId", "x"), "real", true));
+        assertThat(real.path("stage").asText()).as(real.toString()).isEqualTo("done");
+        assertThat(real.path("response").path("body").path("$body").path("size").asInt()).isEqualTo(256);
+        assertThat(real.path("output").path("content").path("fileName").asText()).isEqualTo("a.pdf");
+        assertThat(real.path("output").path("content").path("data").asText()).isEqualTo("<256 bytes, base64>");
     }
 
     int status(String method, String path) throws Exception {

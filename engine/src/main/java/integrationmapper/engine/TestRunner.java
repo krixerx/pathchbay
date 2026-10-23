@@ -157,12 +157,18 @@ public class TestRunner {
 
         // 3. The answer: mock from the contract, or the real system.
         int status;
-        String responseText;
+        byte[] responseBytes;
         String contentType = "application/json";
+        String contentDisposition = null;
         if (!real) {
             Contract.Operation op = operation(def);
             status = op == null || op.responseStatus() == null ? 200 : Integer.parseInt(op.responseStatus());
-            responseText = MockGenerator.example(op == null ? null : op.response()).toString();
+            JsonNode mock = MockGenerator.example(op == null ? null : op.response());
+            if (op != null && op.response() != null && "blob".equals(op.response().type())) {
+                // A file answer is mocked as the mapping sees it: the whole answer under $body (D-29).
+                mock = Json.MAPPER.createObjectNode().set(LinkRules.WHOLE_ANSWER, mock);
+            }
+            responseBytes = mock.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
         } else {
             if (noBaseUrl != null) {
                 return new Result("request", List.of(noBaseUrl), request, null, null, false);
@@ -197,10 +203,11 @@ public class TestRunner {
                 rb.header(authHeader, "Authorization".equals(authHeader) ? "Bearer " + secret : secret);
             }
             try {
-                HttpResponse<String> r = http.send(rb.build(), HttpResponse.BodyHandlers.ofString());
+                HttpResponse<byte[]> r = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
                 status = r.statusCode();
-                responseText = r.body();
+                responseBytes = r.body();
                 contentType = r.headers().firstValue("Content-Type").orElse(null);
+                contentDisposition = r.headers().firstValue("Content-Disposition").orElse(null);
             } catch (IOException e) {
                 return new Result("response", List.of("The external system did not answer: " + e.getMessage()), request, null, null, false);
             } catch (InterruptedException e) {
@@ -208,24 +215,27 @@ public class TestRunner {
                 throw new IOException(e);
             }
         }
-        JsonNode responseBody = parseOrText(responseText);
+        String responseText = ci.isFileAnswer(contentType) ? null : new String(responseBytes, CompiledIntegration.charset(contentType));
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", status);
-        response.put("body", Blobs.forLog(responseBody));
+        response.put("body", responseText == null ? Blobs.describe(responseBytes, contentType, contentDisposition)
+                : Blobs.forLog(parseOrText(responseText)));
 
         // 4. Mapped back into the Output, as callers would get it.
         if (status >= 400) {
             return new Result("response", List.of("The external system answered " + status + "; callers get this status and body"),
                     request, response, null, !real);
         }
-        List<String> notes = !real && responseText.equals("{}")
+        List<String> notes = !real && "{}".equals(responseText)
                 ? List.of("The contract does not describe the response of this operation, so the mock answer is empty. Try a real call to see real data.")
                 : List.of();
         try {
-            String mappedOutput = ci.outputBody(ci.mapResponse(responseText, contentType));
-            JsonNode output = def.wire().outputXml() ? Json.MAPPER.getNodeFactory().textNode(mappedOutput) : Json.MAPPER.readTree(mappedOutput);
+            String mappedOutput = ci.mapAnswer(responseBytes, contentType, contentDisposition, maxBlobBytes);
+            CompiledIntegration.Answer answer = ci.answer(mappedOutput); // as callers get it; with output binary the file is shown as JSON
+            JsonNode output = def.wire().outputXml() ? Json.MAPPER.getNodeFactory().textNode(new String(answer.body(), java.nio.charset.StandardCharsets.UTF_8))
+                    : Json.MAPPER.readTree(mappedOutput);
             return new Result("done", notes, request, response, Blobs.forLog(output), !real);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | com.fasterxml.jackson.core.JsonProcessingException e) {
             return new Result("output", List.of("Response mapping failed: " + e.getMessage()), request, response, null, !real);
         }
     }

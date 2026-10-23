@@ -49,6 +49,37 @@ class FakeBooksApi {
         return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"documentId\":\"" + id + "\",\"status\":\"STORED\"}");
     }
 
+    /** Every byte value once, so nothing may pass through text unnoticed. */
+    static final byte[] ALL_BYTES = new byte[256];
+
+    static {
+        for (int i = 0; i < ALL_BYTES.length; i++) {
+            ALL_BYTES[i] = (byte) i;
+        }
+    }
+
+    /**
+     * A file as the raw answer (D-29). {@code big}: 1500 bytes; {@code json}: a JSON answer instead of a file;
+     * {@code missing}: 404 with a binary body; anything else: {@link #ALL_BYTES} as a PDF named a.pdf.
+     */
+    @GetMapping("/fake/files/{id}/content")
+    ResponseEntity<byte[]> getFile(@PathVariable String id) {
+        return switch (id) {
+            case "big" -> ResponseEntity.ok().header("Content-Type", "application/octet-stream").body(new byte[1500]);
+            case "json" -> ResponseEntity.ok().header("Content-Type", "application/json").body("{\"note\":\"no file\"}".getBytes());
+            case "missing" -> ResponseEntity.status(404).header("Content-Type", "application/octet-stream").body(new byte[] {0, 1, 2, (byte) 255});
+            default -> ResponseEntity.ok().header("Content-Type", "application/pdf")
+                    .header("Content-Disposition", "attachment; filename=\"a.pdf\"").body(ALL_BYTES);
+        };
+    }
+
+    /** The same file as base64 inside JSON. */
+    @GetMapping("/fake/files/{id}/base64")
+    ResponseEntity<String> getFileBase64(@PathVariable String id) {
+        return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"fileName\":\"b.pdf\",\"contentType\":\"application/pdf\","
+                + "\"contentBase64\":\"" + java.util.Base64.getEncoder().encodeToString(ALL_BYTES) + "\"}");
+    }
+
     final java.util.concurrent.atomic.AtomicInteger busyCalls = new java.util.concurrent.atomic.AtomicInteger();
 
     /** Always 503 with Retry-After, the answer an HTTP client retries by default; counts how often it was called. */

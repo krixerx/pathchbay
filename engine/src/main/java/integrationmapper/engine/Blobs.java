@@ -172,6 +172,13 @@ final class Blobs {
         return header + "; filename*=UTF-8''" + encoded;
     }
 
+    /** A file answer as the call log shows it, {@code {"$body": {…, "data": "<n bytes, base64>"}}}, without encoding it. */
+    static JsonNode describe(byte[] bytes, String contentType, String contentDisposition) {
+        ObjectNode file = fromRaw(new byte[0], contentType, contentDisposition);
+        file.put("size", bytes.length).put("data", "<" + bytes.length + " bytes, base64>");
+        return Json.MAPPER.createObjectNode().set(LinkRules.WHOLE_ANSWER, file);
+    }
+
     /** A file-shaped object: text {@code data} next to a {@code fileName}, {@code contentType} or {@code size}. */
     static boolean isFile(JsonNode v) {
         return v.isObject() && v.path("data").isTextual()

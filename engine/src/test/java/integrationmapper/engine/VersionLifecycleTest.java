@@ -100,6 +100,10 @@ class VersionLifecycleTest {
             write("entities/doc-content.json", """
                     {"id":"doc-content","fields":[{"id":"dc-id","name":"documentId","type":"text","required":true},
                       {"id":"dc-content","name":"content","type":"blob","required":true}]}""");
+            write("entities/doc-id.json", """
+                    {"id":"doc-id","fields":[{"id":"di-id","name":"documentId","type":"text","required":true}]}""");
+            write("entities/doc-file.json", """
+                    {"id":"doc-file","fields":[{"id":"df-content","name":"content","type":"blob"}]}""");
             write("entities/stored.json", """
                     {"id":"stored","fields":[{"id":"st-id","name":"documentId","type":"text"},{"id":"st-status","name":"status","type":"text"}]}""");
         } catch (IOException e) {
@@ -350,6 +354,74 @@ class VersionLifecycleTest {
         assertThat(tooLarge.statusCode()).isEqualTo(413);
         assertThat(tooLarge.body()).contains("payload-too-large");
         assertThat(fake.lastRequest).isEmpty();
+    }
+
+    void publishFileGet(String slug, String path, String output, boolean rawOutput, String responseLinks) throws Exception {
+        write("services/" + slug + ".json", """
+                {"id":"%s","input":"doc-id","output":"%s",
+                 "target":{"baseUrl":"http://localhost:%d/fake","method":"GET","path":"%s"},%s
+                 "request":{"links":[{"from":"di-id","to":"path.id"}]},
+                 "response":{"links":[%s]}}""".formatted(slug, output, PORT, path,
+                rawOutput ? "\"formats\":{\"output\":\"binary\"}," : "", responseLinks));
+        publisher.publishDraft(slug);
+    }
+
+    HttpResponse<byte[]> get(String slugAndQuery) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slugAndQuery)).build(),
+                HttpResponse.BodyHandlers.ofByteArray());
+    }
+
+    /** D-29: a file answer reaches the caller as raw bytes or as JSON, and base64 JSON can become raw bytes. */
+    @Test
+    void fileAnswersReachTheCallerRawOrAsJson() throws Exception {
+        publishFileGet("file-get", "/files/{id}/content", "doc-file", true, "{\"from\":\"$body\",\"to\":\"df-content\"}");
+        publishFileGet("file-get-json", "/files/{id}/content", "doc-file", false, "{\"from\":\"$body\",\"to\":\"df-content\"}");
+        publishFileGet("file-get-base64", "/files/{id}/base64", "doc-file", true,
+                "{\"from\":\"contentBase64\",\"to\":\"df-content.data\"},{\"from\":\"fileName\",\"to\":\"df-content.fileName\"},"
+                        + "{\"from\":\"contentType\",\"to\":\"df-content.contentType\"}");
+
+        HttpResponse<byte[]> raw = get("file-get?documentId=x");
+        assertThat(raw.statusCode()).as(new String(raw.body())).isEqualTo(200);
+        assertThat(raw.headers().firstValue("Content-Type")).hasValueSatisfying(v -> assertThat(v).startsWith("application/pdf"));
+        assertThat(raw.headers().firstValue("Content-Disposition")).contains("attachment; filename=\"a.pdf\"");
+        assertThat(raw.body()).isEqualTo(FakeBooksApi.ALL_BYTES);
+
+        HttpResponse<byte[]> json = get("file-get-json?documentId=x");
+        JsonNode file = Json.MAPPER.readTree(json.body()).path("content");
+        assertThat(file.path("fileName").asText()).isEqualTo("a.pdf");
+        assertThat(file.path("contentType").asText()).isEqualTo("application/pdf");
+        assertThat(file.path("size").asInt()).isEqualTo(256);
+        assertThat(java.util.Base64.getDecoder().decode(file.path("data").asText())).isEqualTo(FakeBooksApi.ALL_BYTES);
+
+        HttpResponse<byte[]> fromBase64 = get("file-get-base64?documentId=x");
+        assertThat(fromBase64.statusCode()).as(new String(fromBase64.body())).isEqualTo(200);
+        assertThat(fromBase64.headers().firstValue("Content-Type")).hasValueSatisfying(v -> assertThat(v).startsWith("application/pdf"));
+        assertThat(fromBase64.headers().firstValue("Content-Disposition")).contains("attachment; filename=\"b.pdf\"");
+        assertThat(fromBase64.body()).isEqualTo(FakeBooksApi.ALL_BYTES);
+    }
+
+    /** D-29: what goes wrong with file answers, and that integrations without $body keep their old behavior. */
+    @Test
+    void fileAnswersThatDontFit() throws Exception {
+        publishFileGet("file-get", "/files/{id}/content", "doc-file", true, "{\"from\":\"$body\",\"to\":\"df-content\"}");
+        publishFileGet("file-get-plain", "/files/{id}/content", "stored", false, "{\"from\":\"documentId\",\"to\":\"st-id\"}");
+
+        HttpResponse<byte[]> big = get("file-get?documentId=big");
+        assertThat(big.statusCode()).isEqualTo(502);
+        assertThat(new String(big.body())).contains("remote-failure").contains("1500 bytes, more than the limit of 1000 bytes");
+
+        HttpResponse<byte[]> noFile = get("file-get?documentId=json");
+        assertThat(noFile.statusCode()).isEqualTo(502);
+        assertThat(new String(noFile.body())).contains("The answer had no file to return");
+
+        HttpResponse<byte[]> missing = get("file-get?documentId=missing");
+        assertThat(missing.statusCode()).isEqualTo(404);
+        assertThat(missing.headers().firstValue("X-Integration-Error")).contains("remote");
+        assertThat(missing.body()).isEqualTo(new byte[] {0, 1, 2, (byte) 255});
+
+        HttpResponse<byte[]> plain = get("file-get-plain?documentId=x");
+        assertThat(plain.statusCode()).isEqualTo(500);
+        assertThat(new String(plain.body())).contains("mapping-error");
     }
 
     @Test
