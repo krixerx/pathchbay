@@ -68,6 +68,7 @@ final class InputValidator {
                     }
                 }
             }
+            case "blob" -> Blobs.check(v, path, problems);
             default -> problems.add(path + ": unknown type " + f.type());
         }
     }

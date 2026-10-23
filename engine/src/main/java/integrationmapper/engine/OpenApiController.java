@@ -141,10 +141,25 @@ public class OpenApiController {
         return s;
     }
 
+    /** A file in JSON (D-29): its data as base64; the size is worked out by Patchbay. */
+    private static ObjectNode fileSchema() {
+        ObjectNode s = Json.MAPPER.createObjectNode().put("type", "object");
+        ObjectNode p = s.putObject("properties");
+        p.putObject("fileName").put("type", "string");
+        p.putObject("contentType").put("type", "string");
+        p.putObject("size").put("type", "integer").put("readOnly", true);
+        p.putObject("data").put("type", "string").put("format", "byte");
+        s.putArray("required").add("data");
+        return s.put("description", "A file; data is base64");
+    }
+
     /** D-4 types as JSON Schema; a custom date or text format is described, not put in {@code format}. */
     static ObjectNode schema(PayloadDefinition.Field f) {
         if ("object".equals(f.type())) {
             return object(f.children());
+        }
+        if ("blob".equals(f.type())) {
+            return fileSchema();
         }
         ObjectNode s = Json.MAPPER.createObjectNode();
         boolean custom = f.format() != null && !f.format().isBlank();

@@ -42,6 +42,7 @@ class VersionLifecycleTest {
         r.add("server.port", () -> PORT);
         r.add("mapper.config-dir", CONFIG::toString);
         r.add("mapper.outbound-timeout-ms", () -> 1000);
+        r.add("mapper.max-blob-bytes", () -> 1000);
         r.add("MAPPER_SECRET_SECURE_BOOK", () -> "tok-123");
         r.add("MAPPER_SECRET_KEYED_BOOK", () -> "key-456");
     }
@@ -94,6 +95,8 @@ class VersionLifecycleTest {
             write("entities/new-book.json", NEW_BOOK);
             write("entities/book-ref.json", BOOK_REF);
             write("entities/no-input.json", NO_INPUT);
+            write("entities/upload.json", """
+                    {"id":"upload","fields":[{"id":"u-file","name":"file","type":"blob","required":true}]}""");
         } catch (IOException e) {
             throw new IllegalStateException(e);
         }
@@ -249,6 +252,34 @@ class VersionLifecycleTest {
         call("GET", "cookie-book", null);
         call("GET", "cookie-book", null);
         assertThat(((HttpHeaders) fake.lastRequest.get("headers")).get("Cookie")).isNull();
+    }
+
+    /** D-29: a file over mapper.max-blob-bytes is refused with 413 before anything is sent; one under it goes out as JSON. */
+    @Test
+    void aFileOverTheLimitIs413AndOneUnderItIsSent() throws Exception {
+        write("services/upload-book.json", """
+                {"id":"upload-book","input":"upload","output":"book-ref",
+                 "target":{"baseUrl":"http://localhost:%d/fake","method":"POST","path":"/api/v1/Books"},
+                 "request":{"links":[{"from":"u-file","to":"body.title"}]},
+                 "response":{"links":[{"from":"id","to":"br-bookId"}]}}""".formatted(PORT));
+        publisher.publishDraft("upload-book");
+        fake.lastRequest.clear();
+
+        String big = java.util.Base64.getEncoder().encodeToString(new byte[1001]);
+        HttpResponse<String> tooLarge = call("POST", "upload-book", "{\"file\":{\"data\":\"" + big + "\"}}");
+        assertThat(tooLarge.statusCode()).isEqualTo(413);
+        assertThat(tooLarge.body()).contains("payload-too-large").contains("file is 1001 bytes, more than the limit of 1000 bytes");
+        assertThat(fake.lastRequest).isEmpty();
+
+        HttpResponse<String> ok = call("POST", "upload-book", "{\"file\":{\"fileName\":\"a.txt\",\"data\":\"QUJD\"}}");
+        assertThat(ok.statusCode()).as(ok.body()).isEqualTo(200);
+        assertThat(Json.MAPPER.readTree((String) fake.lastRequest.get("body")).path("title").toString())
+                .isEqualTo("{\"fileName\":\"a.txt\",\"data\":\"QUJD\",\"size\":3,\"contentType\":\"application/octet-stream\"}");
+
+        // The call log (D-22) shows the file's size, never its data.
+        String calls = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/admin/api/integrations/upload-book/calls"))
+                .build(), HttpResponse.BodyHandlers.ofString()).body();
+        assertThat(calls).contains("<3 bytes, base64>").doesNotContain("QUJD");
     }
 
     @Test

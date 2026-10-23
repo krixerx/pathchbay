@@ -52,6 +52,11 @@ final class MockGenerator {
             case "datetime" -> {
                 return N.textNode("2026-01-0" + n + "T10:00:00Z");
             }
+            case "blob" -> {
+                // A small file, "example" as base64 (D-29).
+                return N.objectNode().put("fileName", name + ".txt").put("contentType", "text/plain").put("size", 7)
+                        .put("data", "ZXhhbXBsZQ==");
+            }
             default -> {
                 return N.textNode(name + " " + n);
             }

@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
@@ -38,10 +39,14 @@ public class IntegrationProcessors {
 
     private final IntegrationRegistry registry;
     private final CallLog calls;
+    /** The largest file a caller may send (D-29), decoded; 50 MiB unless {@code mapper.max-blob-bytes} says otherwise. */
+    private final long maxBlobBytes;
 
-    public IntegrationProcessors(IntegrationRegistry registry, CallLog calls) {
+    public IntegrationProcessors(IntegrationRegistry registry, CallLog calls,
+            @Value("${mapper.max-blob-bytes:52428800}") long maxBlobBytes) {
         this.registry = registry;
         this.calls = calls;
+        this.maxBlobBytes = maxBlobBytes;
     }
 
     /** What one call did so far, filled step by step; {@code stage} is the step it is in (the Test drawer's names). */
@@ -73,10 +78,14 @@ public class IntegrationProcessors {
         } else {
             input = InputValidator.coerceQuery(queryToJson(msg.getHeader(Exchange.HTTP_QUERY, String.class)), ci.input());
         }
-        trace.input = input;
+        trace.input = Blobs.forLog(input);
         List<String> problems = InputValidator.validate(input, ci.input());
         if (!problems.isEmpty()) {
             throw new BadInputException("Input does not match " + ci.input().id(), problems);
+        }
+        if (input instanceof ObjectNode obj) {
+            Blobs.complete(obj, ci.input(), maxBlobBytes);
+            trace.input = Blobs.forLog(input);
         }
         trace.stage = "request";
 
@@ -137,7 +146,7 @@ public class IntegrationProcessors {
         request.put("method", target.method());
         request.put("url", msg.getHeader(Exchange.HTTP_URI, String.class) + (shownQuery.isEmpty() ? "" : "?" + shownQuery));
         request.put("headers", shownHeaders);
-        request.put("body", body == null ? null : ci.definition().wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : mapped.path("body"));
+        request.put("body", body == null ? null : ci.definition().wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : Blobs.forLog(mapped.path("body")));
         trace.request = request;
         trace.stage = "response";
     }
@@ -154,7 +163,7 @@ public class IntegrationProcessors {
         if (calls.enabled()) {
             Map<String, Object> response = new LinkedHashMap<>();
             response.put("status", status);
-            response.put("body", parseOrText(body));
+            response.put("body", Blobs.forLog(parseOrText(body)));
             trace.response = response;
         }
 
@@ -177,7 +186,7 @@ public class IntegrationProcessors {
         msg.setBody(output);
         msg.setHeader(Exchange.HTTP_RESPONSE_CODE, 200);
         if (calls.enabled()) {
-            trace.output = parseOrText(output);
+            trace.output = Blobs.forLog(parseOrText(output));
         }
         trace.stage = "done";
     }
@@ -190,6 +199,9 @@ public class IntegrationProcessors {
         if (hasCause(e, BadInputException.class)) {
             status = 400;
             error = "bad-request";
+        } else if (hasCause(e, Blobs.TooLargeException.class)) {
+            status = 413;
+            error = "payload-too-large";
         } else if (hasCause(e, MappingException.class)) {
             status = 500;
             error = "mapping-error";

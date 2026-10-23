@@ -34,14 +34,16 @@ public class TestRunner {
     private final SecretResolver secrets;
     private final Connections connections;
     private final HttpClient http;
+    private final long maxBlobBytes;
 
     public TestRunner(ConfigStore store, PayloadLibrary library, SecretResolver secrets, Connections connections,
-            @Value("${mapper.outbound-timeout-ms:10000}") long timeoutMs) {
+            @Value("${mapper.outbound-timeout-ms:10000}") long timeoutMs, @Value("${mapper.max-blob-bytes:52428800}") long maxBlobBytes) {
         this.store = store;
         this.library = library;
         this.secrets = secrets;
         this.connections = connections;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(timeoutMs)).build();
+        this.maxBlobBytes = maxBlobBytes;
     }
 
     /** What the drawer shows, step by step; a step that failed stops the rest and fills {@code problem}. */
@@ -71,6 +73,13 @@ public class TestRunner {
         List<String> problems = InputValidator.validate(callerInput, in);
         if (!problems.isEmpty()) {
             return failed("input", problems);
+        }
+        if (callerInput instanceof ObjectNode obj) {
+            try {
+                Blobs.complete(obj, in, maxBlobBytes);
+            } catch (Blobs.TooLargeException e) {
+                return failed("input", List.of(e.getMessage()));
+            }
         }
 
         // 2. The request the engine would send. Without a base URL or a header value yet the mock still runs; a real
@@ -133,7 +142,7 @@ public class TestRunner {
         request.put("method", def.target().method());
         request.put("url", shownUrl);
         request.put("headers", shownHeaders);
-        request.put("body", !hasBody ? null : def.wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : mapped.path("body"));
+        request.put("body", !hasBody ? null : def.wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : Blobs.forLog(mapped.path("body")));
 
         // 3. The answer: mock from the contract, or the real system.
         int status;
@@ -190,7 +199,7 @@ public class TestRunner {
         JsonNode responseBody = parseOrText(responseText);
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("status", status);
-        response.put("body", responseBody);
+        response.put("body", Blobs.forLog(responseBody));
 
         // 4. Mapped back into the Output, as callers would get it.
         if (status >= 400) {
@@ -203,7 +212,7 @@ public class TestRunner {
         try {
             String mappedOutput = ci.outputBody(ci.mapResponse(responseText, contentType));
             JsonNode output = def.wire().outputXml() ? Json.MAPPER.getNodeFactory().textNode(mappedOutput) : Json.MAPPER.readTree(mappedOutput);
-            return new Result("done", notes, request, response, output, !real);
+            return new Result("done", notes, request, response, Blobs.forLog(output), !real);
         } catch (RuntimeException e) {
             return new Result("output", List.of("Response mapping failed: " + e.getMessage()), request, response, null, !real);
         }

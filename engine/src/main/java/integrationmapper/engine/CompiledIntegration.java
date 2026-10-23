@@ -10,6 +10,7 @@ import com.datasonnet.document.DefaultDocument;
 import com.datasonnet.document.MediaTypes;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * A published version, ready to serve. It keeps its own copies of the Input and Output definitions (D-9), its
@@ -149,11 +150,24 @@ public final class CompiledIntegration {
         return run(response, externalJson);
     }
 
-    /** Maps the external answer, reading it as XML when its Content-Type (or, without one, its text) says so. */
+    /**
+     * Maps the external answer, reading it as XML when its Content-Type (or, without one, its text) says so. Files in
+     * the Output get their size; broken base64 from the external system fails the mapping (D-29).
+     */
     public String mapResponse(String body, String contentType) {
         String text = body == null || body.isBlank() ? "{}" : body;
         if (!XmlFormat.isXml(contentType, body) || body == null || body.isBlank()) {
-            return mapResponse(text);
+            String mapped = mapResponse(text);
+            if (!hasFile(output)) {
+                return mapped;
+            }
+            try {
+                ObjectNode out = (ObjectNode) Json.MAPPER.readTree(mapped);
+                Blobs.complete(out, output, Long.MAX_VALUE);
+                return out.toString();
+            } catch (JsonProcessingException e) {
+                throw new IllegalStateException(e);
+            }
         }
         String mapped = run(response, XmlFormat.read(text, responseLists).toString());
         try {
