@@ -21,7 +21,7 @@ The console is in `engine/console/` (React 19, TypeScript, Vite, Mantine 9; toke
 - `docs/slice-plan.md`: the reviewed build plan for the first vertical slice (office hours, design review and eng review, 2026-10-20). **Where it differs from the spec, the slice plan wins for current work.** Its UI and product decisions are D-1…D-25 (D-21 onwards are later user decisions at the top of "UI Design Decisions"), its engineering decisions are R1…R12 in the "Decision ledger", deferred work is TODO-T1…T4, and the build order is "Eng Review: Implementation Tasks" (E1…E5).
 - `docs/test-plan.md`: the tests the slice must pass.
 
-Anything in neither document is out of scope until it is added as a requirement. All engineering decisions are made; R7 was settled by the routing spike (task E1): one Camel route per published integration, swapped behind an in-flight gate (`IntegrationGate`). The spike code itself was removed; its results are in the slice plan under R7.
+Anything in neither document is out of scope until it is added as a requirement. All engineering decisions are made; R7 was settled by the routing spike (task E1): one Camel route per published integration, swapped behind an in-flight gate (`IntegrationGate`). The spike is kept as its own Maven project in `spike/e1-routing` (not part of the engine build); its results are in the slice plan under R7.
 
 Main ways the slice differs from the spec: no React Flow canvas (two trees, source-then-target linking); no transforms or conditions (constants live in payload definitions); payload definitions are a reusable library; one Camel route template per HTTP method; GET/DELETE integrations take flat query parameters; red or broken links block publish; unit tests only (JUnit 5 + WireMock, Vitest).
 
