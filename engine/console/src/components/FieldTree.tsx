@@ -33,8 +33,18 @@ export function FieldTree({ definitionId, fields, onChange }: Props) {
             <Table.Th w="34%">Name</Table.Th>
             <Table.Th w="22%">Type</Table.Th>
             <Table.Th w={90}>Required</Table.Th>
-            <Table.Th w="14%">Format</Table.Th>
-            <Table.Th w="16%">Constant value</Table.Th>
+            <Table.Th w="14%">
+              Format{' '}
+              <Text span size="xs" c="dimmed" fw={400}>
+                optional
+              </Text>
+            </Table.Th>
+            <Table.Th w="16%">
+              Constant value{' '}
+              <Text span size="xs" c="dimmed" fw={400}>
+                optional
+              </Text>
+            </Table.Th>
             <Table.Th w={70} />
           </Table.Tr>
         </Table.Thead>
@@ -118,19 +128,24 @@ function Rows({ fields, path, depth, all, onChange, onAdd }: RowsProps) {
                 </Group>
               </Table.Td>
               <Table.Td>
-                <Checkbox
-                  checked={!!f.required}
-                  aria-label={`${label} is required`}
-                  disabled={f.value !== undefined}
-                  onChange={(e) => onChange(updateField(all, here, { required: e.currentTarget.checked }))}
-                />
+                {/* A constant is always filled, so "required" doesn't apply; say so instead of a greyed-out box. */}
+                {f.value !== undefined ? (
+                  <Text size="xs" c="dimmed" title="A constant is always filled, so it is never required">
+                    constant
+                  </Text>
+                ) : (
+                  <Checkbox
+                    checked={!!f.required}
+                    aria-label={`${label} is required`}
+                    onChange={(e) => onChange(updateField(all, here, { required: e.currentTarget.checked }))}
+                  />
+                )}
               </Table.Td>
               <Table.Td>
                 {(f.type === 'text' || f.type === 'date' || f.type === 'datetime') && (
                   <TextInput
                     size="xs"
                     value={f.format ?? ''}
-                    placeholder="optional"
                     aria-label={`Format of ${label}`}
                     onChange={(e) => onChange(updateField(all, here, { format: e.currentTarget.value || undefined }))}
                   />
@@ -143,7 +158,6 @@ function Rows({ fields, path, depth, all, onChange, onAdd }: RowsProps) {
                       size="xs"
                       ff="monospace"
                       value={f.value === undefined ? '' : String(f.value)}
-                      placeholder="—"
                       aria-label={`Constant value of ${label}`}
                       onChange={(e) =>
                         onChange(updateField(all, here, { value: toValue(e.currentTarget.value, f.type), required: false }))
@@ -154,7 +168,7 @@ function Rows({ fields, path, depth, all, onChange, onAdd }: RowsProps) {
               </Table.Td>
               <Table.Td>
                 <Tooltip label={`Delete ${label}`} withArrow>
-                  <ActionIcon variant="subtle" color="red" onClick={() => onChange(removeField(all, here))} aria-label={`Delete ${label}`}>
+                  <ActionIcon variant="subtle" color="gray" onClick={() => onChange(removeField(all, here))} aria-label={`Delete ${label}`}>
                     <IconTrash size={16} />
                   </ActionIcon>
                 </Tooltip>
