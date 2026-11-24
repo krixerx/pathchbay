@@ -26,7 +26,9 @@ public final class LinkRules {
         BLOB_OUTSIDE_BODY("blob-outside-body", "A file can only go into the body"),
         MULTIPART_NOT_FLAT("multipart-not-flat", "Multipart parts are single fields: body.<name>, no lists or objects"),
         WHOLE_ANSWER_NEEDS_BLOB("whole-answer-needs-blob", "The whole answer can only go into a file (blob)"),
-        BLOB_TO_SIMPLE("blob-to-simple", "A file only fits a file; link its data (base64), fileName or contentType instead");
+        BLOB_TO_SIMPLE("blob-to-simple", "A file only fits a file; link its data (base64), fileName or contentType instead"),
+        SINGLE_TO_OBJECT("single-to-object", "A single value can't go into an object; link it to one of the object's fields"),
+        OBJECT_TO_SINGLE("object-to-single", "An object can't go into a single value; link one of its fields instead");
 
         public final String code;
         public final String message;
@@ -114,7 +116,25 @@ public final class LinkRules {
      */
     public static Optional<Reason> check(Path source, String sourceType, Path target, String targetType, String requestFormat,
             List<ListLink> listLinks) {
-        return check(source, target, listLinks).or(() -> checkFiles(source, sourceType, target, targetType, requestFormat));
+        return check(source, target, listLinks).or(() -> checkFiles(source, sourceType, target, targetType, requestFormat))
+                .or(() -> checkShapes(sourceType, targetType));
+    }
+
+    /** The types that hold one value; a file (blob) has its own rules. */
+    private static final List<String> SINGLE_TYPES = List.of("text", "number", "integer", "boolean", "date", "datetime");
+
+    /**
+     * A single value can't go into an object, nor an object into a single value; checked only when both types are known.
+     * Without it the engine sent {@code "customer": "Mari"} where the contract has an object.
+     */
+    public static Optional<Reason> checkShapes(String sourceType, String targetType) {
+        if ("object".equals(targetType) && SINGLE_TYPES.contains(sourceType)) {
+            return Optional.of(Reason.SINGLE_TO_OBJECT);
+        }
+        if ("object".equals(sourceType) && SINGLE_TYPES.contains(targetType)) {
+            return Optional.of(Reason.OBJECT_TO_SINGLE);
+        }
+        return Optional.empty();
     }
 
     private static Optional<Reason> checkFiles(Path source, String sourceType, Path target, String targetType, String requestFormat) {

@@ -1,5 +1,5 @@
 {
-  "description": "Shared linking rules (D-12, D-29, R5). Engine (Java) and console (TypeScript) must both pass every case. Paths: a segment ending in [] means each item of that list; a path ending in [] is the list itself. listLinks are the list-to-list links that already exist. reason is null when the link is allowed, otherwise a stable code. Optional sourceType/targetType (a field type, blob for a file; absent when unknown, like an external path without a schema) and requestFormat (json when absent) feed the file rules of D-29: body alone is the whole request body, $body the whole answer, <blob>.data|fileName|contentType|size a file's parts.",
+  "description": "Shared linking rules (D-12, D-29, R5). Engine (Java) and console (TypeScript) must both pass every case. Paths: a segment ending in [] means each item of that list; a path ending in [] is the list itself. listLinks are the list-to-list links that already exist. reason is null when the link is allowed, otherwise a stable code. Optional sourceType/targetType (a field type, blob for a file; absent when unknown, like an external path without a schema) and requestFormat (json when absent) feed the file rules of D-29 and the shape rule: a single value (text, number, whole number, yes/no, date, date-time) can't go into an object, nor an object into a single value: body alone is the whole request body, $body the whole answer, <blob>.data|fileName|contentType|size a file's parts.",
   "cases": [
     { "name": "simple field to simple field", "source": "title", "target": "body.title", "listLinks": [], "reason": null },
     { "name": "nested object fields", "source": "address.city", "target": "body.ADDRESS.town", "listLinks": [], "reason": null },
@@ -59,6 +59,11 @@
     { "name": "base64 text into a whole file", "source": "contentBase64", "sourceType": "text", "target": "content", "targetType": "blob",
       "listLinks": [], "reason": "blob-to-simple" },
     { "name": "base64 text into a file's data", "source": "contentBase64", "sourceType": "text", "target": "content.data",
-      "targetType": "text", "listLinks": [], "reason": null }
+      "targetType": "text", "listLinks": [], "reason": null },
+    { "name": "text into an object", "source": "firstName", "sourceType": "text", "target": "body.customer", "targetType": "object", "listLinks": [], "reason": "single-to-object" },
+    { "name": "number into an object", "source": "amount", "sourceType": "number", "target": "body.total", "targetType": "object", "listLinks": [], "reason": "single-to-object" },
+    { "name": "object into a text field", "source": "address", "sourceType": "object", "target": "body.line", "targetType": "text", "listLinks": [], "reason": "object-to-single" },
+    { "name": "object into an object", "source": "address", "sourceType": "object", "target": "body.ADDRESS", "targetType": "object", "listLinks": [], "reason": null },
+    { "name": "text into an external path of unknown type", "source": "firstName", "sourceType": "text", "target": "body.customer", "listLinks": [], "reason": null }
   ]
 }

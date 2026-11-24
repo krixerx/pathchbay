@@ -1,4 +1,5 @@
 import type { FieldType } from './model';
+import { SIMPLE_TYPES } from './model';
 
 /**
  * The linking rules (D-12), the same as the engine's LinkRules.java; both are tested against
@@ -17,7 +18,9 @@ export type ReasonCode =
   | 'blob-outside-body'
   | 'multipart-not-flat'
   | 'whole-answer-needs-blob'
-  | 'blob-to-simple';
+  | 'blob-to-simple'
+  | 'single-to-object'
+  | 'object-to-single';
 
 export const REASON_TEXT: Record<ReasonCode, string> = {
   'list-to-single': 'A list can only be linked to a list',
@@ -32,6 +35,8 @@ export const REASON_TEXT: Record<ReasonCode, string> = {
   'multipart-not-flat': 'Multipart parts are single fields: body.<name>, no lists or objects',
   'whole-answer-needs-blob': 'The whole answer can only go into a file (blob)',
   'blob-to-simple': 'A file only fits a file; link its data (base64), fileName or contentType instead',
+  'single-to-object': "A single value can't go into an object; link it to one of the object's fields",
+  'object-to-single': "An object can't go into a single value; link one of its fields instead",
 };
 
 /**
@@ -65,7 +70,17 @@ function listPrefix(path: string, level: number): string {
 
 /** Checks one link against the list links that exist, then the file rules; null when allowed. */
 export function checkLink(source: string, target: string, listLinks: ListLink[], ctx: LinkContext = {}): ReasonCode | null {
-  return checkLists(source, target, listLinks) ?? checkFiles(source, target, ctx);
+  return checkLists(source, target, listLinks) ?? checkFiles(source, target, ctx) ?? checkShapes(ctx.sourceType, ctx.targetType);
+}
+
+/**
+ * A single value can't go into an object, nor an object into a single value; only when both types are known. The board
+ * also calls it with the contract's types, which the engine checks at publish.
+ */
+export function checkShapes(sourceType?: FieldType, targetType?: FieldType): ReasonCode | null {
+  if (targetType === 'object' && sourceType && SIMPLE_TYPES.includes(sourceType)) return 'single-to-object';
+  if (sourceType === 'object' && targetType && SIMPLE_TYPES.includes(targetType)) return 'object-to-single';
+  return null;
 }
 
 function checkFiles(source: string, target: string, { sourceType, targetType, requestFormat }: LinkContext): ReasonCode | null {

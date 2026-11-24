@@ -1,6 +1,6 @@
 import type { ContractOperation, Field, FieldType, PayloadDefinition } from './model';
 import { TYPE_LABELS } from './model';
-import { checkLink, REASON_TEXT, typesFit } from './linkRules';
+import { checkLink, checkShapes, REASON_TEXT, typesFit } from './linkRules';
 import type { LinkContext, ListLink } from './linkRules';
 
 /**
@@ -204,11 +204,25 @@ export function linkStates(links: Link[], sources: Row[], targets: Row[], reques
     const t = end(targets, tgt, l.to);
     if (!s) return { kind: 'broken', reason: `Field ${l.from} no longer exists` };
     if (!t) return { kind: 'broken', reason: `Field ${l.to} no longer exists` };
-    const reason = checkLink(s.rule, t.rule, listLinks, context(s, t, requestFormat));
+    const reason = checkLink(s.rule, t.rule, listLinks, context(s, t, requestFormat)) ?? checkShapes(s.type, t.type);
     if (reason) return { kind: 'red', reason: REASON_TEXT[reason] };
     if (!typesFit(s.type, t.type)) return { kind: 'red', reason: typeReason(s.type, t.type) };
+    const conflict = writeConflict(t, links.filter((o) => o !== l).map((o) => end(targets, tgt, o.to)?.rule));
+    if (conflict) return { kind: 'red', reason: conflict };
     return { kind: 'ok' };
   });
+}
+
+/**
+ * Two links can't write into the same place: a field linked as a whole and, at the same time, fields inside it. The
+ * engine refuses that at publish ("another link already writes to ..."); the board says so on the outer link. A list
+ * is the exception: a list link and links into its items belong together.
+ */
+function writeConflict(target: Row, otherTargets: (string | undefined)[]): string | null {
+  if (target.isList) return null;
+  return otherTargets.some((r) => r?.startsWith(`${target.rule}.`))
+    ? `Other links already write into fields of ${target.label}; keep this link or those, not both`
+    : null;
 }
 
 /** D-6 in plain words, with the same type names as everywhere else (D-4). */
@@ -231,9 +245,14 @@ export function canLink(source: Row, target: Row, links: Link[], sources: Row[],
     const t = targets.find((r) => r.key === l.to);
     if (s && t && s.isList && t.isList && states[i].kind === 'ok') listLinks.push({ source: s.rule, target: t.rule });
   });
-  const reason = checkLink(source.rule, target.rule, listLinks, context(source, target, requestFormat));
+  const reason = checkLink(source.rule, target.rule, listLinks, context(source, target, requestFormat)) ?? checkShapes(source.type, target.type);
   if (reason) return REASON_TEXT[reason];
   if (!typesFit(source.type, target.type)) return typeReason(source.type, target.type);
+  const otherRules = others.map((l) => targets.find((r) => r.key === l.to)?.rule);
+  const conflict = writeConflict(target, otherRules);
+  if (conflict) return conflict;
+  const outer = otherRules.find((r) => r && !r.endsWith('[]') && target.rule.startsWith(`${r}.`));
+  if (outer) return `${outer} is already linked as a whole; remove that link first`;
   return null;
 }
 
