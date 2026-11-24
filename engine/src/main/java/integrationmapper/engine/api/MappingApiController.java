@@ -1,0 +1,273 @@
+package integrationmapper.engine.api;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import integrationmapper.engine.config.ConfigStore;
+import integrationmapper.engine.config.Connections;
+import integrationmapper.engine.config.PayloadLibrary;
+import integrationmapper.engine.format.Json;
+import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.ServiceDefinition;
+import integrationmapper.engine.runtime.CallLog;
+import integrationmapper.engine.runtime.IntegrationPublisher;
+import integrationmapper.engine.runtime.TestRunner;
+
+/** Console API for the mapping board (step 4): everything the board shows, link autosave (D-1), and test runs. */
+@RestController
+@RequestMapping("/admin/api/integrations/{slug}")
+public class MappingApiController {
+
+    private final ConfigStore store;
+    private final PayloadLibrary library;
+    private final TestRunner tests;
+    private final IntegrationPublisher publisher;
+    private final CallLog calls;
+
+    public MappingApiController(ConfigStore store, PayloadLibrary library, TestRunner tests, IntegrationPublisher publisher,
+            CallLog calls) {
+        this.store = store;
+        this.library = library;
+        this.tests = tests;
+        this.publisher = publisher;
+        this.calls = calls;
+    }
+
+    /** The draft, both payload definitions and the chosen operation, in one call. */
+    @GetMapping("/board")
+    public ResponseEntity<String> board(@PathVariable String slug) throws IOException {
+        ObjectNode d = draft(slug);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("draft", d);
+        out.put("input", d.hasNonNull("input") ? library.get(d.get("input").asText()) : null);
+        out.put("output", d.hasNonNull("output") ? library.get(d.get("output").asText()) : null);
+        out.put("operation", operation(d));
+        return json(out);
+    }
+
+    record Links(List<ServiceDefinition.Link> request, List<ServiceDefinition.Link> response) {
+    }
+
+    /**
+     * Saves the links as they are, including red or broken ones (they stay visible with their warning, D-6, D-7);
+     * publishing refuses them (R8).
+     */
+    @PutMapping("/links")
+    public ResponseEntity<String> saveLinks(@PathVariable String slug, @RequestBody String body) throws IOException {
+        Links links = read(body, Links.class);
+        ObjectNode d = draft(slug);
+        d.putObject("request").set("links", Json.MAPPER.valueToTree(links.request() == null ? List.of() : links.request()));
+        d.putObject("response").set("links", Json.MAPPER.valueToTree(links.response() == null ? List.of() : links.response()));
+        store.writeJson(store.service(slug), d);
+        return json(d);
+    }
+
+    /**
+     * Saves the wire formats (D-24, D-29); all JSON removes the setting, so drafts that never used XML or files stay
+     * as they were. Root elements are kept only for XML. The request format of a SOAP operation is always soap, and
+     * soap only goes with a SOAP operation (D-30): it is set by choosing the operation, not here.
+     */
+    @PutMapping("/formats")
+    public ResponseEntity<String> saveFormats(@PathVariable String slug, @RequestBody String body) throws IOException {
+        ServiceDefinition.Formats f = read(body, ServiceDefinition.Formats.class);
+        f.check(slug);
+        ObjectNode d = draft(slug);
+        boolean soapOperation = d.path("target").path("soap").isObject();
+        if (f.requestSoap() && !soapOperation) {
+            throw new IllegalArgumentException("Request format soap comes with a SOAP operation; choose one from a WSDL contract");
+        }
+        if (soapOperation) {
+            f = new ServiceDefinition.Formats("soap", null, f.output(), f.outputRoot());
+        }
+        String request = "json".equals(f.request()) ? null : f.request();
+        String output = "json".equals(f.output()) ? null : f.output();
+        if (request != null || output != null) {
+            ServiceDefinition.Formats kept = new ServiceDefinition.Formats(request, f.requestXml() ? f.requestRoot() : null, output,
+                    f.outputXml() ? f.outputRoot() : null);
+            d.set("formats", Json.MAPPER.valueToTree(kept));
+        } else {
+            d.remove("formats");
+        }
+        store.writeJson(store.service(slug), d);
+        return json(d);
+    }
+
+    record AddedHeaders(List<String> headers) {
+    }
+
+    /**
+     * Saves the headers added on the board for the external call (D-27): request link targets like any contract
+     * header. Links to a header that is no longer listed are removed with it.
+     */
+    @PutMapping("/headers")
+    public ResponseEntity<String> saveHeaders(@PathVariable String slug, @RequestBody String body) throws IOException {
+        List<String> headers = read(body, AddedHeaders.class).headers();
+        ObjectNode d = draft(slug);
+        Contract.Operation op = operation(d);
+        Set<String> seen = new HashSet<>();
+        List<String> kept = new ArrayList<>();
+        for (String raw : headers == null ? List.<String>of() : headers) {
+            String h = raw == null ? "" : raw.strip();
+            Connections.checkHeaderName(h);
+            if (op != null && op.parameters().stream().anyMatch(p -> "header".equals(p.in()) && p.name().equalsIgnoreCase(h))) {
+                throw new IllegalArgumentException("The API request already has header " + h);
+            }
+            if (!seen.add(h.toLowerCase(Locale.ROOT))) {
+                throw new IllegalArgumentException("Header " + h + " is listed twice");
+            }
+            kept.add(h);
+        }
+        Set<String> removed = new HashSet<>();
+        d.path("addedHeaders").forEach(n -> {
+            if (!kept.contains(n.asText())) {
+                removed.add("headers." + n.asText());
+            }
+        });
+        if (!removed.isEmpty() && d.path("request").path("links").isArray()) {
+            ArrayNode links = Json.MAPPER.createArrayNode();
+            d.path("request").path("links").forEach(l -> {
+                if (!removed.contains(l.path("to").asText())) {
+                    links.add(l);
+                }
+            });
+            ((ObjectNode) d.get("request")).set("links", links);
+        }
+        if (kept.isEmpty()) {
+            d.remove("addedHeaders");
+        } else {
+            d.set("addedHeaders", Json.MAPPER.valueToTree(kept));
+        }
+        store.writeJson(store.service(slug), d);
+        return json(d);
+    }
+
+    record TestRequest(JsonNode input, boolean real) {
+    }
+
+    @PostMapping("/test")
+    public ResponseEntity<String> test(@PathVariable String slug, @RequestBody String body) throws IOException {
+        TestRequest req = read(body, TestRequest.class);
+        draft(slug); // 400 for an unknown integration
+        return json(tests.run(slug, req.input() == null ? Json.MAPPER.createObjectNode() : req.input(), req.real()));
+    }
+
+    /** Deletes the integration: its live endpoint, draft, versions and secret (IntegrationPublisher.delete). */
+    @DeleteMapping
+    public ResponseEntity<String> delete(@PathVariable String slug) throws Exception {
+        draft(slug);
+        publisher.delete(slug);
+        calls.clear(slug);
+        return ResponseEntity.noContent().build();
+    }
+
+    /** The last live calls, newest first (D-22); {@code enabled} is false when MAPPER_CALL_LOG=off. */
+    @GetMapping("/calls")
+    public ResponseEntity<String> calls(@PathVariable String slug) throws IOException {
+        draft(slug);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", calls.enabled());
+        out.put("calls", calls.list(slug));
+        return json(out);
+    }
+
+    /** Step 5: publishes the draft as the next version (R8: the engine refuses broken links, with the list). */
+    @PostMapping("/publish")
+    public ResponseEntity<String> publish(@PathVariable String slug) throws Exception {
+        draft(slug);
+        publisher.publishDraft(slug);
+        return versions(slug);
+    }
+
+    /** Step 5 rollback: makes an earlier version live again, without writing a new version file. */
+    @PostMapping("/versions/{version}/activate")
+    public ResponseEntity<String> activate(@PathVariable String slug, @PathVariable String version) throws Exception {
+        draft(slug);
+        publisher.activateVersion(slug, version);
+        return versions(slug);
+    }
+
+    record VersionInfo(String version, String publishedAt) {
+    }
+
+    /** Published versions, newest first, and which one is live. */
+    @GetMapping("/versions")
+    public ResponseEntity<String> versions(@PathVariable String slug) throws IOException {
+        ObjectNode d = draft(slug);
+        List<VersionInfo> list = new java.util.ArrayList<>();
+        for (String v : store.versions(slug).reversed()) {
+            JsonNode snapshot = Json.MAPPER.readTree(store.version(slug, v).toFile());
+            list.add(new VersionInfo(v, snapshot.path("publishedAt").asText(null)));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("activeVersion", d.path("activeVersion").asText(null));
+        out.put("versions", list);
+        return json(out);
+    }
+
+    // ---- helpers
+
+    private Contract.Operation operation(JsonNode d) throws IOException {
+        if (!d.hasNonNull("contract") || !d.hasNonNull("operationId")) {
+            return null;
+        }
+        Path p = store.root().resolve("contracts").resolve(d.get("contract").asText() + ".json");
+        if (!Files.isRegularFile(p)) {
+            return null;
+        }
+        String opId = d.get("operationId").asText();
+        return Json.MAPPER.readValue(p.toFile(), Contract.class).operations().stream()
+                .filter(o -> o.id().equals(opId)).findFirst().orElse(null);
+    }
+
+    private ObjectNode draft(String slug) throws IOException {
+        if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*") || !Files.isRegularFile(store.service(slug))) {
+            throw new IllegalArgumentException("No integration " + slug);
+        }
+        return (ObjectNode) Json.MAPPER.readTree(store.service(slug).toFile());
+    }
+
+    private static ResponseEntity<String> json(Object body) throws JsonProcessingException {
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(Json.MAPPER.writeValueAsString(body));
+    }
+
+    private static <T> T read(String body, Class<T> type) {
+        try {
+            return Json.MAPPER.readValue(body, type);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Request body is not valid: " + e.getOriginalMessage());
+        }
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<String> badRequest(IllegalArgumentException e) throws JsonProcessingException {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "bad-request");
+        body.put("detail", e.getMessage());
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(Json.MAPPER.writeValueAsString(body));
+    }
+}
