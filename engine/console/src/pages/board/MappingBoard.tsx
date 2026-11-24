@@ -37,6 +37,7 @@ import {
   linkStates,
   missingRows,
   nothingLinked,
+  withFreeFormRows,
   payloadRows,
   requestRows,
   requiredUnmapped,
@@ -146,8 +147,11 @@ export function MappingBoard(props: {
   // Fields that no longer exist get a row of their own, so a broken link is drawn like any other (red, dashed).
   const shownSides = useMemo(() => {
     if (!sides) return null;
+    // Linked paths inside a free-form object of the contract get a row under that object, so their lines are drawn.
+    const sources = withFreeFormRows(sides.sources, current.map((l) => l.from));
+    const targets = withFreeFormRows(sides.targets, current.map((l) => l.to));
     const ghosts = missingRows(current, sides.sources, sides.targets);
-    return { sources: [...sides.sources, ...ghosts.sources], targets: [...sides.targets, ...ghosts.targets] };
+    return { sources: [...sources, ...ghosts.sources], targets: [...targets, ...ghosts.targets] };
   }, [sides, current]);
   const problemKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -702,7 +706,7 @@ function TreePanel(props: {
                         )}
                       </Text>
                       <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                        {r.missing ? 'no longer exists' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
+                        {r.missing ? 'no longer exists' : r.freeForm ? 'free-form' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
                         {r.constant ? ' · constant' : ''}
                       </Text>
                       {amber && <IconAlertTriangle size={14} color={statusText.warning} aria-label="required, not mapped" />}
