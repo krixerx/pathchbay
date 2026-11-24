@@ -18,6 +18,7 @@ import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Auth, IntegrationSettings } from '../model';
+import { LoadError } from '../components/ErrorPage';
 import { meaning, statusText } from '../theme';
 
 type AuthKind = 'none' | 'bearer' | 'basic' | 'apiKey';
@@ -54,13 +55,7 @@ export function SettingsPage() {
   }, [slug]);
 
   if (!settings) {
-    return error ? (
-      <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
-        {error}
-      </Alert>
-    ) : (
-      <Skeleton height={240} />
-    );
+    return error ? <LoadError text={error} back={{ to: '/', label: 'Back to Integrations' }} /> : <Skeleton height={240} />;
   }
 
   const auth: Auth | null =
@@ -87,11 +82,8 @@ export function SettingsPage() {
     }
   };
 
-  const secretSource = settings.secretInEnv
-    ? `from the environment variable ${settings.secretEnvName} (this always wins)`
-    : settings.secretInFile
-      ? 'saved for this integration (git-ignored file)'
-      : 'not set';
+  const secretSource = settings.secretInFile ? 'saved for this integration (git-ignored file)' : 'not set';
+  const secretLabel = kind === 'bearer' ? 'Token' : kind === 'basic' ? 'User and password' : 'API key';
 
   return (
     <Stack gap="lg" maw={720}>
@@ -178,10 +170,23 @@ export function SettingsPage() {
         )}
       </Stack>
 
-      {kind !== 'none' && (
+      {/* A secret from the environment always wins (FR-052): a value typed here would never be used, so there is no
+          field to type it in, only where to change it. */}
+      {kind !== 'none' && settings.secretInEnv && (
+        <Stack gap={4}>
+          <Text fw={500} size="sm">
+            {secretLabel}
+          </Text>
+          <Text size="sm">
+            Comes from the environment variable <Code>{settings.secretEnvName}</Code>, which always wins over a value saved
+            here. To change it, change that variable where Patchbay runs.
+          </Text>
+        </Stack>
+      )}
+      {kind !== 'none' && !settings.secretInEnv && (
         <Stack gap="xs">
           <PasswordInput
-            label={kind === 'bearer' ? 'Token' : kind === 'basic' ? 'User and password' : 'API key'}
+            label={secretLabel}
             description={
               kind === 'basic'
                 ? `As username:password. Currently ${secretSource}. Leave empty to keep it.`

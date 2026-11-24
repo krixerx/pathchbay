@@ -90,6 +90,13 @@ export function MappingBoard(props: {
   const [selected, setSelected] = useState<string | null>(null);
   const [filters, setFilters] = useState<Record<'source' | 'target', Filter>>({ source: 'all', target: 'all' });
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // Why the last change could not be saved; the change itself is undone on the board.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // The links as the engine last confirmed them, to go back to when a save fails.
+  const confirmed = useRef<Record<Tab, Link[]>>({
+    request: (draft.request?.links as Link[]) ?? [],
+    response: (draft.response?.links as Link[]) ?? [],
+  });
   const [lastTest, setLastTest] = useState<{ ok: boolean; at: string } | null>(null);
   const gutter = useRef<HTMLDivElement>(null);
   const [layouts, setLayouts] = useState<{ source?: Layout; target?: Layout }>({});
@@ -149,16 +156,21 @@ export function MappingBoard(props: {
     if (data) onProblems?.(blockingCount);
   }, [data, blockingCount, onProblems]);
 
-  // Autosave on every change (D-1).
+  // Autosave on every change (D-1). The board shows the change at once; if the save fails it goes back to what the
+  // engine last confirmed and the status bar says the change was not saved, so nothing looks saved that isn't.
   const save = useCallback(
     async (next: Record<Tab, Link[]>) => {
       setLinks(next);
       setSaved('saving');
+      setSaveError(null);
       try {
-        props.onChange(await api.saveLinks(draft.id, next.request, next.response));
+        const d = await api.saveLinks(draft.id, next.request, next.response);
+        confirmed.current = next;
+        props.onChange(d);
         setSaved('saved');
       } catch (e) {
-        setError((e as Error).message);
+        setLinks(confirmed.current);
+        setSaveError((e as Error).message);
         setSaved('idle');
       }
     },
@@ -192,11 +204,14 @@ export function MappingBoard(props: {
   const saveHeaders = async (next: string[]) => {
     const d = await api.saveHeaders(draft.id, next);
     setAdded(d.addedHeaders ?? []);
-    setLinks((old) => ({ ...old, request: (d.request?.links as Link[]) ?? [] }));
+    const request = (d.request?.links as Link[]) ?? [];
+    confirmed.current = { ...confirmed.current, request };
+    setLinks((old) => ({ ...old, request }));
+    setSaveError(null);
     props.onChange(d);
   };
   const removeHeader = (r: Row) =>
-    saveHeaders(added.filter((h) => `headers.${h}` !== r.key)).catch((e: Error) => setError(e.message));
+    saveHeaders(added.filter((h) => `headers.${h}` !== r.key)).catch((e: Error) => setSaveError(e.message));
 
   return (
     <Stack gap="sm" mt="md">
@@ -206,6 +221,7 @@ export function MappingBoard(props: {
         other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab, added), requestFormat).filter((s) => s.kind !== 'ok').length }}
         lastTest={lastTest}
         saved={saved}
+        saveError={saveError}
         onShowUnmapped={() => document.getElementById(`row-target-${unmapped[0]?.key}`)?.scrollIntoView({ block: 'center' })}
         onShowProblems={showProblems}
         onSwitch={() => {
@@ -226,7 +242,7 @@ export function MappingBoard(props: {
             { value: 'response', label: 'API response → Output' },
           ]}
         />
-        <FormatSwitch draft={draft} tab={tab} onChange={props.onChange} onError={setError} />
+        <FormatSwitch draft={draft} tab={tab} onChange={props.onChange} onError={setSaveError} />
       </Group>
 
       <Text size="sm" c="dimmed" aria-live="polite">
@@ -311,6 +327,7 @@ function StatusBar(props: {
   other: { tab: Tab; red: number };
   lastTest: { ok: boolean; at: string } | null;
   saved: 'idle' | 'saving' | 'saved';
+  saveError: string | null;
   onShowUnmapped: () => void;
   onShowProblems: () => void;
   onSwitch: () => void;
@@ -361,9 +378,18 @@ function StatusBar(props: {
             </Text>
           </Group>
         )}
-        <Text size="sm" c="dimmed" ml="auto">
-          {props.saved === 'saving' ? 'Saving…' : props.saved === 'saved' ? '✓ Saved' : ''}
-        </Text>
+        {props.saveError ? (
+          <Group gap={4} ml="auto" role="alert">
+            <IconX size={16} color={statusText.broken} />
+            <Text size="sm" c={statusText.broken}>
+              Not saved: {props.saveError} The change was undone.
+            </Text>
+          </Group>
+        ) : (
+          <Text size="sm" c="dimmed" ml="auto">
+            {props.saved === 'saving' ? 'Saving…' : props.saved === 'saved' ? '✓ Saved' : ''}
+          </Text>
+        )}
       </Group>
     </Paper>
   );

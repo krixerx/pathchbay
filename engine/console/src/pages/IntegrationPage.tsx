@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Badge, Button, Code, Group, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
-import { IconAlertTriangle, IconFlask, IconListDetails, IconRocket, IconSettings } from '@tabler/icons-react';
+import { Badge, Button, Code, Group, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { IconFlask, IconListDetails, IconRocket, IconSettings } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Tab } from '../board';
 import type { IntegrationDraft } from '../model';
 import { meaning } from '../theme';
+import { LoadError } from '../components/ErrorPage';
 import { CallsDrawer } from './board/CallsDrawer';
 import { MappingBoard } from './board/MappingBoard';
 import { PublishPanel } from './board/PublishPanel';
@@ -54,13 +55,7 @@ function Integration({ slug }: { slug: string }) {
   }, [connection, operationId, literalUrl]);
 
   if (!draft) {
-    return error ? (
-      <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
-        {error}
-      </Alert>
-    ) : (
-      <Skeleton height={200} />
-    );
+    return error ? <LoadError text={error} back={{ to: '/', label: 'Back to Integrations' }} /> : <Skeleton height={200} />;
   }
 
   const linkCount = (draft.request?.links?.length ?? 0) + (draft.response?.links?.length ?? 0);

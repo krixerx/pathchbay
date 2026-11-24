@@ -47,6 +47,9 @@ export function setInboundKey(key: string) {
   }
 }
 
+/** What every page says when a request never reaches the engine (it is stopped, restarting or the network is down). */
+export const UNREACHABLE = "Patchbay can't be reached. Check that it is running, then try again.";
+
 /** Fired when the engine answers 401; KeyPrompt listens for it. */
 export const UNAUTHORIZED_EVENT = 'mapper:unauthorized';
 
@@ -54,7 +57,13 @@ async function request(method: string, path: string, body?: BodyInit, contentTyp
   const headers: Record<string, string> = {};
   if (contentType) headers['Content-Type'] = contentType;
   if (inboundKey) headers['X-API-Key'] = inboundKey;
-  const res = await fetch(`/admin/api${path}`, { method, headers, body });
+  let res: Response;
+  try {
+    res = await fetch(`/admin/api${path}`, { method, headers, body });
+  } catch {
+    // fetch only rejects when no answer came back at all; the browser's own text ("Failed to fetch") says nothing.
+    throw new ApiError(UNREACHABLE);
+  }
   if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   if (!res.ok) {
     const text = await res.text();

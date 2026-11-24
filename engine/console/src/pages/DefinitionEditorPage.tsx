@@ -6,6 +6,7 @@ import { api } from '../api';
 import type { PayloadDefinition } from '../model';
 import { FieldTree } from '../components/FieldTree';
 import { problems, slugify } from '../tree';
+import { LoadError } from '../components/ErrorPage';
 import { meaning } from '../theme';
 
 /**
@@ -41,13 +42,7 @@ function DefinitionEditor({ id }: { id?: string }) {
   }, [id, isNew]);
 
   if (!def) {
-    return error ? (
-      <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
-        {error}
-      </Alert>
-    ) : (
-      <Skeleton height={240} />
-    );
+    return error ? <LoadError text={error} back={{ to: '/definitions', label: 'Back to Payload definitions' }} /> : <Skeleton height={240} />;
   }
 
   const change = (next: PayloadDefinition) => {
