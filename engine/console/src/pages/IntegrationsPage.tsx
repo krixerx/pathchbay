@@ -12,6 +12,7 @@ import {
   List,
   Menu,
   Modal,
+  SegmentedControl,
   Skeleton,
   Stack,
   Table,
@@ -19,10 +20,12 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconAlertTriangle, IconApi, IconDots, IconDownload, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
+import { IconAlertTriangle, IconApi, IconDots, IconDownload, IconPlus, IconSearch, IconTrash, IconUpload } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { ImportResult } from '../components/ImportResult';
+import type { StatusFilter } from '../integrations';
+import { filterIntegrations, statusCounts } from '../integrations';
 import type { ImportReport, IntegrationSummary } from '../model';
 import { slugify } from '../tree';
 import { meaning } from '../theme';
@@ -46,6 +49,8 @@ export function IntegrationsPage() {
   const [busy, setBusy] = useState<'export' | 'import' | null>(null);
   const [imported, setImported] = useState<ImportReport | null>(null);
   const [refused, setRefused] = useState<ApiError | null>(null);
+  const [query, setQuery] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('all');
 
   const load = () =>
     api.integrations().then((list) => {
@@ -147,7 +152,18 @@ export function IntegrationsPage() {
         </Stack>
       )}
 
-      {items && items.length > 0 && <IntegrationTable items={items} onDelete={setDeleting} picked={picked} onPick={setPicked} />}
+      {items && items.length > 0 && (
+        <IntegrationList
+          items={items}
+          query={query}
+          onQuery={setQuery}
+          status={status}
+          onStatus={setStatus}
+          onDelete={setDeleting}
+          picked={picked}
+          onPick={setPicked}
+        />
+      )}
 
       <NewIntegrationModal opened={creating} onClose={() => setCreating(false)} />
       <Modal opened={!!imported} onClose={() => setImported(null)} title="Imported" size="lg">
@@ -191,6 +207,54 @@ export function IntegrationsPage() {
   );
 }
 
+/** Search and status filter above the table; the table shows only what matches. */
+function IntegrationList(props: {
+  items: IntegrationSummary[];
+  query: string;
+  onQuery: (q: string) => void;
+  status: StatusFilter;
+  onStatus: (s: StatusFilter) => void;
+  onDelete: (it: IntegrationSummary) => void;
+  picked: Set<string>;
+  onPick: (picked: Set<string>) => void;
+}) {
+  const counts = statusCounts(props.items);
+  const shown = filterIntegrations(props.items, props.query, props.status);
+  // A status no integration has is left out, unless it is the one chosen.
+  const statuses = (['live', 'draft', 'broken'] as const).filter((s) => counts[s] > 0 || props.status === s);
+  return (
+    <Stack gap="sm">
+      <Group gap="sm">
+        <TextInput
+          placeholder="Search name, Input, Output or method"
+          leftSection={<IconSearch size={14} />}
+          value={props.query}
+          onChange={(e) => props.onQuery(e.currentTarget.value)}
+          aria-label="Search integrations"
+          w={320}
+        />
+        <SegmentedControl
+          size="sm"
+          value={props.status}
+          onChange={(v) => props.onStatus(v as StatusFilter)}
+          aria-label="Status"
+          data={[
+            { value: 'all', label: `All ${props.items.length}` },
+            ...statuses.map((s) => ({ value: s, label: `${STATUS[s].label} ${counts[s]}` })),
+          ]}
+        />
+      </Group>
+      {shown.length > 0 ? (
+        <IntegrationTable items={shown} onDelete={props.onDelete} picked={props.picked} onPick={props.onPick} />
+      ) : (
+        <Text size="sm" c="dimmed">
+          No integration matches.
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
 function IntegrationTable({
   items,
   onDelete,
@@ -208,7 +272,16 @@ function IntegrationTable({
     if (!next.delete(id)) next.add(id);
     onPick(next);
   };
+  // "Pick all" ticks or clears the rows shown; picks hidden by the search stay.
   const all = items.every((it) => picked.has(it.id));
+  const pickAll = () => {
+    const next = new Set(picked);
+    for (const it of items) {
+      if (all) next.delete(it.id);
+      else next.add(it.id);
+    }
+    onPick(next);
+  };
   return (
     <Table highlightOnHover verticalSpacing="sm">
       <Table.Thead>
@@ -218,7 +291,7 @@ function IntegrationTable({
               aria-label="Pick all for export"
               checked={all}
               indeterminate={!all && picked.size > 0}
-              onChange={() => onPick(all ? new Set() : new Set(items.map((it) => it.id)))}
+              onChange={pickAll}
             />
           </Table.Th>
           <Table.Th>Name</Table.Th>
@@ -243,7 +316,7 @@ function IntegrationTable({
             </Table.Td>
             <Table.Td>
               <Text fw={500}>{it.name ?? it.id}</Text>
-              <Code>{it.id}</Code>
+              {it.name && it.name !== it.id && <Code>{it.id}</Code>}
             </Table.Td>
             <Table.Td>
               <Text ff="monospace" size="sm">
