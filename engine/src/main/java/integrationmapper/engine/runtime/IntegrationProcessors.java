@@ -128,8 +128,9 @@ public class IntegrationProcessors {
         // Nothing from the caller reaches the external system except what the mapping produces (OV-8).
         msg.removeHeaders("*");
         msg.setHeader(Exchange.HTTP_METHOD, target.method());
-        msg.setHeader(Exchange.HTTP_URI, stripTrailingSlash(ci.baseUrl()) + fillPath(target.path(), mapped.path("path")));
-        String query = toQuery(mapped.path("query"));
+        BaseUrl base = BaseUrl.of(ci.baseUrl());
+        msg.setHeader(Exchange.HTTP_URI, base.path() + fillPath(target.path(), mapped.path("path")));
+        String query = joinQuery(base.query(), toQuery(mapped.path("query")));
         msg.setHeader("Accept", ci.accept());
         mapped.path("headers").properties().forEach(h -> {
             if (!h.getValue().isNull()) {
@@ -477,6 +478,22 @@ public class IntegrationProcessors {
 
     private static String blankToEmptyObject(String s) {
         return s == null || s.isBlank() ? "{}" : s;
+    }
+
+    /**
+     * A base URL split at its {@code ?}: the operation path goes after {@code path}, and {@code query} (empty when
+     * there is none) is sent first, before the mapped query parameters. Without the split the path landed inside the
+     * query ({@code https://h/api?key=1/books}).
+     */
+    record BaseUrl(String path, String query) {
+        static BaseUrl of(String url) {
+            int q = url.indexOf('?');
+            return q < 0 ? new BaseUrl(stripTrailingSlash(url), "") : new BaseUrl(stripTrailingSlash(url.substring(0, q)), url.substring(q + 1));
+        }
+    }
+
+    static String joinQuery(String first, String second) {
+        return first.isEmpty() ? second : second.isEmpty() ? first : first + "&" + second;
     }
 
     static String stripTrailingSlash(String s) {

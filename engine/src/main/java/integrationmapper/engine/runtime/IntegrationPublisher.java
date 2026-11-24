@@ -240,7 +240,8 @@ public class IntegrationPublisher {
 
     private void addRoute(String routeId, CompiledIntegration ci) throws Exception {
         camel.addRouteFromTemplate(routeId, IntegrationRoutes.templateId(ci.definition().target().method()),
-                Map.of("slug", ci.definition().id(), "baseUrl", ci.baseUrl()));
+                // The endpoint only fixes scheme and host; the full URL and query come with each call (CamelHttpUri).
+                Map.of("slug", ci.definition().id(), "baseUrl", IntegrationProcessors.BaseUrl.of(ci.baseUrl()).path()));
     }
 
     private void removeRoute(String routeId) throws Exception {

@@ -53,6 +53,7 @@ class VersionLifecycleTest {
         r.add("mapper.max-body-bytes", () -> 20000);
         r.add("MAPPER_SECRET_SECURE_BOOK", () -> "tok-123");
         r.add("MAPPER_SECRET_KEYED_BOOK", () -> "key-456");
+        r.add("MAPPER_SECRET_TENANT_BOOK", () -> "key-789");
     }
 
     @Autowired
@@ -69,6 +70,9 @@ class VersionLifecycleTest {
 
     @Autowired
     Drafts drafts;
+
+    @Autowired
+    TestRunner tests;
 
     @Autowired
     integrationmapper.engine.web.IntegrationGate gate;
@@ -213,6 +217,27 @@ class VersionLifecycleTest {
         assertThat(read(store.service("careful-book")).path("activeVersion").asText()).isEqualTo("1.0.0");
         assertThat(Files.readString(store.service("careful-book"))).isNotEqualTo(serviceBefore); // the draft edit itself stays
         assertThat(registry.activeVersions()).containsEntry("careful-book", "1.0.0");
+    }
+
+    /**
+     * A base URL with a query of its own (SOAP and some REST services need one, e.g. ?sap-client=100): the path goes
+     * before it and the query reaches the external system next to the auth query, live and in the Test drawer.
+     */
+    @Test
+    void aQueryInTheBaseUrlIsKeptAndThePathGoesBeforeIt() throws Exception {
+        write("services/tenant-book.json", service("tenant-book", "GET", "/secure", null,
+                "{\"type\":\"apiKey\",\"in\":\"query\",\"name\":\"api_key\"}").replace("/fake\"", "/fake?tenant=t1\""));
+        publisher.publishDraft("tenant-book");
+
+        HttpResponse<String> live = call("GET", "tenant-book", null);
+        assertThat(live.statusCode()).as(live.body()).isEqualTo(200);
+        assertThat(fake.lastRequest.get("query")).isEqualTo("tenant=t1&api_key=key-789");
+
+        fake.lastRequest.clear();
+        TestRunner.Result drawer = tests.run("tenant-book", Json.MAPPER.createObjectNode(), true);
+        assertThat(drawer.problems()).isEmpty();
+        assertThat(fake.lastRequest.get("query")).isEqualTo("tenant=t1&api_key=key-789");
+        assertThat(drawer.request().get("url").toString()).endsWith("/fake/secure?tenant=t1&api_key=***");
     }
 
     @Test
