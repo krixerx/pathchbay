@@ -119,14 +119,14 @@ public class TestRunner {
         }
         JsonNode mapped;
         String url;
+        IntegrationProcessors.BaseUrl base = IntegrationProcessors.BaseUrl.of(baseUrl);
         try {
             mapped = Json.MAPPER.readTree(ci.mapRequest(callerInput.toString()));
-            url = IntegrationProcessors.stripTrailingSlash(baseUrl)
-                    + IntegrationProcessors.fillPath(def.target().path(), mapped.path("path"));
+            url = base.path() + IntegrationProcessors.fillPath(def.target().path(), mapped.path("path"));
         } catch (RuntimeException e) {
             return failed("request", List.of(e.getMessage()));
         }
-        String query = IntegrationProcessors.toQuery(mapped.path("query"));
+        String query = IntegrationProcessors.joinQuery(base.query(), IntegrationProcessors.toQuery(mapped.path("query")));
         Map<String, String> headers = new LinkedHashMap<>();
         headers.put("Accept", ci.accept());
         mapped.path("headers").properties().forEach(h -> {
