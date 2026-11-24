@@ -27,22 +27,32 @@ import { CallSteps } from '../../components/CallSteps';
 import type { ContractOperation, IntegrationDraft, PayloadDefinition, TestResult } from '../../model';
 import { TYPE_LABELS } from '../../model';
 import type { Filter, Link, LinkState, Row, Tab } from '../../board';
+import { publishSummary } from '../../publish';
 import {
   addLink,
   canLink,
   exampleInput,
+  emptySideText,
   filterRows,
   linkStates,
+  missingRows,
+  nothingLinked,
   payloadRows,
   requestRows,
   requiredUnmapped,
   responseRows,
 } from '../../board';
-import { meaning } from '../../theme';
+import { meaning, statusText } from '../../theme';
 import { FormatSwitch } from './FormatSwitch';
 
 const ROW_HEIGHT = 34;
 const GUTTER = 120;
+/**
+ * The trees' height: the viewport less the app header, the panel's title, search and filters, the add-header row and
+ * a margin, so the whole board fits the screen once it is scrolled to the top. Never below 360px.
+ */
+const TREE_HEIGHT = 'max(360px, calc(100dvh - 270px))';
+const MISSING_TEXT = 'This field no longer exists. Remove the link.';
 
 /** Where one tree's rows are, for drawing lines: row centre y per key, relative to the gutter's top. */
 interface Layout {
@@ -67,6 +77,8 @@ export function MappingBoard(props: {
   tab: Tab;
   onTab: (t: Tab) => void;
   testOpen: boolean;
+  /** How many problems block publishing, for the Publish button (same count as the publish dialog). */
+  onProblems?: (count: number) => void;
 }) {
   const { draft, tab, testOpen } = props;
   const wide = useMediaQuery('(min-width: 1024px)');
@@ -78,7 +90,22 @@ export function MappingBoard(props: {
   });
   const [added, setAdded] = useState<string[]>(draft.addedHeaders ?? []);
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
+  // What just happened, in the hint line under the tabs (a live region): a link made, or why one can't be made.
+  const [notice, setNotice] = useState<{ text: string; broken: boolean } | null>(null);
+  // Bumped to move keyboard focus into a tree: the target tree after choosing a source, the source tree after linking.
+  const [focusSignal, setFocusSignal] = useState({ source: 0, target: 0 });
+  const focusTree = (side: 'source' | 'target') => setFocusSignal((old) => ({ ...old, [side]: old[side] + 1 }));
+  const [filters, setFilters] = useState<Record<'source' | 'target', Filter>>({ source: 'all', target: 'all' });
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
+  // Why the last change could not be saved; the change itself is undone on the board.
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // The links as the engine last confirmed them, to go back to when a save fails.
+  const confirmed = useRef<Record<Tab, Link[]>>({
+    request: (draft.request?.links as Link[]) ?? [],
+    response: (draft.response?.links as Link[]) ?? [],
+  });
   const [lastTest, setLastTest] = useState<{ ok: boolean; at: string } | null>(null);
   const gutter = useRef<HTMLDivElement>(null);
   const [layouts, setLayouts] = useState<{ source?: Layout; target?: Layout }>({});
@@ -88,9 +115,14 @@ export function MappingBoard(props: {
     api.board(draft.id).then(setData, (e: Error) => setError(e.message));
   }, [draft.id]);
 
-  // Esc cancels a pending source selection (D-17).
+  // Esc cancels a pending source selection (D-17) and puts keyboard focus back on that source.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !selectedRef.current) return;
+      setSelected(null);
+      setNotice(null);
+      setFocusSignal((old) => ({ ...old, source: old.source + 1 }));
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
@@ -111,17 +143,48 @@ export function MappingBoard(props: {
   const unmapped = useMemo(() => (sides ? requiredUnmapped(sides.targets, current) : []), [sides, current]);
   const redCount = states.filter((s) => s.kind !== 'ok').length;
   const otherTab: Tab = tab === 'request' ? 'response' : 'request';
+  // Fields that no longer exist get a row of their own, so a broken link is drawn like any other (red, dashed).
+  const shownSides = useMemo(() => {
+    if (!sides) return null;
+    const ghosts = missingRows(current, sides.sources, sides.targets);
+    return { sources: [...sides.sources, ...ghosts.sources], targets: [...sides.targets, ...ghosts.targets] };
+  }, [sides, current]);
+  const problemKeys = useMemo(() => {
+    const keys = new Set<string>();
+    current.forEach((l, i) => {
+      if (states[i]?.kind !== 'ok') {
+        keys.add(l.from);
+        keys.add(l.to);
+      }
+    });
+    return keys;
+  }, [current, states]);
+  const showProblems = () => setFilters({ source: 'problems', target: 'problems' });
 
-  // Autosave on every change (D-1).
+  const { onProblems } = props;
+  const blockingCount = useMemo(
+    () => (data ? publishSummary(draft, data.input, data.output, data.operation).blocking.length : 0),
+    [data, draft],
+  );
+  useEffect(() => {
+    if (data) onProblems?.(blockingCount);
+  }, [data, blockingCount, onProblems]);
+
+  // Autosave on every change (D-1). The board shows the change at once; if the save fails it goes back to what the
+  // engine last confirmed and the status bar says the change was not saved, so nothing looks saved that isn't.
   const save = useCallback(
     async (next: Record<Tab, Link[]>) => {
       setLinks(next);
       setSaved('saving');
+      setSaveError(null);
       try {
-        props.onChange(await api.saveLinks(draft.id, next.request, next.response));
+        const d = await api.saveLinks(draft.id, next.request, next.response);
+        confirmed.current = next;
+        props.onChange(d);
         setSaved('saved');
       } catch (e) {
-        setError((e as Error).message);
+        setLinks(confirmed.current);
+        setSaveError((e as Error).message);
         setSaved('idle');
       }
     },
@@ -135,42 +198,75 @@ export function MappingBoard(props: {
       </Alert>
     );
   }
-  if (!data || !sides) return error ? <ErrorBox text={error} /> : <Skeleton height={300} mt="lg" />;
-  if (!data.input || !data.output || !data.operation) {
-    return <Text mt="lg">Pick the Input, the Output and the operation above to map fields.</Text>;
+  if (!data || !sides || !shownSides) return error ? <ErrorBox text={error} /> : <Skeleton height={300} mt="lg" />;
+  if (!data.operation) {
+    return (
+      <Text mt="lg">
+        Choose the external system and the operation this integration calls. An Input and Output left empty are created from
+        the operation, already linked.
+      </Text>
+    );
+  }
+  if (!data.input || !data.output) {
+    return <Text mt="lg">Choose {!data.input ? 'the Input' : 'the Output'} above to map fields.</Text>;
   }
 
   const sourceRow = selected ? sides.sources.find((r) => r.key === selected) ?? null : null;
 
-  const clickSource = (r: Row) => setSelected(selected === r.key ? null : r.key);
-  const clickTarget = (r: Row) => {
-    if (!sourceRow) return;
+  // With the keyboard, choosing a source moves focus to the target tree and linking moves it back, so mapping is
+  // arrows and Enter on the left, arrows and Enter on the right.
+  const clickSource = (r: Row, byKey: boolean) => {
+    if (r.missing) return;
+    const next = selected === r.key ? null : r.key;
+    setSelected(next);
+    setNotice(null);
+    if (next && byKey) focusTree('target');
+  };
+  const clickTarget = (r: Row, byKey: boolean) => {
+    if (!sourceRow) {
+      setNotice({ text: `Choose a field on the left first, then “${r.label}”.`, broken: false });
+      return;
+    }
     if (canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat)) return;
     save({ ...links, [tab]: addLink(current, sourceRow.key, r.key) });
     setSelected(null);
+    setNotice({ text: `Linked “${sourceRow.label}” to “${r.label}”.`, broken: false });
+    if (byKey) focusTree('source');
   };
+  // A row that can't be used says why, for keyboard users too (the tooltip only shows on hover).
+  const blocked = (r: Row, reason: string) =>
+    setNotice({ text: sourceRow && !r.missing ? `Can't link “${sourceRow.label}” to “${r.label}”: ${reason}` : reason, broken: true });
   const remove = (l: Link) => save({ ...links, [tab]: current.filter((x) => x !== l) });
 
   // Headers added on the board (D-27); the engine drops the links of a removed one, so links follow its answer.
   const saveHeaders = async (next: string[]) => {
     const d = await api.saveHeaders(draft.id, next);
     setAdded(d.addedHeaders ?? []);
-    setLinks((old) => ({ ...old, request: (d.request?.links as Link[]) ?? [] }));
+    const request = (d.request?.links as Link[]) ?? [];
+    confirmed.current = { ...confirmed.current, request };
+    setLinks((old) => ({ ...old, request }));
+    setSaveError(null);
     props.onChange(d);
   };
   const removeHeader = (r: Row) =>
-    saveHeaders(added.filter((h) => `headers.${h}` !== r.key)).catch((e: Error) => setError(e.message));
+    saveHeaders(added.filter((h) => `headers.${h}` !== r.key)).catch((e: Error) => setSaveError(e.message));
 
   return (
     <Stack gap="sm" mt="md">
       <StatusBar
         unmapped={unmapped.length}
+        nothingLinked={nothingLinked(current, sides.sources, sides.targets)}
         red={redCount}
         other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab, added), requestFormat).filter((s) => s.kind !== 'ok').length }}
         lastTest={lastTest}
         saved={saved}
+        saveError={saveError}
         onShowUnmapped={() => document.getElementById(`row-target-${unmapped[0]?.key}`)?.scrollIntoView({ block: 'center' })}
-        onSwitch={() => props.onTab(otherTab)}
+        onShowProblems={showProblems}
+        onSwitch={() => {
+          props.onTab(otherTab);
+          showProblems();
+        }}
       />
 
       <Group justify="space-between" wrap="nowrap">
@@ -179,32 +275,40 @@ export function MappingBoard(props: {
           onChange={(v) => {
             props.onTab(v as Tab);
             setSelected(null);
+            setNotice(null);
           }}
           data={[
             { value: 'request', label: 'Input → API request' },
             { value: 'response', label: 'API response → Output' },
           ]}
         />
-        <FormatSwitch draft={draft} tab={tab} onChange={props.onChange} onError={setError} />
+        <FormatSwitch draft={draft} tab={tab} onChange={props.onChange} onError={setSaveError} />
       </Group>
 
-      <Text size="sm" c="dimmed" aria-live="polite">
-        {sourceRow
-          ? `Now click the field on the right that “${sourceRow.label}” goes into. Esc cancels.`
-          : 'Click a field on the left, then the field on the right it goes into.'}
+      <Text size="sm" c={notice?.broken ? statusText.broken : 'dimmed'} aria-live="polite">
+        {notice
+          ? notice.text
+          : sourceRow
+            ? `Now choose the field on the right that “${sourceRow.label}” goes into. Esc cancels.`
+            : 'Click a field on the left, then the field on the right it goes into. With the keyboard: arrow keys to move, Enter to choose.'}
       </Text>
 
       <Group align="stretch" gap={0} wrap="nowrap">
         <TreePanel
           title={sides.left}
-          rows={sides.sources}
+          rows={shownSides.sources}
           side="source"
           links={current}
           states={states}
-          partners={sides.targets}
           selected={selected}
           onClick={clickSource}
-          isDisabled={() => null}
+          onBlocked={blocked}
+          focusSignal={focusSignal.source}
+          isDisabled={(r) => (r.missing ? MISSING_TEXT : null)}
+          filter={filters.source}
+          onFilter={(f) => setFilters((old) => ({ ...old, source: f }))}
+          problemKeys={problemKeys}
+          emptyText={emptySideText(tab === 'request' ? 'input' : 'response', data.operation)}
           anchor={gutter}
           onLayout={onLayout}
         />
@@ -215,21 +319,28 @@ export function MappingBoard(props: {
             source={layouts.source}
             target={layouts.target}
             selected={selected}
-            sources={sides.sources}
-            targets={sides.targets}
+            sources={shownSides.sources}
+            targets={shownSides.targets}
             onRemove={remove}
           />
         </div>
         <TreePanel
           title={sides.right}
-          rows={sides.targets}
+          rows={shownSides.targets}
           side="target"
           links={current}
           states={states}
-          partners={sides.sources}
           selected={null}
           onClick={clickTarget}
-          isDisabled={(r) => (sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat) : null)}
+          onBlocked={blocked}
+          focusSignal={focusSignal.target}
+          isDisabled={(r) =>
+            r.missing ? MISSING_TEXT : sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat) : null
+          }
+          filter={filters.target}
+          onFilter={(f) => setFilters((old) => ({ ...old, target: f }))}
+          problemKeys={problemKeys}
+          emptyText={emptySideText(tab === 'request' ? 'request' : 'output', data.operation)}
           unmapped={new Set(unmapped.map((r) => r.key))}
           anchor={gutter}
           onLayout={onLayout}
@@ -260,11 +371,14 @@ function otherSides(data: BoardData, tab: Tab, added: string[]): [Row[], Row[]] 
 
 function StatusBar(props: {
   unmapped: number;
+  nothingLinked: boolean;
   red: number;
   other: { tab: Tab; red: number };
   lastTest: { ok: boolean; at: string } | null;
   saved: 'idle' | 'saving' | 'saved';
+  saveError: string | null;
   onShowUnmapped: () => void;
+  onShowProblems: () => void;
   onSwitch: () => void;
 }) {
   return (
@@ -273,43 +387,65 @@ function StatusBar(props: {
         {props.unmapped > 0 ? (
           <UnstyledButton onClick={props.onShowUnmapped}>
             <Group gap={4}>
-              <IconAlertTriangle size={16} color="var(--mantine-color-yellow-7)" />
-              <Text size="sm" c="yellow.8">
+              <IconAlertTriangle size={16} color={statusText.warning} />
+              <Text size="sm" c={statusText.warning}>
                 {props.unmapped} required field{props.unmapped === 1 ? '' : 's'} unmapped ▸
               </Text>
             </Group>
           </UnstyledButton>
-        ) : (
-          <Text size="sm" c="dimmed">
-            All required fields mapped
-          </Text>
-        )}
-        {props.red > 0 && (
+        ) : props.nothingLinked ? (
           <Group gap={4}>
-            <IconX size={16} color="var(--mantine-color-red-7)" />
-            <Text size="sm" c="red.7">
-              {props.red} link{props.red === 1 ? '' : 's'} can't be published
+            <IconAlertTriangle size={16} color={statusText.warning} />
+            <Text size="sm" c={statusText.warning}>
+              No fields are linked on this tab yet
+            </Text>
+          </Group>
+        ) : (
+          // Neutral, not green: green means only "test passed" (DESIGN.md).
+          <Group gap={4}>
+            <IconCheck size={16} color="var(--mantine-color-dimmed)" aria-hidden />
+            <Text size="sm" c="dimmed">
+              All required fields mapped
             </Text>
           </Group>
         )}
+        {props.red > 0 && (
+          <UnstyledButton onClick={props.onShowProblems}>
+            <Group gap={4}>
+              <IconX size={16} color={statusText.broken} />
+              <Text size="sm" c={statusText.broken}>
+                {props.red} link{props.red === 1 ? '' : 's'} can't be published ▸
+              </Text>
+            </Group>
+          </UnstyledButton>
+        )}
         {props.other.red > 0 && (
           <UnstyledButton onClick={props.onSwitch}>
-            <Text size="sm" c="red.7">
+            <Text size="sm" c={statusText.broken}>
               {props.other.red} problem{props.other.red === 1 ? '' : 's'} on the other tab ▸
             </Text>
           </UnstyledButton>
         )}
         {props.lastTest && (
           <Group gap={4}>
-            {props.lastTest.ok ? <IconCheck size={16} color="var(--mantine-color-green-7)" /> : <IconX size={16} color="var(--mantine-color-red-7)" />}
-            <Text size="sm" c={props.lastTest.ok ? 'green.8' : 'red.7'}>
+            {props.lastTest.ok ? <IconCheck size={16} color={statusText.passed} /> : <IconX size={16} color={statusText.broken} />}
+            <Text size="sm" c={props.lastTest.ok ? statusText.passed : statusText.broken}>
               Last test {props.lastTest.ok ? 'passed' : 'failed'} {props.lastTest.at}
             </Text>
           </Group>
         )}
-        <Text size="sm" c="dimmed" ml="auto">
-          {props.saved === 'saving' ? 'Saving…' : props.saved === 'saved' ? '✓ Saved' : ''}
-        </Text>
+        {props.saveError ? (
+          <Group gap={4} ml="auto" role="alert">
+            <IconX size={16} color={statusText.broken} />
+            <Text size="sm" c={statusText.broken}>
+              Not saved: {props.saveError} The change was undone.
+            </Text>
+          </Group>
+        ) : (
+          <Text size="sm" c="dimmed" ml="auto">
+            {props.saved === 'saving' ? 'Saving…' : props.saved === 'saved' ? '✓ Saved' : ''}
+          </Text>
+        )}
       </Group>
     </Paper>
   );
@@ -323,10 +459,20 @@ function TreePanel(props: {
   side: 'source' | 'target';
   links: Link[];
   states: LinkState[];
-  partners: Row[];
   selected: string | null;
-  onClick: (r: Row) => void;
+  /** A row chosen by click or by Enter/Space (`byKey`). */
+  onClick: (r: Row, byKey: boolean) => void;
+  /** Enter/Space on a row that can't be used, with the reason. */
+  onBlocked: (r: Row, reason: string) => void;
+  /** Changes when the board wants keyboard focus in this tree (on its current row). */
+  focusSignal: number;
   isDisabled: (r: Row) => string | null;
+  filter: Filter;
+  onFilter: (f: Filter) => void;
+  /** The rows at either end of a link that can't be published. */
+  problemKeys: Set<string>;
+  /** What the tree says when it has no rows at all. */
+  emptyText: string;
   unmapped?: Set<string>;
   anchor: React.RefObject<HTMLDivElement | null>;
   onLayout: (side: 'source' | 'target', l: Layout) => void;
@@ -335,24 +481,77 @@ function TreePanel(props: {
   footer?: React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
+  const { problemKeys } = props;
+  const hasProblems = problemKeys.size > 0;
+  // Once the last problem is fixed, the Problems filter would show nothing: fall back to all fields.
+  const filter: Filter = props.filter === 'problems' && !hasProblems ? 'all' : props.filter;
   const parent = useRef<HTMLDivElement>(null);
   const linkedKeys = useMemo(
     () => new Set(props.links.map((l) => (props.side === 'source' ? l.from : l.to))),
     [props.links, props.side],
   );
-  const shown = useMemo(() => filterRows(props.rows, query, filter, linkedKeys), [props.rows, query, filter, linkedKeys]);
+  const shown = useMemo(
+    () => filterRows(props.rows, query, filter, linkedKeys, problemKeys),
+    [props.rows, query, filter, linkedKeys, problemKeys],
+  );
   const items = useMemo(() => {
     const out: Item[] = [];
     let group: string | undefined;
     for (const r of shown) {
-      if (r.group && r.group !== group && r.group !== 'Response') out.push({ kind: 'group', label: r.group });
-      group = r.group;
+      const g = r.missing ? 'No longer exists' : r.group;
+      if (g && g !== group && g !== 'Response') out.push({ kind: 'group', label: g });
+      group = g;
       out.push({ kind: 'row', row: r });
     }
     return out;
   }, [shown]);
   const virtual = useVirtualizer({ count: items.length, getScrollElement: () => parent.current, estimateSize: () => ROW_HEIGHT, overscan: 12 });
+
+  // Keyboard (WAI-ARIA tree pattern): the tree is one Tab stop, its current row; arrows, Home and End move. Rows are
+  // virtualized, so a row is scrolled into view first and focused once it is rendered.
+  const rowKeys = useMemo(() => items.flatMap((it) => (it.kind === 'row' ? [it.row.key] : [])), [items]);
+  const [current, setCurrent] = useState<string | null>(null);
+  const currentKey = current && rowKeys.includes(current) ? current : (rowKeys[0] ?? null);
+  const pendingFocus = useRef<string | null>(null);
+  const [, rerender] = useState(0);
+  const moveTo = (key: string) => {
+    setCurrent(key);
+    pendingFocus.current = key;
+    virtual.scrollToIndex(items.findIndex((it) => it.kind === 'row' && it.row.key === key), { align: 'auto' });
+    rerender((n) => n + 1);
+  };
+  useEffect(() => {
+    const key = pendingFocus.current;
+    if (!key) return;
+    const el = document.getElementById(`row-${props.side}-${key}`);
+    if (el) {
+      el.focus({ preventScroll: true });
+      pendingFocus.current = null;
+    }
+  });
+  const { focusSignal } = props;
+  useEffect(() => {
+    if (focusSignal > 0 && currentKey) moveTo(currentKey);
+    // Only when the board asks, not whenever the current row changes.
+  }, [focusSignal]);
+  const onRowKey = (e: React.KeyboardEvent, r: Row, disabled: string | null) => {
+    const i = rowKeys.indexOf(r.key);
+    const go = (j: number) => {
+      e.preventDefault();
+      moveTo(rowKeys[Math.max(0, Math.min(rowKeys.length - 1, j))]);
+    };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(rowKeys.length - 1);
+    else if (e.key === 'PageDown') go(i + 10);
+    else if (e.key === 'PageUp') go(i - 10);
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (disabled) props.onBlocked(r, disabled);
+      else props.onClick(r, true);
+    }
+  };
 
   // Report where every row is (also rows scrolled out of view), so the board can draw lines to them.
   const { side, onLayout, anchor } = props;
@@ -397,16 +596,21 @@ function TreePanel(props: {
           onChange={(e) => setQuery(e.currentTarget.value)}
           aria-label={`Search ${props.title}`}
         />
-        <Chip.Group multiple={false} value={filter} onChange={(v) => setFilter(v as Filter)}>
+        <Chip.Group multiple={false} value={filter} onChange={(v) => props.onFilter(v as Filter)}>
           <Group gap={4}>
             {(['all', 'required', 'unmapped', 'mapped'] as Filter[]).map((f) => (
               <Chip key={f} value={f} size="xs" variant="outline">
                 {f[0].toUpperCase() + f.slice(1)}
               </Chip>
             ))}
+            {hasProblems && (
+              <Chip value="problems" size="xs" variant="outline" color={meaning.broken}>
+                Problems
+              </Chip>
+            )}
           </Group>
         </Chip.Group>
-        <ScrollArea h={shown.length === 0 ? 0 : 460} viewportRef={parent} type="auto">
+        <ScrollArea h={shown.length === 0 ? 0 : TREE_HEIGHT} viewportRef={parent} type="auto">
           <div role="tree" aria-label={props.title} style={{ height: virtual.getTotalSize(), position: 'relative' }}>
             {virtual.getVirtualItems().map((v) => {
               const item = items[v.index];
@@ -431,7 +635,8 @@ function TreePanel(props: {
                     flexShrink: 0,
                     borderRadius: '50%',
                     marginLeft: props.side === 'source' ? 'auto' : 0,
-                    border: `2px solid var(--mantine-color-${dotColor ?? 'gray'}-${dotColor ? 7 : 4})`,
+                    // At least 3:1 on white (WCAG 1.4.11): teal.7 / red.7 when linked, gray.6 when free.
+                    border: `2px solid var(--mantine-color-${dotColor ?? 'gray'}-${dotColor ? 7 : 6})`,
                     background: dotColor ? `var(--mantine-color-${dotColor}-7)` : 'transparent',
                   }}
                 />
@@ -446,7 +651,8 @@ function TreePanel(props: {
                     aria-level={r.depth + 1}
                     aria-selected={isSelected}
                     aria-disabled={!!disabled}
-                    tabIndex={0}
+                    tabIndex={r.key === currentKey ? 0 : -1}
+                    className="mantine-focus-auto"
                     style={{
                       ...style,
                       display: 'flex',
@@ -455,7 +661,6 @@ function TreePanel(props: {
                       paddingLeft: 6 + r.depth * 18,
                       paddingRight: 6,
                       cursor: disabled ? 'not-allowed' : 'pointer',
-                      opacity: disabled ? 0.4 : 1,
                       borderRadius: 4,
                       background: isSelected
                         ? 'var(--mantine-color-teal-light)'
@@ -464,49 +669,65 @@ function TreePanel(props: {
                           : undefined,
                       outline: isSelected ? '2px solid var(--mantine-color-teal-7)' : undefined,
                     }}
-                    onClick={() => !disabled && props.onClick(r)}
-                    onKeyDown={(e) => e.key === 'Enter' && !disabled && props.onClick(r)}
+                    onClick={() => {
+                      setCurrent(r.key);
+                      if (!disabled) props.onClick(r, false);
+                    }}
+                    onKeyDown={(e) => onRowKey(e, r, disabled)}
+                    onFocus={() => setCurrent(r.key)}
                   >
-                    {props.side === 'target' && dot}
-                    {r.depth > 0 && (
-                      <Text size="xs" c="dimmed" aria-hidden>
-                        └
-                      </Text>
-                    )}
-                    <Text size="sm" ff="monospace" truncate style={{ flexShrink: 1, minWidth: 0 }}>
-                      {r.label}
-                      {r.required && (
-                        <Text span c="red.7" aria-label="required">
-                          {' *'}
+                    {/* Only the content fades on a row that can't be used; the focus ring around it stays at full strength. */}
+                    <Box
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, opacity: disabled && !r.missing ? 0.4 : 1 }}
+                    >
+                      {props.side === 'target' && dot}
+                      {r.depth > 0 && (
+                        <Text size="xs" c="dimmed" aria-hidden>
+                          └
                         </Text>
                       )}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                      {r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
-                      {r.constant ? ' · constant' : ''}
-                    </Text>
-                    {amber && <IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" aria-label="required, not mapped" />}
-                    {state && state.kind !== 'ok' && (
-                      <Tooltip label={state.reason} withArrow>
-                        <IconAlertTriangle size={14} color="var(--mantine-color-red-7)" aria-label={state.reason} />
-                      </Tooltip>
-                    )}
-                    {r.added && props.onRemoveRow && (
-                      <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        color="gray"
-                        ml="auto"
-                        aria-label={`Remove header ${r.label}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          props.onRemoveRow?.(r);
-                        }}
+                      <Text
+                        size="sm"
+                        ff="monospace"
+                        truncate
+                        c={r.missing ? statusText.broken : undefined}
+                        td={r.missing ? 'line-through' : undefined}
+                        style={{ flexShrink: 1, minWidth: 0 }}
                       >
-                        <IconX size={12} />
-                      </ActionIcon>
-                    )}
-                    {props.side === 'source' && dot}
+                        {r.label}
+                        {r.required && (
+                          <Text span c={statusText.broken} aria-label="required">
+                            {' *'}
+                          </Text>
+                        )}
+                      </Text>
+                      <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                        {r.missing ? 'no longer exists' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
+                        {r.constant ? ' · constant' : ''}
+                      </Text>
+                      {amber && <IconAlertTriangle size={14} color={statusText.warning} aria-label="required, not mapped" />}
+                      {state && state.kind !== 'ok' && (
+                        <Tooltip label={state.reason} withArrow>
+                          <IconAlertTriangle size={14} color={statusText.broken} aria-label={state.reason} />
+                        </Tooltip>
+                      )}
+                      {r.added && props.onRemoveRow && (
+                        <ActionIcon
+                          size="xs"
+                          variant="subtle"
+                          color="gray"
+                          ml="auto"
+                          aria-label={`Remove header ${r.label}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            props.onRemoveRow?.(r);
+                          }}
+                        >
+                          <IconX size={12} />
+                        </ActionIcon>
+                      )}
+                      {props.side === 'source' && dot}
+                    </Box>
                   </Box>
                 </Tooltip>
               );
@@ -515,9 +736,7 @@ function TreePanel(props: {
         </ScrollArea>
         {shown.length === 0 && (
           <Text size="sm" c="dimmed">
-            {props.rows.length === 0
-              ? "The contract doesn't describe this side, so its fields can't be shown or checked. Run a real test to see what comes back."
-              : 'No field matches.'}
+            {props.rows.length === 0 ? props.emptyText : 'No field matches.'}
           </Text>
         )}
         {props.footer}
@@ -552,7 +771,7 @@ function AddHeader(props: { onAdd: (name: string) => Promise<void> }) {
       <TextInput
         size="xs"
         style={{ flex: 1 }}
-        placeholder="X-Correlation-Id"
+        placeholder="Header name, e.g. X-Correlation-Id"
         aria-label="Header name"
         value={name}
         error={error}
@@ -584,6 +803,7 @@ function Lines(props: {
 }) {
   const { source, target } = props;
   const [hovered, setHovered] = useState<Link | null>(null);
+  const [focused, setFocused] = useState<Link | null>(null);
   if (!source || !target) return null;
   const clamp = (y: number, l: Layout) => Math.min(Math.max(y, l.top), l.bottom);
   const inside = (y: number, l: Layout) => y >= l.top && y <= l.bottom;
@@ -601,7 +821,8 @@ function Lines(props: {
       <svg width={GUTTER} height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }} aria-hidden>
         {drawn.map(({ l, state, y1, y2, visible }) => {
           const d = `M -6 ${y1} C ${GUTTER / 2} ${y1}, ${GUTTER / 2} ${y2}, ${GUTTER + 6} ${y2}`;
-          const color = state.kind === 'ok' ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-red-6)';
+          // teal.8 (3.95:1) and red.6 (3.3:1) keep the lines at 3:1 on white (WCAG 1.4.11); teal.6 reached 2.55:1.
+          const color = state.kind === 'ok' ? 'var(--mantine-color-teal-8)' : 'var(--mantine-color-red-6)';
           return (
             <g key={`${l.from}->${l.to}`} onMouseEnter={() => setHovered(l)} onMouseLeave={() => setHovered(null)}>
               {/* A wide invisible stroke, so the line is easy to point at. */}
@@ -610,7 +831,7 @@ function Lines(props: {
                 d={d}
                 fill="none"
                 stroke={color}
-                strokeWidth={props.selected === l.from || hovered === l ? 3 : 1.75}
+                strokeWidth={props.selected === l.from || hovered === l || focused === l ? 3 : 1.75}
                 strokeDasharray={state.kind === 'broken' ? '5 4' : undefined}
                 opacity={visible ? 1 : 0.3}
               />
@@ -619,7 +840,9 @@ function Lines(props: {
         })}
       </svg>
       {/* An x on every line in view removes that link. It sits near the target end (t = 0.8 on the curve): a target
-          field has one link at most, so two x's never land on the same spot, as they would where lines cross. */}
+          field has one link at most, so two x's never land on the same spot, as they would where lines cross.
+          It is shown only while its line is pointed at or the x has keyboard focus, so the gutter stays clear; it
+          stays in the tab order, and the link list offers the same removal. */}
       {drawn
         .filter((x) => x.visible)
         .map(({ l, y1, y2 }) => {
@@ -638,11 +861,20 @@ function Lines(props: {
                 aria-label={`Remove link ${label(props.sources, l.from)} to ${label(props.targets, l.to)}`}
                 onMouseEnter={() => setHovered(l)}
                 onMouseLeave={() => setHovered(null)}
+                onFocus={() => setFocused(l)}
+                onBlur={() => setFocused(null)}
                 onClick={() => {
                   setHovered(null);
+                  setFocused(null);
                   props.onRemove(l);
                 }}
-                style={{ position: 'absolute', left: x - 9, top: y - 9 }}
+                style={{
+                  position: 'absolute',
+                  left: x - 9,
+                  top: y - 9,
+                  opacity: hovered === l || focused === l ? 1 : 0,
+                  transition: 'opacity 120ms',
+                }}
               >
                 <IconX size={12} />
               </ActionIcon>
@@ -654,18 +886,28 @@ function Lines(props: {
 }
 
 
+/**
+ * The links as text, for keyboard and screen-reader use and for reading long paths. Folded by default, since the lines
+ * show the same; links that can't be published are always listed.
+ */
 function LinkList(props: { links: Link[]; states: LinkState[]; sources: Row[]; targets: Row[]; onRemove: (l: Link) => void }) {
+  const [open, setOpen] = useState(false);
   if (props.links.length === 0) return null;
   const label = (rows: Row[], key: string) => rows.find((r) => r.key === key)?.rule ?? key;
+  const listed = props.links.map((l, i) => ({ l, s: props.states[i] })).filter(({ s }) => open || s.kind !== 'ok');
   return (
     <Paper withBorder p="xs">
-      <Text fw={600} size="sm" mb={4}>
-        Links on this tab
-      </Text>
+      <Group gap="xs" mb={listed.length > 0 ? 4 : 0}>
+        <Text fw={600} size="sm">
+          Links on this tab ({props.links.length})
+        </Text>
+        <Button size="compact-xs" variant="subtle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? 'Hide the list' : 'Show as a list'}
+        </Button>
+      </Group>
       <Stack gap={2}>
-        {props.links.map((l, i) => {
-          const s = props.states[i];
-          const color = s.kind === 'ok' ? 'teal.8' : 'red.7';
+        {listed.map(({ l, s }) => {
+          const color = s.kind === 'ok' ? 'teal.9' : statusText.broken;
           return (
             <Group key={`${l.from}->${l.to}`} gap="xs" wrap="nowrap">
               <Text size="sm" ff="monospace" c={color}>
@@ -673,7 +915,7 @@ function LinkList(props: { links: Link[]; states: LinkState[]; sources: Row[]; t
                 {label(props.sources, l.from)} → {label(props.targets, l.to)}
               </Text>
               {s.kind !== 'ok' && (
-                <Text size="xs" c="red.7">
+                <Text size="xs" c={statusText.broken}>
                   {s.reason}
                 </Text>
               )}

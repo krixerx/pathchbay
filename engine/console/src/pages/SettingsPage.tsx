@@ -18,7 +18,8 @@ import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Auth, IntegrationSettings } from '../model';
-import { meaning } from '../theme';
+import { LoadError } from '../components/ErrorPage';
+import { meaning, statusText } from '../theme';
 
 type AuthKind = 'none' | 'bearer' | 'basic' | 'apiKey';
 
@@ -54,13 +55,7 @@ export function SettingsPage() {
   }, [slug]);
 
   if (!settings) {
-    return error ? (
-      <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
-        {error}
-      </Alert>
-    ) : (
-      <Skeleton height={240} />
-    );
+    return error ? <LoadError text={error} back={{ to: '/', label: 'Back to Integrations' }} /> : <Skeleton height={240} />;
   }
 
   const auth: Auth | null =
@@ -87,11 +82,8 @@ export function SettingsPage() {
     }
   };
 
-  const secretSource = settings.secretInEnv
-    ? `from the environment variable ${settings.secretEnvName} (this always wins)`
-    : settings.secretInFile
-      ? 'saved for this integration (git-ignored file)'
-      : 'not set';
+  const secretSource = settings.secretInFile ? 'saved for this integration (git-ignored file)' : 'not set';
+  const secretLabel = kind === 'bearer' ? 'Token' : kind === 'basic' ? 'User and password' : 'API key';
 
   return (
     <Stack gap="lg" maw={720}>
@@ -115,7 +107,7 @@ export function SettingsPage() {
           {settings.baseUrl ? (
             <Code>{settings.baseUrl}</Code>
           ) : (
-            <Text size="sm" c="yellow.8">
+            <Text size="sm" c={statusText.warning}>
               Not set yet: needed before the integration can be tested for real or published.
             </Text>
           )}
@@ -139,9 +131,20 @@ export function SettingsPage() {
       )}
 
       <Stack gap="xs">
-        <Text fw={500} size="sm">
-          Authentication
-        </Text>
+        <div>
+          <Text fw={500} size="sm">
+            Authentication
+          </Text>
+          <Text size="sm" c="dimmed">
+            Set for this integration only, unlike the base URL: one system can have open and protected operations, and
+            two integrations can call it with different credentials. A key that every call to the system needs, such as a
+            shared client id or token, can instead be a header on its connection under{' '}
+            <Anchor component={Link} to="/configuration" size="sm">
+              Configuration
+            </Anchor>
+            .
+          </Text>
+        </div>
         <SegmentedControl
           value={kind}
           onChange={(v) => setKind(v as AuthKind)}
@@ -167,10 +170,23 @@ export function SettingsPage() {
         )}
       </Stack>
 
-      {kind !== 'none' && (
+      {/* A secret from the environment always wins (FR-052): a value typed here would never be used, so there is no
+          field to type it in, only where to change it. */}
+      {kind !== 'none' && settings.secretInEnv && (
+        <Stack gap={4}>
+          <Text fw={500} size="sm">
+            {secretLabel}
+          </Text>
+          <Text size="sm">
+            Comes from the environment variable <Code>{settings.secretEnvName}</Code>, which always wins over a value saved
+            here. To change it, change that variable where Patchbay runs.
+          </Text>
+        </Stack>
+      )}
+      {kind !== 'none' && !settings.secretInEnv && (
         <Stack gap="xs">
           <PasswordInput
-            label={kind === 'bearer' ? 'Token' : kind === 'basic' ? 'User and password' : 'API key'}
+            label={secretLabel}
             description={
               kind === 'basic'
                 ? `As username:password. Currently ${secretSource}. Leave empty to keep it.`

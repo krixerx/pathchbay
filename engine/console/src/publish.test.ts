@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractOperation, IntegrationDraft, PayloadDefinition } from './model';
-import { curlCommand, publishSummary } from './publish';
+import { curlCommand, publishSummary, withoutBrokenLinks } from './publish';
 
 const input: PayloadDefinition = {
   id: 'new-book',
@@ -35,7 +35,17 @@ describe('publishSummary', () => {
     expect(s.blocking.map((p) => p.tab)).toEqual(['request', 'request']);
     expect(s.blocking[0].text).toBe("title → body.id: A text value can't go into a whole number field");
     expect(s.blocking[1].text).toBe('nb-gone → body.title: Field nb-gone no longer exists');
-    expect(s.warnings).toEqual([{ tab: 'response', text: "Required Output field bookId is not mapped; callers won't get it" }]);
+    expect(s.warnings).toEqual([
+      { tab: 'response', text: 'No field of the answer is linked to the Output; callers get an empty Output' },
+      { tab: 'response', text: "Required Output field bookId is not mapped; callers won't get it" },
+    ]);
+  });
+
+  it('warns, without blocking, when a side with fields on both ends has no link at all', () => {
+    const draft: IntegrationDraft = { id: 'add-book', request: { links: [] }, response: { links: [{ from: 'id', to: 'br-id' }] } };
+    const s = publishSummary(draft, input, output, op);
+    expect(s.blocking).toEqual([]);
+    expect(s.warnings.map((w) => w.text)).toContain('No Input field is linked to the API request; the external API gets nothing from callers');
   });
 
   it('is clean when every link is valid and required fields are mapped', () => {
@@ -79,6 +89,21 @@ describe('publishSummary', () => {
       },
     ]);
     expect(publishSummary({ id: 'add-book' }, nested, output, op).blocking).toEqual([]);
+  });
+});
+
+describe('withoutBrokenLinks', () => {
+  it('drops links to fields that no longer exist and keeps links that only break a rule', () => {
+    const draft: IntegrationDraft = {
+      id: 'add-book',
+      request: { links: [{ from: 'nb-title', to: 'body.id' }, { from: 'nb-gone', to: 'body.title' }] },
+      response: { links: [{ from: 'id', to: 'br-gone' }] },
+    };
+    expect(withoutBrokenLinks(draft, input, output, op)).toEqual({
+      request: [{ from: 'nb-title', to: 'body.id' }],
+      response: [],
+      removed: 2,
+    });
   });
 });
 

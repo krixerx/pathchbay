@@ -6,7 +6,7 @@ export function Logo(props: { size?: number }) {
   const size = props.size ?? 28;
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <rect width="32" height="32" rx="6" fill="var(--mantine-color-teal-8)" />
+      <rect width="32" height="32" rx="6" fill="var(--mantine-color-teal-9)" />
       <g fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round">
         <path d="M8 9 C16 9 16 23 24 23" />
         <path d="M8 16 C16 16 16 9 24 9" />

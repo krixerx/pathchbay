@@ -1,7 +1,7 @@
 import type { ContractOperation, Field, IntegrationDraft, PayloadDefinition } from './model';
 import { SIMPLE_TYPES } from './model';
 import type { Link, Tab } from './board';
-import { exampleInput, linkStates, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
+import { exampleInput, linkStates, nothingLinked, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
 /**
  * One line of the publish summary; `tab` lets "Show" open the board on the right tab, `definition` points to the
@@ -51,6 +51,15 @@ export function publishSummary(
         blocking.push({ tab, text: `${name(sources, links[i].from)} → ${name(targets, links[i].to)}: ${s.reason}` });
       }
     });
+    if (nothingLinked(links, sources, targets)) {
+      warnings.push({
+        tab,
+        text:
+          tab === 'request'
+            ? 'No Input field is linked to the API request; the external API gets nothing from callers'
+            : 'No field of the answer is linked to the Output; callers get an empty Output',
+      });
+    }
     for (const r of requiredUnmapped(targets, links)) {
       warnings.push({
         tab,
@@ -62,6 +71,31 @@ export function publishSummary(
     }
   }
   return { blocking, warnings };
+}
+
+/**
+ * The links without those whose field no longer exists (state `broken`), for "Remove all broken links". Links that
+ * break a rule (`red`) stay: they point at real fields and are fixed by relinking, not by deleting.
+ */
+export function withoutBrokenLinks(
+  draft: IntegrationDraft,
+  input: PayloadDefinition | null,
+  output: PayloadDefinition | null,
+  op: ContractOperation | null,
+): { request: Link[]; response: Link[]; removed: number } {
+  const keep = (links: Link[], sources: ReturnType<typeof payloadRows>, targets: ReturnType<typeof payloadRows>) => {
+    const states = linkStates(links, sources, targets);
+    return links.filter((_, i) => states[i].kind !== 'broken');
+  };
+  const request = (draft.request?.links ?? []) as Link[];
+  const response = (draft.response?.links ?? []) as Link[];
+  const keptRequest = keep(request, payloadRows(input), requestRows(op, draft.addedHeaders ?? []));
+  const keptResponse = keep(response, responseRows(op), payloadRows(output));
+  return {
+    request: keptRequest,
+    response: keptResponse,
+    removed: request.length - keptRequest.length + response.length - keptResponse.length,
+  };
 }
 
 const BODY_METHODS = ['POST', 'PUT', 'PATCH'];

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Alert,
+  Anchor,
   Badge,
   Button,
   Code,
@@ -9,6 +10,7 @@ import {
   List,
   Modal,
   Paper,
+  Popover,
   Skeleton,
   Stack,
   Table,
@@ -18,11 +20,23 @@ import {
   Title,
   Tooltip,
 } from '@mantine/core';
-import { IconAlertTriangle, IconCheck, IconFileUpload, IconInfoCircle, IconLink, IconPencil, IconPlugConnected, IconTrash } from '@tabler/icons-react';
+import {
+  IconAlertTriangle,
+  IconCheck,
+  IconFileUpload,
+  IconInfoCircle,
+  IconLink,
+  IconPencil,
+  IconPlugConnected,
+  IconPlus,
+  IconTrash,
+} from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { ConnectionForm } from '../components/ConnectionForm';
 import type { Contract, ContractSummary } from '../model';
-import { meaning } from '../theme';
+import { meaning, statusText } from '../theme';
+import { shortWhen } from '../time';
 
 /**
  * Configuration: the external systems' Swagger/OpenAPI files (D-5). Imported once here, used by any number of
@@ -36,6 +50,7 @@ export function ConfigurationPage() {
   const [deleting, setDeleting] = useState<ContractSummary | null>(null);
   const [editing, setEditing] = useState<ContractSummary | null>(null);
   const [connecting, setConnecting] = useState<ContractSummary | null>(null);
+  const [importing, setImporting] = useState(false);
 
   const load = () => api.contracts().then(setContracts, (e: Error) => setError(e.message));
   useEffect(() => {
@@ -55,14 +70,22 @@ export function ConfigurationPage() {
 
   return (
     <Stack gap="lg" maw={1100}>
-      <div>
-        <Title order={2}>Configuration</Title>
-        <Text c="dimmed" size="sm">
-          Swagger, OpenAPI and WSDL files of the external systems. Import one once; every integration can call its operations.
-        </Text>
-      </div>
+      <Group justify="space-between" align="flex-start">
+        <div>
+          <Title order={2}>Configuration</Title>
+          <Text c="dimmed" size="sm">
+            Swagger, OpenAPI and WSDL files of the external systems. Import one once; every integration can call its operations.
+          </Text>
+        </div>
+        {contracts && contracts.length > 0 && (
+          <Button leftSection={<IconPlus size={16} />} onClick={() => setImporting(true)}>
+            Import external system
+          </Button>
+        )}
+      </Group>
 
-      <ImportForm onImported={load} />
+      {/* Before the first import the form is the page's one task, so it stays on the page; after that the list is. */}
+      {contracts?.length === 0 && <ImportForm onImported={load} />}
 
       {error && (
         <Alert color={meaning.broken} icon={<IconAlertTriangle />} role="alert">
@@ -70,7 +93,6 @@ export function ConfigurationPage() {
         </Alert>
       )}
       {contracts === null && !error && <Skeleton height={100} />}
-      {contracts?.length === 0 && <Text c="dimmed">Nothing imported yet.</Text>}
       {contracts && contracts.length > 0 && (
         <Table verticalSpacing="sm" highlightOnHover>
           <Table.Thead>
@@ -88,7 +110,12 @@ export function ConfigurationPage() {
                 <Table.Td>
                   <Text fw={500}>{c.name}</Text>
                   <Text size="xs" c="dimmed">
-                    <Code>{c.id}</Code> · imported {new Date(c.importedAt).toLocaleString()}
+                    {c.name !== c.id && (
+                      <>
+                        <Code>{c.id}</Code> ·{' '}
+                      </>
+                    )}
+                    <span title={new Date(c.importedAt).toLocaleString()}>imported {shortWhen(new Date(c.importedAt))}</span>
                     {c.warningCount > 0 && ` · ${c.warningCount} warning${c.warningCount === 1 ? '' : 's'}`}
                   </Text>
                 </Table.Td>
@@ -104,13 +131,13 @@ export function ConfigurationPage() {
                       )}
                     </Text>
                   ) : (
-                    <Text size="sm" c="yellow.8">
+                    <Text size="sm" c={statusText.warning}>
                       Not set
                     </Text>
                   )}
                 </Table.Td>
                 <Table.Td>
-                  <Text size="sm">{c.usedBy.length ? c.usedBy.join(', ') : '–'}</Text>
+                  <UsedBy ids={c.usedBy} />
                 </Table.Td>
                 <Table.Td>
                   <Group gap="xs" justify="flex-end" wrap="nowrap">
@@ -123,14 +150,24 @@ export function ConfigurationPage() {
                     <Button size="compact-sm" variant="default" leftSection={<IconPencil size={14} />} onClick={() => setEditing(c)}>
                       Edit
                     </Button>
-                    <Tooltip label={`Used by ${c.usedBy.join(', ')}`} disabled={c.usedBy.length === 0} withArrow>
+                    {/* In use, Delete is inactive but stays focusable (data-disabled, not disabled), so keyboard users
+                        get the reason too. */}
+                    <Tooltip
+                      label={`Used by ${c.usedBy.length} integration${c.usedBy.length === 1 ? '' : 's'}. Delete them or move them to another system first.`}
+                      disabled={c.usedBy.length === 0}
+                      withArrow
+                      multiline
+                      w={260}
+                      events={{ hover: true, focus: true, touch: true }}
+                    >
                       <Button
                         size="compact-sm"
                         variant="subtle"
                         color={meaning.broken}
                         leftSection={<IconTrash size={14} />}
-                        disabled={c.usedBy.length > 0}
-                        onClick={() => setDeleting(c)}
+                        data-disabled={c.usedBy.length > 0 || undefined}
+                        aria-disabled={c.usedBy.length > 0}
+                        onClick={(e) => (c.usedBy.length > 0 ? e.preventDefault() : setDeleting(c))}
                       >
                         Delete
                       </Button>
@@ -178,6 +215,10 @@ export function ConfigurationPage() {
         {connecting && <ConnectionForm key={connecting.id} id={connecting.id} onSaved={load} />}
       </Modal>
 
+      <Modal opened={importing} onClose={() => setImporting(false)} title="Import a Swagger, OpenAPI or WSDL file" size="lg">
+        <ImportForm bare onImported={load} />
+      </Modal>
+
       <Modal opened={!!editing} onClose={() => setEditing(null)} title={`Edit “${editing?.name}”`} size="lg">
         {editing && <ImportForm key={editing.id} existing={editing} onImported={load} />}
       </Modal>
@@ -205,8 +246,10 @@ export function ConfigurationPage() {
  * Upload a file or give a URL (fetched by the engine). Unresolved parts become warnings; the import still goes on.
  * With `existing` it edits that configuration: the name can change, a new file is optional, the id stays.
  */
-function ImportForm(props: { existing?: ContractSummary; onImported: () => void }) {
+function ImportForm(props: { existing?: ContractSummary; onImported: () => void; bare?: boolean }) {
   const { existing } = props;
+  // In a dialog the form has no frame and no title of its own: the dialog gives both.
+  const bare = props.bare || !!existing;
   const [name, setName] = useState(existing?.name ?? '');
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState(existing?.sourceUrl ?? '');
@@ -247,9 +290,9 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
   const ready = name.trim() && (existing || (mode === 'file' ? !!file : url.trim().length > 0));
 
   return (
-    <Paper withBorder={!existing} p={existing ? 0 : 'md'} maw={720}>
+    <Paper withBorder={!bare} p={bare ? 0 : 'md'} maw={720}>
       <Stack gap="sm">
-        {!existing && <Text fw={600}>Import a Swagger, OpenAPI or WSDL file</Text>}
+        {!bare && <Text fw={600}>Import a Swagger, OpenAPI or WSDL file</Text>}
         <TextInput
           label="Name of the external system"
           description={
@@ -332,6 +375,36 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
         )}
       </Stack>
     </Paper>
+  );
+}
+
+/** "4 integrations", opening the list with a link to each; a single one is linked directly. */
+function UsedBy({ ids }: { ids: string[] }) {
+  if (ids.length === 0) return <Text size="sm">–</Text>;
+  if (ids.length === 1) {
+    return (
+      <Anchor size="sm" component={Link} to={`/integrations/${ids[0]}`}>
+        {ids[0]}
+      </Anchor>
+    );
+  }
+  return (
+    <Popover position="bottom-start" withArrow shadow="sm" trapFocus returnFocus>
+      <Popover.Target>
+        <Anchor size="sm" component="button" type="button">
+          {ids.length} integrations
+        </Anchor>
+      </Popover.Target>
+      <Popover.Dropdown>
+        <Stack gap={4}>
+          {ids.map((id) => (
+            <Anchor key={id} size="sm" component={Link} to={`/integrations/${id}`}>
+              {id}
+            </Anchor>
+          ))}
+        </Stack>
+      </Popover.Dropdown>
+    </Popover>
   );
 }
 

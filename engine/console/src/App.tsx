@@ -8,6 +8,7 @@ import { DefinitionEditorPage } from './pages/DefinitionEditorPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { KeyPrompt } from './components/KeyPrompt';
 import { ConfigurationPage } from './pages/ConfigurationPage';
+import { NotFoundPage, RouteErrorPage } from './components/ErrorPage';
 
 function Layout() {
   const { pathname } = useLocation();
@@ -43,6 +44,7 @@ function Layout() {
 export const router = createHashRouter([
   {
     element: <Layout />,
+    errorElement: <RouteErrorPage />,
     children: [
       { path: '/', element: <IntegrationsPage /> },
       { path: '/integrations/:slug', element: <IntegrationPage /> },
@@ -51,6 +53,7 @@ export const router = createHashRouter([
       { path: '/definitions/new', element: <DefinitionEditorPage /> },
       { path: '/definitions/:id', element: <DefinitionEditorPage /> },
       { path: '/configuration', element: <ConfigurationPage /> },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractOperation, PayloadDefinition } from './model';
-import { addLink, canLink, exampleInput, filterRows, linkStates, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
+import { addLink, canLink, emptySideText, exampleInput, filterRows, linkStates, missingRows, nothingLinked, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
 const person: PayloadDefinition = {
   id: 'person',
@@ -125,12 +125,44 @@ describe('links', () => {
   });
 });
 
+describe('empty sides', () => {
+  it('says why a tree is empty', () => {
+    expect(emptySideText('input', op)).toMatch(/^This Input has no fields/);
+    expect(emptySideText('output', op)).toMatch(/^This Output has no fields/);
+    expect(emptySideText('request', { ...op, parameters: [], requestBody: undefined })).toMatch(/sends no parameters and no body/);
+    expect(emptySideText('request', op)).toMatch(/doesn't describe the request body/);
+    expect(emptySideText('response', { ...op, responseStatus: '204', response: undefined })).toMatch(/answers 204 with no body/);
+    expect(emptySideText('response', { ...op, response: undefined })).toMatch(/doesn't describe the answer/);
+  });
+
+  it('warns about nothing linked only when both sides have fields', () => {
+    expect(nothingLinked([], src, tgt)).toBe(true);
+    expect(nothingLinked([{ from: 'p-name', to: 'body.fullName' }], src, tgt)).toBe(false);
+    expect(nothingLinked([], [], tgt)).toBe(false);
+    expect(nothingLinked([], src, [])).toBe(false);
+  });
+});
+
 describe('filters and example input', () => {
   it('filters by text and by mapped state', () => {
     const linked = new Set(['body.fullName']);
     expect(filterRows(tgt, 'town', 'all', linked).map((r) => r.key)).toEqual(['body.ADDRESSES[].town']);
     expect(filterRows(tgt, '', 'mapped', linked).map((r) => r.key)).toEqual(['body.fullName']);
     expect(filterRows(tgt, '', 'required', linked).map((r) => r.key)).toEqual(['path.tenant', 'body.fullName']);
+    expect(filterRows(tgt, '', 'problems', linked, new Set(['body.fullName'])).map((r) => r.key)).toEqual(['body.fullName']);
+  });
+
+  it('gives each missing link end one row, and none to a side the contract does not describe', () => {
+    const links = [
+      { from: 'gone', to: 'body.fullName' },
+      { from: 'gone', to: 'body.old' },
+      { from: 'p-name', to: 'body.old' },
+    ];
+    const ghosts = missingRows(links, payloadRows(person), tgt);
+    expect(ghosts.sources.map((r) => r.key)).toEqual(['gone']);
+    expect(ghosts.targets.map((r) => r.key)).toEqual(['body.old']);
+    expect(ghosts.targets[0].missing).toBe(true);
+    expect(missingRows(links, payloadRows(person), []).targets).toEqual([]);
   });
 
   it('example input leaves constants out', () => {

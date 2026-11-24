@@ -4,7 +4,7 @@ import { IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import { api } from '../../api';
 import { CallSteps } from '../../components/CallSteps';
 import type { CallList } from '../../model';
-import { meaning } from '../../theme';
+import { meaning, statusText } from '../../theme';
 
 const REFRESH_MS = 3000;
 
@@ -64,7 +64,7 @@ export function CallsDrawer(props: { slug: string; opened: boolean; onClose: () 
                     <Badge color={c.status < 400 ? meaning.accent : meaning.broken} variant="light">
                       {c.status}
                     </Badge>
-                    <Text size="sm" c={c.stage === 'done' ? undefined : 'red.7'}>
+                    <Text size="sm" c={c.stage === 'done' ? undefined : statusText.broken}>
                       {c.stage === 'done' ? 'went through' : `stopped at ${c.stage}`}
                     </Text>
                     <Text size="sm" c="dimmed" ml="auto">
