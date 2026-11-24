@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractOperation, PayloadDefinition } from './model';
-import { addLink, canLink, exampleInput, filterRows, linkStates, missingRows, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
+import { addLink, canLink, emptySideText, exampleInput, filterRows, linkStates, missingRows, nothingLinked, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
 const person: PayloadDefinition = {
   id: 'person',
@@ -122,6 +122,24 @@ describe('links', () => {
 
   it('required targets without a link are reported', () => {
     expect(requiredUnmapped(tgt, [{ from: 'p-name', to: 'body.fullName' }]).map((r) => r.key)).toEqual(['path.tenant']);
+  });
+});
+
+describe('empty sides', () => {
+  it('says why a tree is empty', () => {
+    expect(emptySideText('input', op)).toMatch(/^This Input has no fields/);
+    expect(emptySideText('output', op)).toMatch(/^This Output has no fields/);
+    expect(emptySideText('request', { ...op, parameters: [], requestBody: undefined })).toMatch(/sends no parameters and no body/);
+    expect(emptySideText('request', op)).toMatch(/doesn't describe the request body/);
+    expect(emptySideText('response', { ...op, responseStatus: '204', response: undefined })).toMatch(/answers 204 with no body/);
+    expect(emptySideText('response', { ...op, response: undefined })).toMatch(/doesn't describe the answer/);
+  });
+
+  it('warns about nothing linked only when both sides have fields', () => {
+    expect(nothingLinked([], src, tgt)).toBe(true);
+    expect(nothingLinked([{ from: 'p-name', to: 'body.fullName' }], src, tgt)).toBe(false);
+    expect(nothingLinked([], [], tgt)).toBe(false);
+    expect(nothingLinked([], src, [])).toBe(false);
   });
 });
 

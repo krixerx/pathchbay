@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Badge, Button, Code, Group, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Badge, Button, Code, Group, Modal, Skeleton, Stack, Text, Title, Tooltip } from '@mantine/core';
 import { IconFlask, IconListDetails, IconRocket, IconSettings } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
@@ -59,7 +59,14 @@ function Integration({ slug }: { slug: string }) {
   }
 
   const linkCount = (draft.request?.links?.length ?? 0) + (draft.response?.links?.length ?? 0);
-  const ready = !!(draft.input && draft.output && draft.operationId);
+  // Why Test and Publish can't be used yet; they stay focusable (data-disabled) so the reason shows on focus too.
+  const notReady = !draft.operationId
+    ? 'Choose the external system and the operation first'
+    : !draft.input
+      ? 'Choose the Input first'
+      : !draft.output
+        ? 'Choose the Output first'
+        : null;
 
   return (
     <Stack gap="md">
@@ -95,33 +102,39 @@ function Integration({ slug }: { slug: string }) {
           <Button variant="default" leftSection={<IconSettings size={16} />} component={Link} to={`/integrations/${slug}/settings`}>
             Settings
           </Button>
-          <Button
-            variant={testOpen ? 'light' : 'default'}
-            leftSection={<IconFlask size={16} />}
-            onClick={() => setTestOpen((o) => !o)}
-            disabled={!ready}
-          >
-            Test
-          </Button>
+          <Tooltip label={notReady} disabled={!notReady} withArrow events={{ hover: true, focus: true, touch: true }}>
+            <Button
+              variant={testOpen ? 'light' : 'default'}
+              leftSection={<IconFlask size={16} />}
+              data-disabled={!!notReady || undefined}
+              aria-disabled={!!notReady}
+              onClick={(e) => (notReady ? e.preventDefault() : setTestOpen((o) => !o))}
+            >
+              Test
+            </Button>
+          </Tooltip>
           <Button variant="default" leftSection={<IconListDetails size={16} />} onClick={() => setCallsOpen(true)}>
             Calls
           </Button>
-          <Button
-            variant={problems ? 'default' : 'filled'}
-            leftSection={<IconRocket size={16} />}
-            rightSection={
-              problems ? (
-                <Badge color={meaning.broken} size="sm" circle aria-hidden>
-                  {problems}
-                </Badge>
-              ) : undefined
-            }
-            aria-label={problems ? `Publish, ${problems} problem${problems === 1 ? '' : 's'} to fix first` : undefined}
-            onClick={() => setPublishing(true)}
-            disabled={!ready}
-          >
-            Publish
-          </Button>
+          <Tooltip label={notReady} disabled={!notReady} withArrow events={{ hover: true, focus: true, touch: true }}>
+            <Button
+              variant={problems ? 'default' : 'filled'}
+              leftSection={<IconRocket size={16} />}
+              rightSection={
+                problems ? (
+                  <Badge color={meaning.broken} size="sm" circle aria-hidden>
+                    {problems}
+                  </Badge>
+                ) : undefined
+              }
+              aria-label={problems ? `Publish, ${problems} problem${problems === 1 ? '' : 's'} to fix first` : undefined}
+              data-disabled={!!notReady || undefined}
+              aria-disabled={!!notReady}
+              onClick={(e) => (notReady ? e.preventDefault() : setPublishing(true))}
+            >
+              Publish
+            </Button>
+          </Tooltip>
         </Group>
       </Group>
 

@@ -256,6 +256,34 @@ export function missingRows(links: Link[], sources: Row[], targets: Row[]): { so
   return { sources: ghosts(sources, links.map((l) => l.from)), targets: ghosts(targets, links.map((l) => l.to)) };
 }
 
+/** Which tree of the board, for its empty-state text. */
+export type Side = 'input' | 'request' | 'response' | 'output';
+
+/**
+ * What a tree with no rows says, by why it is empty: a payload definition without fields, an operation that sends or
+ * answers nothing, or a contract that doesn't describe that part (then only a real test shows it).
+ */
+export function emptySideText(side: Side, op: ContractOperation | null): string {
+  if (side === 'input') return 'This Input has no fields. Add some under Payload definitions, or pick another Input above.';
+  if (side === 'output') return 'This Output has no fields. Add some under Payload definitions, or pick another Output above.';
+  if (side === 'request') {
+    return op && op.parameters.length === 0 && !op.requestBody
+      ? 'This operation sends no parameters and no body, so there is nothing to fill in.'
+      : "The contract doesn't describe the request body, so its fields can't be shown or checked.";
+  }
+  return op?.responseStatus === '204'
+    ? 'This operation answers 204 with no body, so there is nothing to map.'
+    : "The contract doesn't describe the answer, so its fields can't be shown or checked. Run a real test to see what comes back.";
+}
+
+/**
+ * Both sides have fields but not one link joins them: the board warns and publishing warns (amber, never blocking),
+ * so "all required fields mapped" is not read as "done" when nothing is mapped at all.
+ */
+export function nothingLinked(links: Link[], sources: Row[], targets: Row[]): boolean {
+  return links.length === 0 && sources.length > 0 && targets.length > 0;
+}
+
 /** Required target fields without a link (amber, D-6). Constants count as filled. */
 export function requiredUnmapped(targets: Row[], links: Link[]): Row[] {
   const linked = new Set(links.map((l) => l.to));

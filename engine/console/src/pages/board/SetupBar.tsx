@@ -80,29 +80,9 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
   return (
     <Paper withBorder p="sm">
       <Stack gap="xs">
+        {/* In the order the work goes: the system and its operation first, then Input and Output, which are created
+            from the operation when left empty. */}
         <Group align="flex-start" wrap="nowrap">
-          <Select
-            style={{ flex: 1, minWidth: 0 }}
-            label="Input"
-            description="What callers send"
-            placeholder="Empty: created from the operation"
-            data={definitionOptions}
-            value={draft.input ?? null}
-            onChange={(v) => choosePayload('input', v)}
-            searchable
-            clearable
-          />
-          <Select
-            style={{ flex: 1, minWidth: 0 }}
-            label="Output"
-            description="What callers get back"
-            placeholder="Empty: created from the operation"
-            data={definitionOptions}
-            value={draft.output ?? null}
-            onChange={(v) => choosePayload('output', v)}
-            searchable
-            clearable
-          />
           <Select
             style={{ flex: 1, minWidth: 0 }}
             label="External system"
@@ -150,6 +130,28 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
               </Text>
             )}
           </Stack>
+          <Select
+            style={{ flex: 1, minWidth: 0 }}
+            label="Input"
+            description="What callers send"
+            placeholder="Empty: created from the operation"
+            data={definitionOptions}
+            value={draft.input ?? null}
+            onChange={(v) => choosePayload('input', v)}
+            searchable
+            clearable
+          />
+          <Select
+            style={{ flex: 1, minWidth: 0 }}
+            label="Output"
+            description="What callers get back"
+            placeholder="Empty: created from the operation"
+            data={definitionOptions}
+            value={draft.output ?? null}
+            onChange={(v) => choosePayload('output', v)}
+            searchable
+            clearable
+          />
         </Group>
 
         {draft.operationId && draft.target && !props.baseUrl && (

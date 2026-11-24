@@ -1,7 +1,7 @@
 import type { ContractOperation, Field, IntegrationDraft, PayloadDefinition } from './model';
 import { SIMPLE_TYPES } from './model';
 import type { Link, Tab } from './board';
-import { exampleInput, linkStates, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
+import { exampleInput, linkStates, nothingLinked, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
 /**
  * One line of the publish summary; `tab` lets "Show" open the board on the right tab, `definition` points to the
@@ -51,6 +51,15 @@ export function publishSummary(
         blocking.push({ tab, text: `${name(sources, links[i].from)} → ${name(targets, links[i].to)}: ${s.reason}` });
       }
     });
+    if (nothingLinked(links, sources, targets)) {
+      warnings.push({
+        tab,
+        text:
+          tab === 'request'
+            ? 'No Input field is linked to the API request; the external API gets nothing from callers'
+            : 'No field of the answer is linked to the Output; callers get an empty Output',
+      });
+    }
     for (const r of requiredUnmapped(targets, links)) {
       warnings.push({
         tab,

@@ -32,9 +32,11 @@ import {
   addLink,
   canLink,
   exampleInput,
+  emptySideText,
   filterRows,
   linkStates,
   missingRows,
+  nothingLinked,
   payloadRows,
   requestRows,
   requiredUnmapped,
@@ -185,8 +187,16 @@ export function MappingBoard(props: {
     );
   }
   if (!data || !sides || !shownSides) return error ? <ErrorBox text={error} /> : <Skeleton height={300} mt="lg" />;
-  if (!data.input || !data.output || !data.operation) {
-    return <Text mt="lg">Pick the Input, the Output and the operation above to map fields.</Text>;
+  if (!data.operation) {
+    return (
+      <Text mt="lg">
+        Choose the external system and the operation this integration calls. An Input and Output left empty are created from
+        the operation, already linked.
+      </Text>
+    );
+  }
+  if (!data.input || !data.output) {
+    return <Text mt="lg">Choose {!data.input ? 'the Input' : 'the Output'} above to map fields.</Text>;
   }
 
   const sourceRow = selected ? sides.sources.find((r) => r.key === selected) ?? null : null;
@@ -217,6 +227,7 @@ export function MappingBoard(props: {
     <Stack gap="sm" mt="md">
       <StatusBar
         unmapped={unmapped.length}
+        nothingLinked={nothingLinked(current, sides.sources, sides.targets)}
         red={redCount}
         other={{ tab: otherTab, red: linkStates(links[otherTab], ...otherSides(data, otherTab, added), requestFormat).filter((s) => s.kind !== 'ok').length }}
         lastTest={lastTest}
@@ -264,6 +275,7 @@ export function MappingBoard(props: {
           filter={filters.source}
           onFilter={(f) => setFilters((old) => ({ ...old, source: f }))}
           problemKeys={problemKeys}
+          emptyText={emptySideText(tab === 'request' ? 'input' : 'response', data.operation)}
           anchor={gutter}
           onLayout={onLayout}
         />
@@ -293,6 +305,7 @@ export function MappingBoard(props: {
           filter={filters.target}
           onFilter={(f) => setFilters((old) => ({ ...old, target: f }))}
           problemKeys={problemKeys}
+          emptyText={emptySideText(tab === 'request' ? 'request' : 'output', data.operation)}
           unmapped={new Set(unmapped.map((r) => r.key))}
           anchor={gutter}
           onLayout={onLayout}
@@ -323,6 +336,7 @@ function otherSides(data: BoardData, tab: Tab, added: string[]): [Row[], Row[]] 
 
 function StatusBar(props: {
   unmapped: number;
+  nothingLinked: boolean;
   red: number;
   other: { tab: Tab; red: number };
   lastTest: { ok: boolean; at: string } | null;
@@ -344,6 +358,13 @@ function StatusBar(props: {
               </Text>
             </Group>
           </UnstyledButton>
+        ) : props.nothingLinked ? (
+          <Group gap={4}>
+            <IconAlertTriangle size={16} color={statusText.warning} />
+            <Text size="sm" c={statusText.warning}>
+              No fields are linked on this tab yet
+            </Text>
+          </Group>
         ) : (
           // Neutral, not green: green means only "test passed" (DESIGN.md).
           <Group gap={4}>
@@ -410,6 +431,8 @@ function TreePanel(props: {
   onFilter: (f: Filter) => void;
   /** The rows at either end of a link that can't be published. */
   problemKeys: Set<string>;
+  /** What the tree says when it has no rows at all. */
+  emptyText: string;
   unmapped?: Set<string>;
   anchor: React.RefObject<HTMLDivElement | null>;
   onLayout: (side: 'source' | 'target', l: Layout) => void;
@@ -618,9 +641,7 @@ function TreePanel(props: {
         </ScrollArea>
         {shown.length === 0 && (
           <Text size="sm" c="dimmed">
-            {props.rows.length === 0
-              ? "The contract doesn't describe this side, so its fields can't be shown or checked. Run a real test to see what comes back."
-              : 'No field matches.'}
+            {props.rows.length === 0 ? props.emptyText : 'No field matches.'}
           </Text>
         )}
         {props.footer}
