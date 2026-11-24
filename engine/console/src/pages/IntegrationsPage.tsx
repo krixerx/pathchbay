@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  ActionIcon,
   Alert,
   Anchor,
   Badge,
@@ -9,6 +10,7 @@ import {
   FileButton,
   Group,
   List,
+  Menu,
   Modal,
   Skeleton,
   Stack,
@@ -17,7 +19,7 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { IconAlertTriangle, IconApi, IconDownload, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
+import { IconAlertTriangle, IconApi, IconDots, IconDownload, IconPlus, IconTrash, IconUpload } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import { ImportResult } from '../components/ImportResult';
@@ -262,24 +264,21 @@ function IntegrationTable({
                 </Anchor>
               )}
             </Table.Td>
-            <Table.Td>
-              <Group gap="xs" justify="flex-end" wrap="nowrap">
-                <Button size="compact-sm" variant="default" onClick={() => navigate(`/integrations/${it.id}`)}>
-                  Select
-                </Button>
-                <Button
-                  size="compact-sm"
-                  variant="subtle"
-                  color={meaning.broken}
-                  leftSection={<IconTrash size={14} />}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(it);
-                  }}
-                >
-                  Delete
-                </Button>
-              </Group>
+            {/* The row opens the integration; the rarer actions sit in a menu, so the list has no column of red buttons.
+                Clicks and keys inside it must not reach the row (the menu's portal still bubbles through React). */}
+            <Table.Td ta="right" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              <Menu position="bottom-end" withinPortal>
+                <Menu.Target>
+                  <ActionIcon variant="subtle" color="gray" aria-label={`More actions for ${it.name ?? it.id}`}>
+                    <IconDots size={16} />
+                  </ActionIcon>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  <Menu.Item color={meaning.broken} leftSection={<IconTrash size={14} />} onClick={() => onDelete(it)}>
+                    Delete…
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
             </Table.Td>
           </Table.Tr>
         ))}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractOperation, PayloadDefinition } from './model';
-import { addLink, canLink, exampleInput, filterRows, linkStates, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
+import { addLink, canLink, exampleInput, filterRows, linkStates, missingRows, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
 const person: PayloadDefinition = {
   id: 'person',
@@ -131,6 +131,20 @@ describe('filters and example input', () => {
     expect(filterRows(tgt, 'town', 'all', linked).map((r) => r.key)).toEqual(['body.ADDRESSES[].town']);
     expect(filterRows(tgt, '', 'mapped', linked).map((r) => r.key)).toEqual(['body.fullName']);
     expect(filterRows(tgt, '', 'required', linked).map((r) => r.key)).toEqual(['path.tenant', 'body.fullName']);
+    expect(filterRows(tgt, '', 'problems', linked, new Set(['body.fullName'])).map((r) => r.key)).toEqual(['body.fullName']);
+  });
+
+  it('gives each missing link end one row, and none to a side the contract does not describe', () => {
+    const links = [
+      { from: 'gone', to: 'body.fullName' },
+      { from: 'gone', to: 'body.old' },
+      { from: 'p-name', to: 'body.old' },
+    ];
+    const ghosts = missingRows(links, payloadRows(person), tgt);
+    expect(ghosts.sources.map((r) => r.key)).toEqual(['gone']);
+    expect(ghosts.targets.map((r) => r.key)).toEqual(['body.old']);
+    expect(ghosts.targets[0].missing).toBe(true);
+    expect(missingRows(links, payloadRows(person), []).targets).toEqual([]);
   });
 
   it('example input leaves constants out', () => {

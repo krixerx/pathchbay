@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractOperation, IntegrationDraft, PayloadDefinition } from './model';
-import { curlCommand, publishSummary } from './publish';
+import { curlCommand, publishSummary, withoutBrokenLinks } from './publish';
 
 const input: PayloadDefinition = {
   id: 'new-book',
@@ -79,6 +79,21 @@ describe('publishSummary', () => {
       },
     ]);
     expect(publishSummary({ id: 'add-book' }, nested, output, op).blocking).toEqual([]);
+  });
+});
+
+describe('withoutBrokenLinks', () => {
+  it('drops links to fields that no longer exist and keeps links that only break a rule', () => {
+    const draft: IntegrationDraft = {
+      id: 'add-book',
+      request: { links: [{ from: 'nb-title', to: 'body.id' }, { from: 'nb-gone', to: 'body.title' }] },
+      response: { links: [{ from: 'id', to: 'br-gone' }] },
+    };
+    expect(withoutBrokenLinks(draft, input, output, op)).toEqual({
+      request: [{ from: 'nb-title', to: 'body.id' }],
+      response: [],
+      removed: 2,
+    });
   });
 });
 

@@ -6,7 +6,7 @@ import { api } from '../../api';
 import type { Tab } from '../../board';
 import type { ContractOperation, IntegrationDraft, PayloadDefinition, VersionList } from '../../model';
 import type { Problem } from '../../publish';
-import { curlCommand, publishSummary } from '../../publish';
+import { curlCommand, publishSummary, withoutBrokenLinks } from '../../publish';
 import { meaning } from '../../theme';
 
 interface BoardData {
@@ -20,6 +20,8 @@ export function PublishPanel(props: {
   draft: IntegrationDraft;
   onChange: (d: IntegrationDraft) => void;
   onShow: (tab: Tab) => void;
+  /** Links were changed here (broken ones removed), so the board must load them again. */
+  onLinksChanged: (d: IntegrationDraft) => void;
 }) {
   const { draft } = props;
   const [data, setData] = useState<BoardData | null>(null);
@@ -36,6 +38,19 @@ export function PublishPanel(props: {
   if (!data || !versions) return error ? <ErrorBox text={error} /> : <Skeleton height={200} mt="lg" />;
 
   const { blocking, warnings } = publishSummary(draft, data.input, data.output, data.operation);
+  const cleaned = withoutBrokenLinks(draft, data.input, data.output, data.operation);
+
+  const removeBroken = async () => {
+    setBusy('remove');
+    setError(null);
+    try {
+      props.onLinksChanged(await api.saveLinks(draft.id, cleaned.request, cleaned.response));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
   const method = data.operation?.method ?? draft.target?.method ?? 'POST';
   const live = versions.activeVersion;
 
@@ -77,6 +92,21 @@ export function PublishPanel(props: {
             color={meaning.broken}
             icon={<IconX size={16} />}
             onShow={props.onShow}
+            action={
+              cleaned.removed > 0 && (
+                <Button
+                  size="compact-sm"
+                  variant="white"
+                  color={meaning.broken}
+                  mt="xs"
+                  loading={busy === 'remove'}
+                  disabled={busy !== null}
+                  onClick={removeBroken}
+                >
+                  Remove {cleaned.removed === 1 ? 'the link' : `all ${cleaned.removed} links`} to fields that no longer exist
+                </Button>
+              )
+            }
           />
           <ProblemList
             title={`${warnings.length} warning${warnings.length === 1 ? '' : 's'} (publishing is still possible)`}
@@ -192,7 +222,14 @@ export function PublishPanel(props: {
   );
 }
 
-function ProblemList(props: { title: string; items: Problem[]; color: string; icon: React.ReactNode; onShow: (tab: Tab) => void }) {
+function ProblemList(props: {
+  title: string;
+  items: Problem[];
+  color: string;
+  icon: React.ReactNode;
+  onShow: (tab: Tab) => void;
+  action?: React.ReactNode;
+}) {
   if (props.items.length === 0) return null;
   return (
     <Alert color={props.color} icon={props.icon} title={props.title} p="sm">
@@ -213,6 +250,7 @@ function ProblemList(props: { title: string; items: Problem[]; color: string; ic
             )}
           </Group>
         ))}
+        {props.action && <Group>{props.action}</Group>}
       </Stack>
     </Alert>
   );

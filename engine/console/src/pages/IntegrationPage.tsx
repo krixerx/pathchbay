@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Button, Code, Group, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
 import { IconAlertTriangle, IconFlask, IconListDetails, IconRocket, IconSettings } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
@@ -28,6 +28,11 @@ function Integration({ slug }: { slug: string }) {
   const [publishing, setPublishing] = useState(false);
   const [callsOpen, setCallsOpen] = useState(false);
   const [baseUrl, setBaseUrl] = useState<string | null>(null);
+  // Problems that block publishing, reported by the board; null until it has loaded.
+  const [problems, setProblems] = useState<number | null>(null);
+  const onProblems = useCallback((n: number) => setProblems(n), []);
+  // Bumped when links change outside the board (the publish dialog), so the board loads them again.
+  const [boardEpoch, setBoardEpoch] = useState(0);
 
   useEffect(() => {
     api.integration(slug).then(setDraft, (e: Error) => setError(e.message));
@@ -102,7 +107,20 @@ function Integration({ slug }: { slug: string }) {
           <Button variant="default" leftSection={<IconListDetails size={16} />} onClick={() => setCallsOpen(true)}>
             Calls
           </Button>
-          <Button leftSection={<IconRocket size={16} />} onClick={() => setPublishing(true)} disabled={!ready}>
+          <Button
+            variant={problems ? 'default' : 'filled'}
+            leftSection={<IconRocket size={16} />}
+            rightSection={
+              problems ? (
+                <Badge color={meaning.broken} size="sm" circle aria-hidden>
+                  {problems}
+                </Badge>
+              ) : undefined
+            }
+            aria-label={problems ? `Publish, ${problems} problem${problems === 1 ? '' : 's'} to fix first` : undefined}
+            onClick={() => setPublishing(true)}
+            disabled={!ready}
+          >
             Publish
           </Button>
           <Button variant="default" leftSection={<IconSettings size={16} />} component={Link} to={`/integrations/${slug}/settings`}>
@@ -114,12 +132,13 @@ function Integration({ slug }: { slug: string }) {
       <SetupBar draft={draft} baseUrl={baseUrl} linkCount={linkCount} onChange={setDraft} />
 
       <MappingBoard
-        key={`${draft.input}|${draft.output}|${draft.contract}|${draft.operationId}`}
+        key={`${draft.input}|${draft.output}|${draft.contract}|${draft.operationId}|${boardEpoch}`}
         draft={draft}
         onChange={setDraft}
         tab={tab}
         onTab={setTab}
         testOpen={testOpen}
+        onProblems={onProblems}
       />
 
       <Modal opened={publishing} onClose={() => setPublishing(false)} title="Publish" size="xl">
@@ -129,6 +148,10 @@ function Integration({ slug }: { slug: string }) {
           onShow={(t) => {
             setTab(t);
             setPublishing(false);
+          }}
+          onLinksChanged={(d) => {
+            setDraft(d);
+            setBoardEpoch((n) => n + 1);
           }}
         />
       </Modal>

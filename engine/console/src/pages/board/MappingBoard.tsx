@@ -27,12 +27,14 @@ import { CallSteps } from '../../components/CallSteps';
 import type { ContractOperation, IntegrationDraft, PayloadDefinition, TestResult } from '../../model';
 import { TYPE_LABELS } from '../../model';
 import type { Filter, Link, LinkState, Row, Tab } from '../../board';
+import { publishSummary } from '../../publish';
 import {
   addLink,
   canLink,
   exampleInput,
   filterRows,
   linkStates,
+  missingRows,
   payloadRows,
   requestRows,
   requiredUnmapped,
@@ -43,6 +45,12 @@ import { FormatSwitch } from './FormatSwitch';
 
 const ROW_HEIGHT = 34;
 const GUTTER = 120;
+/**
+ * The trees' height: the viewport less the app header, the panel's title, search and filters, the add-header row and
+ * a margin, so the whole board fits the screen once it is scrolled to the top. Never below 360px.
+ */
+const TREE_HEIGHT = 'max(360px, calc(100dvh - 270px))';
+const MISSING_TEXT = 'This field no longer exists. Remove the link.';
 
 /** Where one tree's rows are, for drawing lines: row centre y per key, relative to the gutter's top. */
 interface Layout {
@@ -67,6 +75,8 @@ export function MappingBoard(props: {
   tab: Tab;
   onTab: (t: Tab) => void;
   testOpen: boolean;
+  /** How many problems block publishing, for the Publish button (same count as the publish dialog). */
+  onProblems?: (count: number) => void;
 }) {
   const { draft, tab, testOpen } = props;
   const wide = useMediaQuery('(min-width: 1024px)');
@@ -78,6 +88,7 @@ export function MappingBoard(props: {
   });
   const [added, setAdded] = useState<string[]>(draft.addedHeaders ?? []);
   const [selected, setSelected] = useState<string | null>(null);
+  const [filters, setFilters] = useState<Record<'source' | 'target', Filter>>({ source: 'all', target: 'all' });
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [lastTest, setLastTest] = useState<{ ok: boolean; at: string } | null>(null);
   const gutter = useRef<HTMLDivElement>(null);
@@ -111,6 +122,32 @@ export function MappingBoard(props: {
   const unmapped = useMemo(() => (sides ? requiredUnmapped(sides.targets, current) : []), [sides, current]);
   const redCount = states.filter((s) => s.kind !== 'ok').length;
   const otherTab: Tab = tab === 'request' ? 'response' : 'request';
+  // Fields that no longer exist get a row of their own, so a broken link is drawn like any other (red, dashed).
+  const shownSides = useMemo(() => {
+    if (!sides) return null;
+    const ghosts = missingRows(current, sides.sources, sides.targets);
+    return { sources: [...sides.sources, ...ghosts.sources], targets: [...sides.targets, ...ghosts.targets] };
+  }, [sides, current]);
+  const problemKeys = useMemo(() => {
+    const keys = new Set<string>();
+    current.forEach((l, i) => {
+      if (states[i]?.kind !== 'ok') {
+        keys.add(l.from);
+        keys.add(l.to);
+      }
+    });
+    return keys;
+  }, [current, states]);
+  const showProblems = () => setFilters({ source: 'problems', target: 'problems' });
+
+  const { onProblems } = props;
+  const blockingCount = useMemo(
+    () => (data ? publishSummary(draft, data.input, data.output, data.operation).blocking.length : 0),
+    [data, draft],
+  );
+  useEffect(() => {
+    if (data) onProblems?.(blockingCount);
+  }, [data, blockingCount, onProblems]);
 
   // Autosave on every change (D-1).
   const save = useCallback(
@@ -135,14 +172,14 @@ export function MappingBoard(props: {
       </Alert>
     );
   }
-  if (!data || !sides) return error ? <ErrorBox text={error} /> : <Skeleton height={300} mt="lg" />;
+  if (!data || !sides || !shownSides) return error ? <ErrorBox text={error} /> : <Skeleton height={300} mt="lg" />;
   if (!data.input || !data.output || !data.operation) {
     return <Text mt="lg">Pick the Input, the Output and the operation above to map fields.</Text>;
   }
 
   const sourceRow = selected ? sides.sources.find((r) => r.key === selected) ?? null : null;
 
-  const clickSource = (r: Row) => setSelected(selected === r.key ? null : r.key);
+  const clickSource = (r: Row) => !r.missing && setSelected(selected === r.key ? null : r.key);
   const clickTarget = (r: Row) => {
     if (!sourceRow) return;
     if (canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat)) return;
@@ -170,7 +207,11 @@ export function MappingBoard(props: {
         lastTest={lastTest}
         saved={saved}
         onShowUnmapped={() => document.getElementById(`row-target-${unmapped[0]?.key}`)?.scrollIntoView({ block: 'center' })}
-        onSwitch={() => props.onTab(otherTab)}
+        onShowProblems={showProblems}
+        onSwitch={() => {
+          props.onTab(otherTab);
+          showProblems();
+        }}
       />
 
       <Group justify="space-between" wrap="nowrap">
@@ -197,14 +238,16 @@ export function MappingBoard(props: {
       <Group align="stretch" gap={0} wrap="nowrap">
         <TreePanel
           title={sides.left}
-          rows={sides.sources}
+          rows={shownSides.sources}
           side="source"
           links={current}
           states={states}
-          partners={sides.targets}
           selected={selected}
           onClick={clickSource}
-          isDisabled={() => null}
+          isDisabled={(r) => (r.missing ? MISSING_TEXT : null)}
+          filter={filters.source}
+          onFilter={(f) => setFilters((old) => ({ ...old, source: f }))}
+          problemKeys={problemKeys}
           anchor={gutter}
           onLayout={onLayout}
         />
@@ -215,21 +258,25 @@ export function MappingBoard(props: {
             source={layouts.source}
             target={layouts.target}
             selected={selected}
-            sources={sides.sources}
-            targets={sides.targets}
+            sources={shownSides.sources}
+            targets={shownSides.targets}
             onRemove={remove}
           />
         </div>
         <TreePanel
           title={sides.right}
-          rows={sides.targets}
+          rows={shownSides.targets}
           side="target"
           links={current}
           states={states}
-          partners={sides.sources}
           selected={null}
           onClick={clickTarget}
-          isDisabled={(r) => (sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat) : null)}
+          isDisabled={(r) =>
+            r.missing ? MISSING_TEXT : sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat) : null
+          }
+          filter={filters.target}
+          onFilter={(f) => setFilters((old) => ({ ...old, target: f }))}
+          problemKeys={problemKeys}
           unmapped={new Set(unmapped.map((r) => r.key))}
           anchor={gutter}
           onLayout={onLayout}
@@ -265,6 +312,7 @@ function StatusBar(props: {
   lastTest: { ok: boolean; at: string } | null;
   saved: 'idle' | 'saving' | 'saved';
   onShowUnmapped: () => void;
+  onShowProblems: () => void;
   onSwitch: () => void;
 }) {
   return (
@@ -285,12 +333,14 @@ function StatusBar(props: {
           </Text>
         )}
         {props.red > 0 && (
-          <Group gap={4}>
-            <IconX size={16} color="var(--mantine-color-red-7)" />
-            <Text size="sm" c="red.7">
-              {props.red} link{props.red === 1 ? '' : 's'} can't be published
-            </Text>
-          </Group>
+          <UnstyledButton onClick={props.onShowProblems}>
+            <Group gap={4}>
+              <IconX size={16} color="var(--mantine-color-red-7)" />
+              <Text size="sm" c="red.7">
+                {props.red} link{props.red === 1 ? '' : 's'} can't be published ▸
+              </Text>
+            </Group>
+          </UnstyledButton>
         )}
         {props.other.red > 0 && (
           <UnstyledButton onClick={props.onSwitch}>
@@ -323,10 +373,13 @@ function TreePanel(props: {
   side: 'source' | 'target';
   links: Link[];
   states: LinkState[];
-  partners: Row[];
   selected: string | null;
   onClick: (r: Row) => void;
   isDisabled: (r: Row) => string | null;
+  filter: Filter;
+  onFilter: (f: Filter) => void;
+  /** The rows at either end of a link that can't be published. */
+  problemKeys: Set<string>;
   unmapped?: Set<string>;
   anchor: React.RefObject<HTMLDivElement | null>;
   onLayout: (side: 'source' | 'target', l: Layout) => void;
@@ -335,19 +388,26 @@ function TreePanel(props: {
   footer?: React.ReactNode;
 }) {
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Filter>('all');
+  const { problemKeys } = props;
+  const hasProblems = problemKeys.size > 0;
+  // Once the last problem is fixed, the Problems filter would show nothing: fall back to all fields.
+  const filter: Filter = props.filter === 'problems' && !hasProblems ? 'all' : props.filter;
   const parent = useRef<HTMLDivElement>(null);
   const linkedKeys = useMemo(
     () => new Set(props.links.map((l) => (props.side === 'source' ? l.from : l.to))),
     [props.links, props.side],
   );
-  const shown = useMemo(() => filterRows(props.rows, query, filter, linkedKeys), [props.rows, query, filter, linkedKeys]);
+  const shown = useMemo(
+    () => filterRows(props.rows, query, filter, linkedKeys, problemKeys),
+    [props.rows, query, filter, linkedKeys, problemKeys],
+  );
   const items = useMemo(() => {
     const out: Item[] = [];
     let group: string | undefined;
     for (const r of shown) {
-      if (r.group && r.group !== group && r.group !== 'Response') out.push({ kind: 'group', label: r.group });
-      group = r.group;
+      const g = r.missing ? 'No longer exists' : r.group;
+      if (g && g !== group && g !== 'Response') out.push({ kind: 'group', label: g });
+      group = g;
       out.push({ kind: 'row', row: r });
     }
     return out;
@@ -397,16 +457,21 @@ function TreePanel(props: {
           onChange={(e) => setQuery(e.currentTarget.value)}
           aria-label={`Search ${props.title}`}
         />
-        <Chip.Group multiple={false} value={filter} onChange={(v) => setFilter(v as Filter)}>
+        <Chip.Group multiple={false} value={filter} onChange={(v) => props.onFilter(v as Filter)}>
           <Group gap={4}>
             {(['all', 'required', 'unmapped', 'mapped'] as Filter[]).map((f) => (
               <Chip key={f} value={f} size="xs" variant="outline">
                 {f[0].toUpperCase() + f.slice(1)}
               </Chip>
             ))}
+            {hasProblems && (
+              <Chip value="problems" size="xs" variant="outline" color={meaning.broken}>
+                Problems
+              </Chip>
+            )}
           </Group>
         </Chip.Group>
-        <ScrollArea h={shown.length === 0 ? 0 : 460} viewportRef={parent} type="auto">
+        <ScrollArea h={shown.length === 0 ? 0 : TREE_HEIGHT} viewportRef={parent} type="auto">
           <div role="tree" aria-label={props.title} style={{ height: virtual.getTotalSize(), position: 'relative' }}>
             {virtual.getVirtualItems().map((v) => {
               const item = items[v.index];
@@ -455,7 +520,7 @@ function TreePanel(props: {
                       paddingLeft: 6 + r.depth * 18,
                       paddingRight: 6,
                       cursor: disabled ? 'not-allowed' : 'pointer',
-                      opacity: disabled ? 0.4 : 1,
+                      opacity: disabled && !r.missing ? 0.4 : 1,
                       borderRadius: 4,
                       background: isSelected
                         ? 'var(--mantine-color-teal-light)'
@@ -473,7 +538,14 @@ function TreePanel(props: {
                         └
                       </Text>
                     )}
-                    <Text size="sm" ff="monospace" truncate style={{ flexShrink: 1, minWidth: 0 }}>
+                    <Text
+                      size="sm"
+                      ff="monospace"
+                      truncate
+                      c={r.missing ? 'red.7' : undefined}
+                      td={r.missing ? 'line-through' : undefined}
+                      style={{ flexShrink: 1, minWidth: 0 }}
+                    >
                       {r.label}
                       {r.required && (
                         <Text span c="red.7" aria-label="required">
@@ -482,7 +554,7 @@ function TreePanel(props: {
                       )}
                     </Text>
                     <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                      {r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
+                      {r.missing ? 'no longer exists' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
                       {r.constant ? ' · constant' : ''}
                     </Text>
                     {amber && <IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" aria-label="required, not mapped" />}
@@ -654,17 +726,27 @@ function Lines(props: {
 }
 
 
+/**
+ * The links as text, for keyboard and screen-reader use and for reading long paths. Folded by default, since the lines
+ * show the same; links that can't be published are always listed.
+ */
 function LinkList(props: { links: Link[]; states: LinkState[]; sources: Row[]; targets: Row[]; onRemove: (l: Link) => void }) {
+  const [open, setOpen] = useState(false);
   if (props.links.length === 0) return null;
   const label = (rows: Row[], key: string) => rows.find((r) => r.key === key)?.rule ?? key;
+  const listed = props.links.map((l, i) => ({ l, s: props.states[i] })).filter(({ s }) => open || s.kind !== 'ok');
   return (
     <Paper withBorder p="xs">
-      <Text fw={600} size="sm" mb={4}>
-        Links on this tab
-      </Text>
+      <Group gap="xs" mb={listed.length > 0 ? 4 : 0}>
+        <Text fw={600} size="sm">
+          Links on this tab ({props.links.length})
+        </Text>
+        <Button size="compact-xs" variant="subtle" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+          {open ? 'Hide the list' : 'Show as a list'}
+        </Button>
+      </Group>
       <Stack gap={2}>
-        {props.links.map((l, i) => {
-          const s = props.states[i];
+        {listed.map(({ l, s }) => {
           const color = s.kind === 'ok' ? 'teal.8' : 'red.7';
           return (
             <Group key={`${l.from}->${l.to}`} gap="xs" wrap="nowrap">

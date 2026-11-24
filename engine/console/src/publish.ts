@@ -64,6 +64,31 @@ export function publishSummary(
   return { blocking, warnings };
 }
 
+/**
+ * The links without those whose field no longer exists (state `broken`), for "Remove all broken links". Links that
+ * break a rule (`red`) stay: they point at real fields and are fixed by relinking, not by deleting.
+ */
+export function withoutBrokenLinks(
+  draft: IntegrationDraft,
+  input: PayloadDefinition | null,
+  output: PayloadDefinition | null,
+  op: ContractOperation | null,
+): { request: Link[]; response: Link[]; removed: number } {
+  const keep = (links: Link[], sources: ReturnType<typeof payloadRows>, targets: ReturnType<typeof payloadRows>) => {
+    const states = linkStates(links, sources, targets);
+    return links.filter((_, i) => states[i].kind !== 'broken');
+  };
+  const request = (draft.request?.links ?? []) as Link[];
+  const response = (draft.response?.links ?? []) as Link[];
+  const keptRequest = keep(request, payloadRows(input), requestRows(op, draft.addedHeaders ?? []));
+  const keptResponse = keep(response, responseRows(op), payloadRows(output));
+  return {
+    request: keptRequest,
+    response: keptResponse,
+    removed: request.length - keptRequest.length + response.length - keptResponse.length,
+  };
+}
+
 const BODY_METHODS = ['POST', 'PUT', 'PATCH'];
 
 /** A ready curl command for the live endpoint (D-10); GET/DELETE send the Input as query parameters (R1). */

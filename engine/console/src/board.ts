@@ -25,6 +25,8 @@ export interface Row {
    * external paths, whose type only comes from the contract.
    */
   ruleType?: FieldType;
+  /** Stands in for a linked field that no longer exists, so the board can draw its broken link (shown, never linkable). */
+  missing?: boolean;
 }
 
 /** The parts of a file (D-29) and their types, as the engine's ScriptGenerator.BLOB_PARTS. */
@@ -232,6 +234,28 @@ export function canLink(source: Row, target: Row, links: Link[], sources: Row[],
   return null;
 }
 
+/**
+ * Rows for link ends that no longer exist, one per missing key, so a broken link has two ends to draw between.
+ * A side with no rows at all is one the contract doesn't describe; it gets none (linkStates only checks the other end).
+ */
+export function missingRows(links: Link[], sources: Row[], targets: Row[]): { sources: Row[]; targets: Row[] } {
+  const ghosts = (rows: Row[], keys: string[]): Row[] => {
+    if (rows.length === 0) return [];
+    const known = new Set(rows.map((r) => r.key));
+    return [...new Set(keys.filter((k) => !known.has(k)))].map((key) => ({
+      key,
+      label: key,
+      required: false,
+      constant: false,
+      depth: 0,
+      rule: key,
+      isList: false,
+      missing: true,
+    }));
+  };
+  return { sources: ghosts(sources, links.map((l) => l.from)), targets: ghosts(targets, links.map((l) => l.to)) };
+}
+
 /** Required target fields without a link (amber, D-6). Constants count as filled. */
 export function requiredUnmapped(targets: Row[], links: Link[]): Row[] {
   const linked = new Set(links.map((l) => l.to));
@@ -243,12 +267,14 @@ export function addLink(links: Link[], from: string, to: string): Link[] {
   return [...links.filter((l) => l.to !== to), { from, to }];
 }
 
-export type Filter = 'all' | 'required' | 'unmapped' | 'mapped';
+export type Filter = 'all' | 'required' | 'unmapped' | 'mapped' | 'problems';
 
-export function filterRows(rows: Row[], query: string, filter: Filter, linkedKeys: Set<string>): Row[] {
+/** `problemKeys` are the rows at either end of a link that can't be published, for the Problems filter. */
+export function filterRows(rows: Row[], query: string, filter: Filter, linkedKeys: Set<string>, problemKeys: Set<string> = new Set()): Row[] {
   const q = query.trim().toLowerCase();
   return rows.filter((r) => {
     if (q && !r.label.toLowerCase().includes(q) && !r.rule.toLowerCase().includes(q)) return false;
+    if (filter === 'problems') return problemKeys.has(r.key);
     if (filter === 'required') return r.required;
     if (filter === 'unmapped') return !linkedKeys.has(r.key);
     if (filter === 'mapped') return linkedKeys.has(r.key);
