@@ -120,10 +120,15 @@ public class TestRunner {
             headers.keySet().removeIf(k -> k.equalsIgnoreCase(h.name()));
             headers.put(h.name(), h.value());
         }
+        // As in the route: SOAP 1.1 names the operation in SOAPAction (D-30).
+        if (ci.soap() != null && SoapEnvelope.soapAction(ci.soap()) != null) {
+            headers.put("SOAPAction", SoapEnvelope.soapAction(ci.soap()));
+        }
         String authHeader = null;
         String authQuery = null;
         if (def.auth() != null) {
-            authHeader = "bearer".equals(def.auth().type()) ? "Authorization" : "header".equals(def.auth().in()) ? def.auth().name() : null;
+            authHeader = "bearer".equals(def.auth().type()) || "basic".equals(def.auth().type()) ? "Authorization"
+                    : "header".equals(def.auth().in()) ? def.auth().name() : null;
             authQuery = "query".equals(def.auth().in()) ? def.auth().name() : null;
         }
         boolean hasBody = BODY_METHODS.contains(def.target().method());
@@ -147,6 +152,10 @@ public class TestRunner {
         }
 
         Map<String, Object> shownHeaders = new LinkedHashMap<>(headers);
+        // Shown only: a real call sets the Content-Type once below, and for SOAP it carries the 1.2 action (D-30).
+        if (hasBody && ci.soap() != null) {
+            shownHeaders.put("Content-Type", ci.requestContentType());
+        }
         IntegrationProcessors.maskSecrets(shownHeaders, connectionHeaders);
         if (authHeader != null) {
             String auth = authHeader;
@@ -159,7 +168,8 @@ public class TestRunner {
         request.put("method", def.target().method());
         request.put("url", shownUrl);
         request.put("headers", shownHeaders);
-        request.put("body", !hasBody ? null : def.wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(body) : Blobs.forLog(mapped.path("body")));
+        request.put("body", !hasBody ? null : def.wire().requestXml() || def.wire().requestSoap() ? Json.MAPPER.getNodeFactory().textNode(body)
+                : Blobs.forLog(mapped.path("body")));
 
         // 3. The answer: mock from the contract, or the real system.
         int status;
@@ -174,7 +184,14 @@ public class TestRunner {
                 // A file answer is mocked as the mapping sees it: the whole answer under $body (D-29).
                 mock = Json.MAPPER.createObjectNode().set(LinkRules.WHOLE_ANSWER, mock);
             }
-            responseBytes = mock.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            if (ci.soap() != null) {
+                // A SOAP answer is mocked as an envelope around the response element (D-30).
+                contentType = SoapEnvelope.accept(ci.soap()) + "; charset=utf-8";
+                responseBytes = SoapEnvelope.mockAnswer(ci.soap(), op == null || op.response() == null ? null : mock)
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            } else {
+                responseBytes = mock.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            }
         } else {
             if (noBaseUrl != null) {
                 return new Result("request", List.of(noBaseUrl), request, null, null, false);
@@ -206,7 +223,10 @@ public class TestRunner {
                 rb.header("Content-Type", ci.requestContentType());
             }
             if (authHeader != null) {
-                rb.header(authHeader, "Authorization".equals(authHeader) ? "Bearer " + secret : secret);
+                String value = "basic".equals(def.auth().type())
+                        ? "Basic " + java.util.Base64.getEncoder().encodeToString(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                        : "Authorization".equals(authHeader) ? "Bearer " + secret : secret;
+                rb.header(authHeader, value);
             }
             try {
                 HttpResponse<byte[]> r = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
@@ -228,6 +248,12 @@ public class TestRunner {
                 : Blobs.forLog(parseOrText(responseText)));
 
         // 4. Mapped back into the Output, as callers would get it.
+        SoapEnvelope.Answer soapAnswer = ci.soap() == null || responseText == null ? null : SoapEnvelope.read(responseText);
+        if (soapAnswer != null && soapAnswer.fault() != null) {
+            SoapEnvelope.Fault f = soapAnswer.fault();
+            return new Result("response", List.of("The external system answered " + status + " with a SOAP Fault: " + f.code() + " "
+                    + f.reason() + "; callers get " + (status >= 400 ? status : 502) + " remote-fault"), request, response, null, !real);
+        }
         if (status >= 400) {
             return new Result("response", List.of("The external system answered " + status + "; callers get this status and body"),
                     request, response, null, !real);
@@ -236,7 +262,11 @@ public class TestRunner {
                 ? List.of("The contract does not describe the response of this operation, so the mock answer is empty. Try a real call to see real data.")
                 : List.of();
         try {
-            String mappedOutput = ci.mapAnswer(responseBytes, contentType, contentDisposition, maxBlobBytes);
+            if (ci.soap() != null && soapAnswer == null) {
+                throw new IllegalArgumentException("the answer is not a SOAP envelope");
+            }
+            String mappedOutput = ci.soap() != null ? ci.mapSoapBody(soapAnswer.bodyXml())
+                    : ci.mapAnswer(responseBytes, contentType, contentDisposition, maxBlobBytes);
             CompiledIntegration.Answer answer = ci.answer(mappedOutput); // as callers get it; with output binary the file is shown as JSON
             JsonNode output = def.wire().outputXml() ? Json.MAPPER.getNodeFactory().textNode(new String(answer.body(), java.nio.charset.StandardCharsets.UTF_8))
                     : Json.MAPPER.readTree(mappedOutput);

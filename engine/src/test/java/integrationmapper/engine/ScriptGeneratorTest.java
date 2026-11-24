@@ -180,6 +180,6 @@ class ScriptGeneratorTest {
                 List.of(link("u-title", "body.title")), List.of()))
                 .hasMessageContaining("files (blobs) can't go into XML yet");
         assertThatThrownBy(() -> compile("POST", formats("pdf", null), UPLOAD, STORED, List.of(), List.of()))
-                .hasMessageContaining("request format must be json, xml, binary or multipart, not pdf");
+                .hasMessageContaining("request format must be json, xml, binary, multipart or soap, not pdf"); // soap: D-30
     }
 }

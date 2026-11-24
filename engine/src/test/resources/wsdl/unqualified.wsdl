@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Test fixture (D-30): elementFormDefault unqualified, a base type extension, one SOAP 1.1 port. -->
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:tns="urn:example:order" targetNamespace="urn:example:order">
+  <types>
+    <xs:schema targetNamespace="urn:example:order">
+      <xs:complexType name="Base">
+        <xs:sequence><xs:element name="id" type="xs:string"/></xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Order">
+        <xs:complexContent>
+          <xs:extension base="tns:Base">
+            <xs:sequence>
+              <xs:element name="total" type="xs:decimal"/>
+              <xs:element name="lines" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence><xs:element name="sku" type="xs:string"/><xs:element name="qty" type="xs:int"/></xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:extension>
+        </xs:complexContent>
+      </xs:complexType>
+      <xs:element name="PlaceOrder" type="tns:Order"/>
+      <xs:element name="PlaceOrderResponse">
+        <xs:complexType><xs:sequence><xs:element name="accepted" type="xs:boolean"/></xs:sequence></xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </types>
+  <message name="In"><part name="p" element="tns:PlaceOrder"/></message>
+  <message name="Out"><part name="p" element="tns:PlaceOrderResponse"/></message>
+  <portType name="Orders"><operation name="PlaceOrder"><input message="tns:In"/><output message="tns:Out"/></operation></portType>
+  <binding name="OrdersSoap" type="tns:Orders">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="PlaceOrder"><soap:operation soapAction=""/><input><soap:body use="literal"/></input><output><soap:body use="literal"/></output></operation>
+  </binding>
+  <service name="OrderService"><port name="OrdersSoap" binding="tns:OrdersSoap"><soap:address location="http://shop.example/soap"/></port></service>
+</definitions>

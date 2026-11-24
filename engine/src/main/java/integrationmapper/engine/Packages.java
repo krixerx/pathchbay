@@ -45,6 +45,8 @@ public class Packages {
     private static final Pattern ENTITY = Pattern.compile("entities/(" + SLUG + ")\\.json");
     private static final Pattern CONTRACT = Pattern.compile("contracts/(" + SLUG + ")\\.json");
     private static final Pattern CONTRACT_SOURCE = Pattern.compile("contracts/(" + SLUG + ")\\.openapi\\.(?:json|yaml|yml)");
+    /** A file of a WSDL contract's folder (D-30): the WSDL or an XSD, in subfolders as the WSDL refers to them. */
+    private static final Pattern CONTRACT_WSDL_FILE = Pattern.compile("contracts/(" + SLUG + ")\\.wsdl/((?:[A-Za-z0-9_=() +-][A-Za-z0-9._=() +-]*/)*[A-Za-z0-9_=() +-][A-Za-z0-9._=() +-]*)");
     private static final int MAX_ENTRIES = 2000;
     private static final long MAX_BYTES = 50L * 1024 * 1024;
 
@@ -113,7 +115,18 @@ public class Packages {
             files.put("contracts/" + id + ".json", Files.readAllBytes(file));
             Contract c = Json.MAPPER.readValue(file.toFile(), Contract.class);
             Path source = c.sourceFile() == null ? null : store.root().resolve("contracts").resolve(c.sourceFile());
-            if (source != null && Files.isRegularFile(source)) {
+            if (c.isWsdl()) {
+                // Every file of the WSDL's folder, so the package imports without fetching anything (D-30).
+                Path dir = store.root().resolve("contracts").resolve(id + ContractImporter.WSDL_DIR);
+                if (Files.isDirectory(dir)) {
+                    try (var walk = Files.walk(dir)) {
+                        for (Path p : walk.filter(Files::isRegularFile).sorted().toList()) {
+                            files.put("contracts/" + id + ContractImporter.WSDL_DIR + "/" + dir.relativize(p).toString().replace('\\', '/'),
+                                    Files.readAllBytes(p));
+                        }
+                    }
+                }
+            } else if (source != null && Files.isRegularFile(source)) {
                 files.put("contracts/" + c.sourceFile(), Files.readAllBytes(source));
             }
         }
@@ -207,6 +220,8 @@ public class Packages {
                     contractFiles.put(name, f.getValue());
                 } else if (CONTRACT_SOURCE.matcher(name).matches()) {
                     contractFiles.put(name, f.getValue());
+                } else if (CONTRACT_WSDL_FILE.matcher(name).matches()) {
+                    contractFiles.put(name, f.getValue());
                 } else {
                     problems.add(name + ": not a file a package holds");
                 }
@@ -251,6 +266,16 @@ public class Packages {
         for (PayloadDefinition def : definitions.values()) {
             store.writeJson(store.root().resolve("entities").resolve(def.id() + ".json"), def);
             library.put(def);
+        }
+        // A contract in the package replaces this environment's original files of it, a WSDL folder as a whole.
+        for (String name : contractFiles.keySet()) {
+            Matcher m = CONTRACT.matcher(name);
+            if (m.matches()) {
+                Path dir = store.root().resolve("contracts").resolve(m.group(1) + ContractImporter.WSDL_DIR);
+                if (Files.isDirectory(dir)) {
+                    ContractImporter.deleteTree(dir);
+                }
+            }
         }
         for (Map.Entry<String, byte[]> c : contractFiles.entrySet()) {
             byte[] content = c.getValue();

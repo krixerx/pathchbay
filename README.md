@@ -4,7 +4,7 @@
 
 <p align="center"><b>Draw lines between two APIs. Get a live endpoint.</b></p>
 
-Connect your own data model to an external REST API without writing code. Import the API's OpenAPI (Swagger) file, draw lines from your fields to theirs in the browser, and press **Publish**. The result is a live, versioned REST endpoint that callers can use, served by the same container.
+Connect your own data model to an external REST or SOAP API without writing code. Import the API's OpenAPI (Swagger) or WSDL file, draw lines from your fields to theirs in the browser, and press **Publish**. The result is a live, versioned REST endpoint that callers can use, served by the same container.
 
 ![The mapping board: the external API's response on the left, your Output on the right, a line for every link](docs/images/mapping-board.png)
 
@@ -118,7 +118,7 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 
 ## How to build an integration
 
-1. **Configuration:** import the external system's Swagger or OpenAPI file (upload or URL). Every integration can use it. Its **Connection** holds the base URL in this environment, taken from the file when it has an absolute server address.
+1. **Configuration:** import the external system's Swagger, OpenAPI or WSDL file (upload or URL; a WSDL with separate XSD files as a ZIP). Every integration can use it. A SOAP service's operations are listed as SOAP `<port>/<operation>` and are published as ordinary REST endpoints; `engine/README.md` describes how. Its **Connection** holds the base URL in this environment, taken from the file when it has an absolute server address.
 2. **Payload definitions** (optional): describe what your callers send and get back, by hand or from a pasted JSON sample.
 3. **Integrations → New integration**, then on its board pick the Input, the Output, the Swagger configuration and the operation. Leave Input or Output empty to have it created from the operation, already linked.
 4. **Map:** click a field on the left, then the field on the right it goes into; a line connects them. Red lines can't be published; amber warnings can. **Test** runs a sample through the same code as a live call. The JSON/XML switch next to the tabs sets how the request goes out and what callers get back.

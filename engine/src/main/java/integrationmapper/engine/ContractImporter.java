@@ -8,6 +8,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -45,6 +46,9 @@ public class ContractImporter {
     private final ConfigStore store;
     private final HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
             .followRedirects(HttpClient.Redirect.NORMAL).build();
+    /** For the schemas a WSDL imports (D-30): no redirects, so a fetch can't leave the contract's host. */
+    private final HttpClient noRedirects = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10))
+            .followRedirects(HttpClient.Redirect.NEVER).build();
 
     public ContractImporter(ConfigStore store) {
         this.store = store;
@@ -52,9 +56,21 @@ public class ContractImporter {
 
     /** Fetches a contract by URL from the engine. An unreachable URL gets the D-5 message: upload the file instead. */
     public String fetch(String url) {
+        return fetch(url, http);
+    }
+
+    /** Fetches a schema a WSDL imports; a redirect is refused, since it could point to another host. */
+    String fetchSchema(String url) {
+        return fetch(url, noRedirects);
+    }
+
+    private String fetch(String url, HttpClient client) {
         try {
-            HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10)).GET().build(),
+            HttpResponse<String> r = client.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10)).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
+            if (r.statusCode() >= 300 && r.statusCode() < 400) {
+                throw new IllegalArgumentException("The URL answered " + r.statusCode() + " (a redirect), which is not followed for schemas");
+            }
             if (r.statusCode() >= 400) {
                 throw new IllegalArgumentException("The URL answered " + r.statusCode() + ". Check the address, or download the file and upload it instead.");
             }
@@ -82,6 +98,14 @@ public class ContractImporter {
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("The contract is empty");
         }
+        if (WsdlImporter.looksLikeWsdl(text)) {
+            SafeXml.Sources sources = sourceUrl == null ? SafeXml.Sources.none() : SafeXml.Sources.ofUrl(sourceUrl, this::fetchSchema);
+            return importWsdl(id, name, sourceUrl == null ? "service.wsdl" : sourceUrl, text.getBytes(StandardCharsets.UTF_8), sources,
+                    sourceUrl);
+        }
+        if (text.stripLeading().startsWith("<")) {
+            throw new IllegalArgumentException(NOT_A_CONTRACT);
+        }
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
         options.setResolveFully(true);
@@ -90,7 +114,7 @@ public class ContractImporter {
         List<String> warnings = new ArrayList<>(result.getMessages() == null ? List.of() : result.getMessages());
         boolean declared = text.contains("openapi") || text.contains("swagger");
         if (api == null || api.getPaths() == null || !declared) {
-            throw new IllegalArgumentException("Not an OpenAPI or Swagger file" + (warnings.isEmpty() ? "" : ": " + String.join("; ", warnings)));
+            throw new IllegalArgumentException(NOT_A_CONTRACT + (warnings.isEmpty() ? "" : ": " + String.join("; ", warnings)));
         }
         boolean swagger2 = text.contains("\"swagger\"") || text.stripLeading().startsWith("swagger:");
         if (swagger2) {
@@ -108,11 +132,174 @@ public class ContractImporter {
 
         boolean json = text.stripLeading().startsWith("{");
         String sourceFile = id + ".openapi." + (json ? "json" : "yaml");
-        store.write(store.root().resolve("contracts").resolve(sourceFile), out -> out.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        removeSources(id);
+        store.write(store.root().resolve("contracts").resolve(sourceFile), out -> out.write(text.getBytes(StandardCharsets.UTF_8)));
         Contract contract = new Contract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), servers,
                 operations, warnings);
         store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), contract);
         return contract;
+    }
+
+    static final String NOT_A_CONTRACT = "Not a contract Patchbay can read: give an OpenAPI 3, Swagger 2.0 or WSDL 1.1 file";
+    static final int MAX_ZIP_ENTRIES = 500;
+    static final long MAX_ZIP_BYTES = 20L * 1024 * 1024;
+
+    /**
+     * Imports a WSDL contract from a ZIP holding the WSDL and the XSD files it imports (D-30). The WSDL is the one
+     * {@code .wsdl} file nearest the top of the ZIP.
+     */
+    public Contract importZip(String id, String name, byte[] zip) throws IOException {
+        Map<String, byte[]> entries = unzip(zip);
+        int best = Integer.MAX_VALUE;
+        List<String> candidates = new ArrayList<>();
+        for (String path : entries.keySet()) {
+            if (path.toLowerCase().endsWith(".wsdl")) {
+                int depth = path.split("/").length;
+                if (depth < best) {
+                    best = depth;
+                    candidates.clear();
+                }
+                if (depth == best) {
+                    candidates.add(path);
+                }
+            }
+        }
+        if (candidates.isEmpty()) {
+            throw new IllegalArgumentException("The ZIP has no .wsdl file");
+        }
+        if (candidates.size() > 1) {
+            throw new IllegalArgumentException("The ZIP has several WSDL files at the same level (" + String.join(", ", candidates)
+                    + "); keep only the service's main WSDL there");
+        }
+        String main = candidates.get(0);
+        return importWsdl(id, name, main, entries.get(main), SafeXml.Sources.ofZip(entries), null);
+    }
+
+    /** The files of a ZIP by path; refuses absolute paths, {@code ..}, and more than the size limits. */
+    static Map<String, byte[]> unzip(byte[] zip) throws IOException {
+        Map<String, byte[]> out = new LinkedHashMap<>();
+        long total = 0;
+        try (java.util.zip.ZipInputStream in = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zip))) {
+            for (java.util.zip.ZipEntry e; (e = in.getNextEntry()) != null; ) {
+                if (e.isDirectory()) {
+                    continue;
+                }
+                String path = e.getName().replace('\\', '/');
+                if (path.startsWith("/") || path.matches("^[A-Za-z]:.*") || List.of(path.split("/")).contains("..")) {
+                    throw new IllegalArgumentException("The ZIP entry " + e.getName() + " has a path outside the ZIP");
+                }
+                if (out.size() >= MAX_ZIP_ENTRIES) {
+                    throw new IllegalArgumentException("The ZIP has more than " + MAX_ZIP_ENTRIES + " files");
+                }
+                java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                for (int n; (n = in.read(buf)) > 0; ) {
+                    total += n;
+                    if (total > MAX_ZIP_BYTES) {
+                        throw new IllegalArgumentException("The ZIP holds more than " + MAX_ZIP_BYTES / 1024 / 1024 + " MB");
+                    }
+                    bytes.write(buf, 0, n);
+                }
+                out.put(path, bytes.toByteArray());
+            }
+        } catch (java.util.zip.ZipException e) {
+            throw new IllegalArgumentException("Not a valid ZIP: " + e.getMessage());
+        }
+        if (out.isEmpty()) {
+            throw new IllegalArgumentException("The ZIP is empty or not a ZIP");
+        }
+        return out;
+    }
+
+    /**
+     * Reads the WSDL, then stores every file it used in {@code contracts/<id>.wsdl/} (replacing what was there) and
+     * the normalized contract. {@code mainKey}: the WSDL's path in the ZIP or its URL.
+     */
+    private Contract importWsdl(String id, String name, String mainKey, byte[] main, SafeXml.Sources sources, String sourceUrl)
+            throws IOException {
+        WsdlImporter.Result r = WsdlImporter.read(mainKey, main, sources);
+        Map<String, String> files = new LinkedHashMap<>();
+        Map<String, byte[]> stored = new LinkedHashMap<>();
+        String sourceFile = null;
+        for (Map.Entry<String, byte[]> e : sources.used().entrySet()) {
+            String file = sources.isZip() ? e.getKey() : uniqueName(fileName(e.getKey()), stored.keySet());
+            stored.put(file, e.getValue());
+            files.put(file, e.getKey());
+            if (e.getKey().equals(mainKey)) {
+                sourceFile = id + WSDL_DIR + "/" + file;
+            }
+        }
+        removeSources(id);
+        java.nio.file.Path dir = store.root().resolve("contracts").resolve(id + WSDL_DIR);
+        for (Map.Entry<String, byte[]> e : stored.entrySet()) {
+            java.nio.file.Path target = dir.resolve(e.getKey()).normalize();
+            if (!target.startsWith(dir)) {
+                throw new IllegalArgumentException("The file " + e.getKey() + " has a path outside the contract");
+            }
+            java.nio.file.Files.createDirectories(target.getParent());
+            store.write(target, out -> out.write(e.getValue()));
+        }
+        Contract contract = new Contract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), r.servers(),
+                r.operations(), r.warnings(), Contract.WSDL, files);
+        store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), contract);
+        return contract;
+    }
+
+    /** The folder suffix of a WSDL contract's original files. */
+    static final String WSDL_DIR = ".wsdl";
+
+    /** Removes the original files of contract {@code id}: {@code <id>.openapi.*} and the {@code <id>.wsdl/} folder. */
+    void removeSources(String id) throws IOException {
+        java.nio.file.Path dir = store.root().resolve("contracts");
+        if (!java.nio.file.Files.isDirectory(dir)) {
+            return;
+        }
+        try (java.util.stream.Stream<java.nio.file.Path> s = java.nio.file.Files.list(dir)) {
+            for (java.nio.file.Path p : s.toList()) {
+                String n = p.getFileName().toString();
+                if (n.startsWith(id + ".openapi.")) {
+                    java.nio.file.Files.delete(p);
+                } else if (n.equals(id + WSDL_DIR) && java.nio.file.Files.isDirectory(p)) {
+                    deleteTree(p);
+                }
+            }
+        }
+    }
+
+    static void deleteTree(java.nio.file.Path dir) throws IOException {
+        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(dir)) {
+            for (java.nio.file.Path p : walk.sorted(java.util.Comparator.reverseOrder()).toList()) {
+                java.nio.file.Files.delete(p);
+            }
+        }
+    }
+
+    /** A file name for a fetched URL: its last path segment plus its query, e.g. {@code person_xsd=1.xsd}. */
+    static String fileName(String url) {
+        URI u;
+        try {
+            u = URI.create(url);
+        } catch (IllegalArgumentException e) {
+            return "file.xml";
+        }
+        String path = u.getPath() == null ? "" : u.getPath();
+        String last = path.substring(path.lastIndexOf('/') + 1);
+        String query = u.getQuery();
+        String n = (last.isEmpty() ? "service" : last) + (query == null ? "" : "_" + query);
+        n = n.replaceAll("[^A-Za-z0-9._=-]", "_");
+        if (query != null) {
+            n += query.toLowerCase().startsWith("wsdl") ? ".wsdl" : ".xsd";
+        }
+        return n;
+    }
+
+    private static String uniqueName(String base, java.util.Set<String> taken) {
+        String n = base;
+        for (int i = 2; taken.contains(n); i++) {
+            int dot = base.lastIndexOf('.');
+            n = dot < 0 ? base + "-" + i : base.substring(0, dot) + "-" + i + base.substring(dot);
+        }
+        return n;
     }
 
     /** Server URL with its variables filled with their defaults (base URL rule). */

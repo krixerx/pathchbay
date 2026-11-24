@@ -124,6 +124,10 @@ public class IntegrationProcessors {
         });
         // The connection's headers win over mapped ones of the same name; the auth header wins over both (D-27).
         ci.headers().forEach(h -> msg.setHeader(h.name(), h.value()));
+        // SOAP 1.1 names the operation in SOAPAction; SOAP 1.2 carries it in the Content-Type (D-30).
+        if (ci.soap() != null && SoapEnvelope.soapAction(ci.soap()) != null) {
+            msg.setHeader("SOAPAction", SoapEnvelope.soapAction(ci.soap()));
+        }
         // What the call log shows: the same request, with auth and secret header values as *** (D-22).
         Map<String, Object> shownHeaders = new LinkedHashMap<>();
         msg.getHeaders().forEach((k, v) -> {
@@ -137,6 +141,10 @@ public class IntegrationProcessors {
         if (auth != null) {
             if ("bearer".equals(auth.type())) {
                 msg.setHeader("Authorization", "Bearer " + ci.secret());
+                shownHeaders.put("Authorization", "***");
+            } else if ("basic".equals(auth.type())) {
+                msg.setHeader("Authorization", "Basic " + java.util.Base64.getEncoder().encodeToString(
+                        ci.secret().getBytes(java.nio.charset.StandardCharsets.UTF_8)));
                 shownHeaders.put("Authorization", "***");
             } else if ("header".equals(auth.in())) {
                 msg.setHeader(auth.name(), ci.secret());
@@ -171,6 +179,9 @@ public class IntegrationProcessors {
             msg.setBody(form.bytes());
         } else if (hasBody) {
             msg.setHeader(Exchange.CONTENT_TYPE, ci.requestContentType());
+            if (ci.soap() != null) {
+                shownHeaders.put(Exchange.CONTENT_TYPE, ci.requestContentType());
+            }
             msg.setBody(ci.requestBody(mapped.path("body")));
         } else {
             msg.setBody(null);
@@ -180,7 +191,8 @@ public class IntegrationProcessors {
         request.put("url", msg.getHeader(Exchange.HTTP_URI, String.class) + (shownQuery.isEmpty() ? "" : "?" + shownQuery));
         request.put("headers", shownHeaders);
         request.put("body", !hasBody ? null
-                : ci.definition().wire().requestXml() ? Json.MAPPER.getNodeFactory().textNode(msg.getBody(String.class))
+                : ci.definition().wire().requestXml() || ci.definition().wire().requestSoap()
+                        ? Json.MAPPER.getNodeFactory().textNode(msg.getBody(String.class))
                 : Blobs.forLog(mapped.path("body")));
         trace.request = request;
         trace.stage = "response";
@@ -205,6 +217,24 @@ public class IntegrationProcessors {
             trace.response = response;
         }
 
+        SoapEnvelope.Answer soapAnswer = null;
+        if (ci.soap() != null) {
+            soapAnswer = SoapEnvelope.read(new String(bytes, CompiledIntegration.charset(contentType)));
+            if (soapAnswer != null && soapAnswer.fault() != null) {
+                // A JSON caller can't use a fault envelope: it gets the engine's error with the fault in it (D-30).
+                SoapEnvelope.Fault fault = soapAnswer.fault();
+                int out = status >= 400 ? status : 502;
+                trace.problems = List.of("The external system answered " + status + " with a SOAP Fault: " + fault.code() + " "
+                        + fault.reason() + "; the caller got " + out + " remote-fault");
+                ObjectNode error = (ObjectNode) Json.MAPPER.readTree(Json.error("remote-fault", ci.definition().id(), fault.reason()));
+                error.set("fault", fault.toJson());
+                msg.setHeader(Exchange.HTTP_RESPONSE_CODE, out);
+                msg.setHeader("X-Integration-Error", "remote");
+                msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
+                msg.setBody(error.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return;
+            }
+        }
         if (status >= 400) {
             trace.problems = List.of("The external system answered " + status + "; the caller got this status and body");
             // Runtime rule: external errors pass through with their status and body, byte for byte.
@@ -218,7 +248,14 @@ public class IntegrationProcessors {
         String output;
         CompiledIntegration.Answer answer;
         try {
-            output = ci.mapAnswer(bytes, contentType, contentDisposition, maxBlobBytes);
+            if (ci.soap() != null) {
+                if (soapAnswer == null) {
+                    throw new IllegalArgumentException("the answer is not a SOAP envelope");
+                }
+                output = ci.mapSoapBody(soapAnswer.bodyXml());
+            } else {
+                output = ci.mapAnswer(bytes, contentType, contentDisposition, maxBlobBytes);
+            }
             answer = ci.answer(output);
         } catch (CompiledIntegration.RemoteFileException e) {
             throw e;

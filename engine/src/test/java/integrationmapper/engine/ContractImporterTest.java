@@ -112,7 +112,7 @@ class ContractImporterTest {
     @Test
     void notAContractIsRefused() {
         assertThatThrownBy(() -> importer().importContract("x", "X", "{\"hello\":\"world\"}", null))
-                .hasMessageContaining("Not an OpenAPI or Swagger file");
+                .hasMessageContaining("OpenAPI 3, Swagger 2.0 or WSDL 1.1"); // D-30: names every accepted contract type
     }
 
     /** D-29: format binary is a file (blob) in multipart parts, raw bodies and raw answers; format byte (base64) stays text. */

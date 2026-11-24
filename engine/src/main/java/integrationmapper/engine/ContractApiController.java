@@ -91,15 +91,8 @@ public class ContractApiController {
             throw new IllegalArgumentException("Contract " + id + " is used by " + String.join(", ", users)
                     + ". Pick another operation there or delete those integrations first.");
         }
-        Path dir = store.root().resolve("contracts");
-        try (Stream<Path> s = Files.list(dir)) {
-            for (Path p : s.filter(p -> p.getFileName().toString().startsWith(id + ".")).toList()) {
-                String rest = p.getFileName().toString().substring(id.length());
-                if (rest.equals(".json") || rest.startsWith(".openapi.")) {
-                    Files.delete(p);
-                }
-            }
-        }
+        importer.removeSources(id);
+        Files.deleteIfExists(store.root().resolve("contracts").resolve(id + ".json"));
         return ResponseEntity.noContent().build();
     }
 
@@ -120,12 +113,26 @@ public class ContractApiController {
         return out;
     }
 
-    record ImportRequest(String name, String url, String content) {
+    /** {@code zip}: a base64 ZIP with a WSDL and its XSD files (D-30); it wins over {@code content} and {@code url}. */
+    record ImportRequest(String name, String url, String content, String zip) {
+
+        boolean hasZip() {
+            return zip != null && !zip.isBlank();
+        }
     }
 
-    /** The URL the file is read from: none when content was uploaded, which wins over a URL. */
+    /** The ZIP's bytes; invalid base64 is a 400. */
+    private static byte[] zipBytes(ImportRequest req) {
+        try {
+            return java.util.Base64.getDecoder().decode(req.zip().replaceAll("\\s", ""));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("The ZIP is not valid base64");
+        }
+    }
+
+    /** The URL the file is read from: none when content or a ZIP was uploaded, which win over a URL. */
     private static String sourceUrl(ImportRequest req) {
-        if (req.content() != null && !req.content().isBlank()) {
+        if (req.hasZip() || (req.content() != null && !req.content().isBlank())) {
             return null;
         }
         return req.url() == null || req.url().isBlank() ? null : req.url().strip();
@@ -138,6 +145,9 @@ public class ContractApiController {
         String id = ConsoleApiController.slugify(req.name());
         if (id.isEmpty()) {
             throw new IllegalArgumentException("Give the contract a name, for example the name of the external system");
+        }
+        if (req.hasZip()) {
+            return json(importer.importZip(id, req.name().strip(), zipBytes(req)));
         }
         String url = sourceUrl(req);
         String text = req.content() != null && !req.content().isBlank() ? req.content() : url != null ? importer.fetch(url) : null;
@@ -160,24 +170,36 @@ public class ContractApiController {
         String url = sourceUrl(req);
         String text = req.content() != null && !req.content().isBlank() ? req.content() : url != null ? importer.fetch(url) : null;
         Contract updated;
-        if (text == null) {
+        if (req.hasZip()) {
+            // The importer replaces every original file of the contract, so nothing of the old one stays behind.
+            updated = importer.importZip(id, name, zipBytes(req));
+        } else if (text == null) {
             updated = new Contract(id, name, old.sourceFile(), old.sourceUrl(), old.importedAt(), old.servers(), old.operations(),
-                    old.warnings());
+                    old.warnings(), old.sourceKind(), old.files());
             store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), updated);
         } else {
             updated = importer.importContract(id, name, text, url);
-            if (old.sourceFile() != null && !old.sourceFile().equals(updated.sourceFile())) {
-                Files.deleteIfExists(store.root().resolve("contracts").resolve(old.sourceFile()));
-            }
         }
         ObjectNode out = Json.MAPPER.valueToTree(updated);
         ArrayNode notes = out.putArray("notes");
         Set<String> ops = updated.operations().stream().map(Contract.Operation::id).collect(Collectors.toSet());
         for (String slug : usedBy(id)) {
-            String opId = draft(slug).path("operationId").asText(null);
+            ObjectNode d = draft(slug);
+            String opId = d.path("operationId").asText(null);
             if (opId != null && !ops.contains(opId)) {
                 notes.add("Integration " + slug + " calls " + opId + ", which is not in the new file. Pick another operation on its board;"
                         + " its live version keeps working until you publish again.");
+            } else if (opId != null && d.path("target").isObject()) {
+                // A SOAP draft takes the new namespaces, action and order at once; its live version keeps the old ones
+                // until it is published again (D-30).
+                Contract.Operation op = updated.operations().stream().filter(o -> o.id().equals(opId)).findFirst().orElseThrow();
+                JsonNode now = op.isSoap() && op.unsupported() == null ? Json.MAPPER.valueToTree(op.soap()) : null;
+                if (now != null && !now.equals(d.path("target").path("soap"))) {
+                    ((ObjectNode) d.get("target")).set("soap", now);
+                    store.writeJson(store.service(slug), d);
+                    notes.add("Integration " + slug + " takes the new SOAP details of " + opId + " when you publish it again;"
+                            + " its live version keeps the old ones until then.");
+                }
             }
         }
         return json(out);
@@ -274,6 +296,9 @@ public class ContractApiController {
         Contract.Operation op = c.operations().stream().filter(o -> o.id().equals(req.operationId())).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Contract " + c.id() + " has no operation " + req.operationId()));
         ObjectNode d = draft(slug);
+        if (op.unsupported() != null) {
+            throw new IllegalArgumentException("Operation " + op.id() + " can't be used: " + op.unsupported());
+        }
         d.put("contract", c.id());
         d.put("operationId", op.id());
         ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
@@ -281,8 +306,25 @@ public class ContractApiController {
         target.put("path", op.path());
         target.put("connection", c.id());
         target.remove("baseUrl");
+        // A SOAP operation brings its envelope details and the soap request format; any other drops them (D-30).
+        ObjectNode formats = d.has("formats") && d.get("formats").isObject() ? (ObjectNode) d.get("formats") : null;
+        if (op.isSoap()) {
+            target.set("soap", Json.MAPPER.valueToTree(op.soap()));
+            if (formats == null) {
+                formats = d.putObject("formats");
+            }
+            formats.put("request", "soap");
+            formats.remove("requestRoot");
+        } else {
+            target.remove("soap");
+            if (formats != null && "soap".equals(formats.path("request").asText())) {
+                formats.remove("request");
+            }
+        }
+        String address = op.isSoap() && op.soap().address() != null && op.soap().address().matches("https?://.+") ? op.soap().address() : null;
         if (connections.baseUrl(c.id()) == null) {
-            String first = c.servers().stream().filter(s -> s.startsWith("http://") || s.startsWith("https://")).findFirst().orElse(null);
+            String first = address != null ? address
+                    : c.servers().stream().filter(s -> s.startsWith("http://") || s.startsWith("https://")).findFirst().orElse(null);
             if (first != null) {
                 connections.save(c.id(), first);
             }

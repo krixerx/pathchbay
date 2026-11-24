@@ -62,9 +62,12 @@ A service can authenticate to the external system:
 
 ```json
 "auth": { "type": "bearer" }
+"auth": { "type": "basic" }
 "auth": { "type": "apiKey", "in": "header", "name": "X-Api-Key" }
 "auth": { "type": "apiKey", "in": "query",  "name": "api_key" }
 ```
+
+For `basic` (D-30) the secret is `username:password`, sent as `Authorization: Basic <base64>`; publishing with a secret that has no colon fails.
 
 The secret is never stored in service or version files. It is read, in this order, from the environment variable `MAPPER_SECRET_<SLUG>` (slug in capitals, other characters as `_`), then from `config/secrets/<slug>.json` (`{"value": "..."}`, git-ignored). Publishing without a secret fails with a message naming both places.
 
@@ -123,6 +126,8 @@ Types: `text`, `number`, `integer`, `boolean`, `date`, `datetime`, `object` (wit
 
 Optional `"formats": { "request": "xml", "requestRoot": "Book", "output": "xml", "outputRoot": "bookRef" }` (D-24) sends the request body to the external system as XML under `<Book>` and returns XML under `<bookRef>` to callers; either part left out means JSON. The external answer is read as XML or JSON by its Content-Type. When reading XML the root element is dropped, elements and attributes become fields, repeated elements become lists (also a single one where a response link expects a list), and values get the Output definition's types.
 
+A SOAP operation uses `"formats": { "request": "soap" }` and a `target.soap` block instead; see "SOAP services" below.
+
 `target.connection` names the connection whose base URL is used (D-26): `MAPPER_URL_<ID>` if set, else `connections/<id>.json` with `{"baseUrl": "https://..."}`. The console names the connection after the Swagger configuration and writes that file with **Connection** under Configuration. `connections/` and `secrets/` belong to one environment; everything else in the folder can be moved between environments unchanged. A literal `target.baseUrl` still works in files from before connections; at startup, drafts that came from a Swagger configuration move it into that configuration's connection.
 
 A connection can also send headers on every call to its system (D-27): `"headers": [{"name": "X-Client-Id", "value": "abc"}, {"name": "X-Tenant-Key", "secret": true}]` in `connections/<id>.json`. `MAPPER_HEADER_<ID>_<NAME>` wins over the value in the file. A secret header has no value in the connection file; it is in `secrets/connections/<id>.json` as `{"X-Tenant-Key": "..."}` and shows as `***` in the console, the Test drawer and the call log. If a mapped header has the same name, the connection's value is sent; the auth header wins over both.
@@ -157,6 +162,62 @@ A field the caller did not send is left out of the external request, not sent as
 
 Any broken link (unknown field id) or link that breaks these rules stops the version from publishing, and the error lists every problem at once (R8).
 
+## SOAP services (WSDL contracts)
+
+A SOAP service is imported from its WSDL 1.1 contract and published as an ordinary REST endpoint (D-30): callers POST JSON to `/api/v1/integrations/<slug>`, and the engine sends a SOAP envelope to the external system.
+
+```bash
+# By URL; schemas on the same scheme, host and port (e.g. ?xsd=1) are fetched too
+curl -X POST localhost:8080/admin/api/contracts -H 'Content-Type: application/json' \
+  -d '{"name":"Person registry","url":"https://registry.example/ws/person?wsdl"}'
+
+# A ZIP with the WSDL and its XSD files, as base64; the WSDL is the one .wsdl file nearest the top
+curl -X POST localhost:8080/admin/api/contracts -H 'Content-Type: application/json' \
+  -d "{\"name\":\"Person registry\",\"zip\":\"$(base64 -w0 person-registry.zip)\"}"
+```
+
+A single WSDL file can also be sent as `content`, like an OpenAPI file; then any XSD it imports from a separate file is missing, which the import lists as a warning (affected fields become text). The engine reads WSDL and XSD with DTDs and external entities switched off. It follows `import`/`include` locations only inside the uploaded ZIP or on the contract URL's scheme, host and port; other locations are skipped with a warning, and a ZIP path that leaves the ZIP fails the import. The originals are kept in `contracts/<id>.wsdl/`, and a re-import replaces all of them. A ZIP may hold up to 500 files and 20 MB. Drafts calling a SOAP operation of a re-imported contract take its new SOAP details at once; their live versions keep the old ones until they are published again.
+
+**Operations.** Every port with a SOAP 1.1 or 1.2 binding lists its operations with id `<port>/<operation>` (for example `PersonSoap/GetPerson` and `PersonSoap12/GetPerson` when a WSDL offers both versions). Only document/literal operations whose message parts refer to elements can be chosen; RPC style, encoded use and HTTP bindings are listed with the reason. The request tree is the children of the input element, the response tree the children of the output element.
+
+**XSD.** Supported: elements and element references, named and anonymous complex types with `sequence` or `all`, `complexContent` extension (base type fields first), `simpleContent`, simple types and their restrictions (typed by the built-in they restrict), `minOccurs`/`maxOccurs`, `nillable`. Types: `int`, `long`, `short`, `integer` and the other integer types are integer; `decimal`, `float`, `double` are number; `boolean`; `date`; `dateTime` is datetime; everything else, including `base64Binary` (format `byte`), is text. `maxOccurs` above 1 makes a list; `minOccurs="0"` or `nillable` makes a field optional. A `choice` shows its first option, and `any`, attributes and recursive types are left out; each gives a warning.
+
+**The target.** Choosing a SOAP operation sets `"method": "POST"`, `"formats": { "request": "soap" }` and a `soap` block on the target, which is copied into every version file so a published version never reads the contract again:
+
+```json
+"target": {
+  "connection": "person-registry", "method": "POST", "path": "",
+  "soap": {
+    "version": "1.1",
+    "action": "urn:GetPerson",
+    "body": { "name": "GetPerson", "ns": "urn:example:person" },
+    "address": "https://registry.example/ws/person",
+    "request": {
+      "ns": { "body.address.street": "urn:example:common" },
+      "order": { "body": ["personCode", "includeHistory"] }
+    },
+    "response": { "element": "GetPersonResponse", "lists": ["person.phones[]"] }
+  }
+}
+```
+
+`request.ns` gives the namespace of each element path whose namespace differs from the body element's (`""` for an unqualified element); `request.order` the XSD sequence order of an object's children; `response.lists` the repeated elements of the answer. `address` is the WSDL's port address, used only to prefill the connection's base URL. The request format stays `soap` for a SOAP operation and can't be chosen for any other.
+
+**The call.** Request links go to `body.` as usual (`body.personCode`, `body.address.city`). The engine writes the mapped body inside the body element, every element in its namespace and in sequence order; a field the caller left out is left out, an explicit `null` is sent as `xsi:nil="true"`, and a list is written as repeated elements. SOAP 1.1 is sent as `text/xml; charset=utf-8` with `SOAPAction: "<action>"`, SOAP 1.2 as `application/soap+xml; charset=utf-8; action="<action>"`. The call goes through the same HTTP step as REST: connection, connection headers, auth, cookies, timeout, call log and the Test drawer, and the external system is called exactly once.
+
+**The answer.** The first element in the Body is read by local name (prefixes don't matter), like an XML answer (D-24): repeated elements are lists, also when one occurs once, and values get the Output definition's types. Response links start below that element (`person.firstName`).
+
+**Faults.** A SOAP 1.1 or 1.2 Fault, on any status, answers the caller with the engine's JSON error and `X-Integration-Error: remote`, with the remote status, or 502 when the remote status was below 400:
+
+```json
+{"error":"remote-fault","integration":"find-person","detail":"Unknown person",
+ "fault":{"code":"soap:Client","reason":"Unknown person","detail":{"error":{"code":"404"}}}}
+```
+
+An error answer that is not a SOAP Fault (an HTML 503 page, say) passes through unchanged, as for REST. A successful answer that is not a SOAP envelope is a mapping error (500).
+
+Packages carry a WSDL contract's folder with the integration, so the other environment needs no access to the WSDL's URL.
+
 ## Not built yet
 
-XML from callers, XML namespaces and SOAP (rest of TODO-T4), transforms and conditions (TODO-T1), Git sync of packages, a CI build of the image.
+XML from callers, XML namespaces outside SOAP, transforms and conditions (TODO-T1), Git sync of packages, a CI build of the image. For SOAP (D-30): WSDL 2.0, RPC style, SOAP headers in mappings, WS-Security, MTOM attachments, callers sending XML or SOAP, and publishing an integration as a SOAP service.

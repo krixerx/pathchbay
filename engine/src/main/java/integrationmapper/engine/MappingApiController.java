@@ -79,13 +79,21 @@ public class MappingApiController {
 
     /**
      * Saves the wire formats (D-24, D-29); all JSON removes the setting, so drafts that never used XML or files stay
-     * as they were. Root elements are kept only for XML.
+     * as they were. Root elements are kept only for XML. The request format of a SOAP operation is always soap, and
+     * soap only goes with a SOAP operation (D-30): it is set by choosing the operation, not here.
      */
     @PutMapping("/formats")
     public ResponseEntity<String> saveFormats(@PathVariable String slug, @RequestBody String body) throws IOException {
         ServiceDefinition.Formats f = read(body, ServiceDefinition.Formats.class);
         f.check(slug);
         ObjectNode d = draft(slug);
+        boolean soapOperation = d.path("target").path("soap").isObject();
+        if (f.requestSoap() && !soapOperation) {
+            throw new IllegalArgumentException("Request format soap comes with a SOAP operation; choose one from a WSDL contract");
+        }
+        if (soapOperation) {
+            f = new ServiceDefinition.Formats("soap", null, f.output(), f.outputRoot());
+        }
         String request = "json".equals(f.request()) ? null : f.request();
         String output = "json".equals(f.output()) ? null : f.output();
         if (request != null || output != null) {

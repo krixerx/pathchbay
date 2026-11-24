@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Test fixture (D-30): SOAP 1.1 and 1.2 ports, an RPC port, an imported schema in a second namespace. -->
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+                  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+                  xmlns:soap12="http://schemas.xmlsoap.org/wsdl/soap12/"
+                  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+                  xmlns:tns="urn:example:person"
+                  xmlns:c="urn:example:common"
+                  targetNamespace="urn:example:person">
+  <wsdl:types>
+    <xs:schema targetNamespace="urn:example:person" elementFormDefault="qualified">
+      <xs:import namespace="urn:example:common" schemaLocation="schemas/common.xsd"/>
+      <xs:element name="GetPerson">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="personCode" type="xs:string"/>
+            <xs:element name="includeHistory" type="xs:boolean" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="GetPersonResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="person" type="tns:Person" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:complexType name="Person">
+        <xs:sequence>
+          <xs:element name="firstName" type="xs:string"/>
+          <xs:element name="lastName" type="xs:string"/>
+          <xs:element name="birthDate" type="xs:date"/>
+          <xs:element name="height" type="xs:decimal" minOccurs="0"/>
+          <xs:element name="children" type="xs:int"/>
+          <xs:element name="updated" type="xs:dateTime" minOccurs="0"/>
+          <xs:element name="photo" type="xs:base64Binary" minOccurs="0"/>
+          <xs:element name="nickname" type="xs:string" nillable="true"/>
+          <xs:element name="status" type="tns:Status"/>
+          <xs:element name="address" type="c:Address"/>
+          <xs:element name="phones" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+          <xs:element name="relatives" type="tns:Relative" minOccurs="0" maxOccurs="unbounded"/>
+          <xs:element name="manager" type="tns:Person" minOccurs="0"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:complexType name="Relative">
+        <xs:sequence>
+          <xs:element name="name" type="xs:string"/>
+          <xs:element name="phones" type="xs:string" maxOccurs="unbounded"/>
+        </xs:sequence>
+      </xs:complexType>
+      <xs:simpleType name="Status">
+        <xs:restriction base="xs:int"/>
+      </xs:simpleType>
+      <xs:element name="SavePerson">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="firstName" type="xs:string"/>
+            <xs:element name="lastName" type="xs:string"/>
+            <xs:element name="address" type="c:Address" minOccurs="0"/>
+            <xs:element name="contact">
+              <xs:complexType>
+                <xs:choice>
+                  <xs:element name="email" type="xs:string"/>
+                  <xs:element name="phone" type="xs:string"/>
+                </xs:choice>
+              </xs:complexType>
+            </xs:element>
+            <xs:any namespace="##other" minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="SavePersonResponse">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="id" type="xs:long"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:schema>
+  </wsdl:types>
+  <wsdl:message name="GetPersonRequest"><wsdl:part name="parameters" element="tns:GetPerson"/></wsdl:message>
+  <wsdl:message name="GetPersonResponse"><wsdl:part name="parameters" element="tns:GetPersonResponse"/></wsdl:message>
+  <wsdl:message name="SavePersonRequest"><wsdl:part name="parameters" element="tns:SavePerson"/></wsdl:message>
+  <wsdl:message name="SavePersonResponse"><wsdl:part name="parameters" element="tns:SavePersonResponse"/></wsdl:message>
+  <wsdl:portType name="PersonPort">
+    <wsdl:operation name="GetPerson">
+      <wsdl:documentation>Finds a person by personal code</wsdl:documentation>
+      <wsdl:input message="tns:GetPersonRequest"/>
+      <wsdl:output message="tns:GetPersonResponse"/>
+    </wsdl:operation>
+    <wsdl:operation name="SavePerson">
+      <wsdl:input message="tns:SavePersonRequest"/>
+      <wsdl:output message="tns:SavePersonResponse"/>
+    </wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="PersonSoap" type="tns:PersonPort">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="GetPerson">
+      <soap:operation soapAction="urn:GetPerson"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SavePerson">
+      <soap:operation soapAction="urn:SavePerson"/>
+      <wsdl:input><soap:body use="literal"/></wsdl:input>
+      <wsdl:output><soap:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="PersonSoap12" type="tns:PersonPort">
+    <soap12:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="GetPerson">
+      <soap12:operation soapAction="urn:GetPerson"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SavePerson">
+      <soap12:operation soapAction="urn:SavePerson"/>
+      <wsdl:input><soap12:body use="literal"/></wsdl:input>
+      <wsdl:output><soap12:body use="literal"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:binding name="PersonRpc" type="tns:PersonPort">
+    <soap:binding style="rpc" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <wsdl:operation name="GetPerson">
+      <soap:operation soapAction="urn:GetPerson"/>
+      <wsdl:input><soap:body use="literal" namespace="urn:example:person"/></wsdl:input>
+      <wsdl:output><soap:body use="literal" namespace="urn:example:person"/></wsdl:output>
+    </wsdl:operation>
+    <wsdl:operation name="SavePerson">
+      <soap:operation soapAction="urn:SavePerson"/>
+      <wsdl:input><soap:body use="encoded" namespace="urn:example:person"/></wsdl:input>
+      <wsdl:output><soap:body use="encoded" namespace="urn:example:person"/></wsdl:output>
+    </wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="PersonService">
+    <wsdl:port name="PersonSoap" binding="tns:PersonSoap">
+      <soap:address location="http://registry.example/ws/person"/>
+    </wsdl:port>
+    <wsdl:port name="PersonSoap12" binding="tns:PersonSoap12">
+      <soap12:address location="http://registry.example/ws/person"/>
+    </wsdl:port>
+    <wsdl:port name="PersonRpc" binding="tns:PersonRpc">
+      <soap:address location="http://registry.example/ws/person-rpc"/>
+    </wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

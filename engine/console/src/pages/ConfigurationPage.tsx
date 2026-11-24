@@ -58,7 +58,7 @@ export function ConfigurationPage() {
       <div>
         <Title order={2}>Configuration</Title>
         <Text c="dimmed" size="sm">
-          Swagger and OpenAPI files of the external systems. Import one once; every integration can call its operations.
+          Swagger, OpenAPI and WSDL files of the external systems. Import one once; every integration can call its operations.
         </Text>
       </div>
 
@@ -220,7 +220,17 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
     setError(null);
     setResult(null);
     try {
-      const source = mode === 'file' ? (file ? { content: await file.text() } : {}) : url.trim() ? { url } : {};
+      // A ZIP (a WSDL with its XSD files, D-30) goes as base64; any other file as text.
+      const source =
+        mode === 'file'
+          ? file
+            ? file.name.toLowerCase().endsWith('.zip')
+              ? { zip: await toBase64(file) }
+              : { content: await file.text() }
+            : {}
+          : url.trim()
+            ? { url }
+            : {};
       const saved = existing ? await api.updateContract(existing.id, name, source) : await api.importContract(name, source);
       setResult(saved);
       if (!existing) setName('');
@@ -239,7 +249,7 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
   return (
     <Paper withBorder={!existing} p={existing ? 0 : 'md'} maw={720}>
       <Stack gap="sm">
-        {!existing && <Text fw={600}>Import a Swagger or OpenAPI file</Text>}
+        {!existing && <Text fw={600}>Import a Swagger, OpenAPI or WSDL file</Text>}
         <TextInput
           label="Name of the external system"
           description={
@@ -268,10 +278,10 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
           </Tabs.List>
           <Tabs.Panel value="file" pt="sm">
             <FileInput
-              label="OpenAPI or Swagger file"
-              description="JSON or YAML. Swagger 2.0 is converted."
+              label="OpenAPI, Swagger or WSDL file"
+              description="JSON or YAML (Swagger 2.0 is converted), a WSDL 1.1 file, or a ZIP with a WSDL and its XSD files."
               placeholder="Choose a file"
-              accept=".json,.yaml,.yml,application/json"
+              accept=".json,.yaml,.yml,.wsdl,.xml,.zip,application/json"
               value={file}
               onChange={setFile}
               clearable
@@ -279,7 +289,7 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
           </Tabs.Panel>
           <Tabs.Panel value="url" pt="sm">
             <TextInput
-              label="URL of the OpenAPI or Swagger file"
+              label="URL of the OpenAPI, Swagger or WSDL file"
               description="The engine fetches it, so it must be reachable from where the engine runs."
               placeholder="https://example.org/swagger/v1/swagger.json"
               value={url}
@@ -323,4 +333,14 @@ function ImportForm(props: { existing?: ContractSummary; onImported: () => void 
       </Stack>
     </Paper>
   );
+}
+
+/** A file's bytes as base64, for a ZIP upload. */
+async function toBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
 }

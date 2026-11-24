@@ -56,12 +56,12 @@ export interface IntegrationSummary {
 }
 
 /**
- * Wire formats (D-24, D-29): how the request body goes to the external system and what callers get back. Missing
- * means JSON. An XML document needs a root element name. `binary` is one file as the raw body; `multipart` sends
- * one part per body field.
+ * Wire formats (D-24, D-29, D-30): how the request body goes to the external system and what callers get back.
+ * Missing means JSON. An XML document needs a root element name. `binary` is one file as the raw body; `multipart`
+ * sends one part per body field; `soap` is set by choosing a SOAP operation and can't be switched.
  */
 export interface Formats {
-  request?: 'json' | 'xml' | 'binary' | 'multipart';
+  request?: 'json' | 'xml' | 'binary' | 'multipart' | 'soap';
   requestRoot?: string;
   output?: 'json' | 'xml' | 'binary';
   outputRoot?: string;
@@ -76,7 +76,7 @@ export interface IntegrationDraft {
   contract?: string;
   operationId?: string;
   /** `connection` gives the base URL in each environment (D-26); a literal `baseUrl` only in older files. */
-  target?: { baseUrl?: string; method?: string; path?: string; connection?: string };
+  target?: { baseUrl?: string; method?: string; path?: string; connection?: string; soap?: SoapTarget };
   formats?: Formats;
   /** Headers added on the board for the external call (D-27); request link targets like contract headers. */
   addedHeaders?: string[];
@@ -134,6 +134,14 @@ export interface ContractParameter {
   type: string;
 }
 
+/** What a SOAP call needs beyond method and URL (D-30); engine `SoapTarget`. */
+export interface SoapTarget {
+  version: '1.1' | '1.2';
+  action?: string;
+  body?: { name: string; ns: string };
+  address?: string;
+}
+
 export interface ContractOperation {
   id: string;
   method: string;
@@ -143,6 +151,11 @@ export interface ContractOperation {
   requestBody?: Field;
   responseStatus?: string;
   response?: Field;
+  /** `soap` for an operation of a WSDL contract (D-30). */
+  protocol?: 'soap';
+  soap?: SoapTarget;
+  /** Why the operation can't be chosen (RPC style, encoded use, ...). */
+  unsupported?: string;
 }
 
 export interface Contract {
@@ -154,6 +167,8 @@ export interface Contract {
   servers: string[];
   operations: ContractOperation[];
   warnings: string[];
+  /** `wsdl` for a WSDL contract (D-30); missing for OpenAPI. */
+  sourceKind?: 'wsdl';
 }
 
 /** A Test drawer run (engine TestRunner): where it stopped, and what each step produced. */
@@ -215,6 +230,7 @@ export interface VersionList {
 
 export type Auth =
   | { type: 'bearer' }
+  | { type: 'basic' }
   | { type: 'apiKey'; in: 'header' | 'query'; name: string };
 
 export interface IntegrationSettings {

@@ -52,6 +52,19 @@ export function FormatSwitch(props: {
     );
   };
 
+  // A SOAP operation's request is always a SOAP envelope (D-30); the switch is shown but fixed.
+  if (tab === 'request' && format === 'soap') {
+    return (
+      <Group gap="sm" align="center">
+        <Text size="sm">Send to the API as</Text>
+        <SegmentedControl size="xs" value="soap" data={[{ value: 'soap', label: 'SOAP' }]} disabled />
+        <Text size="xs" c="dimmed">
+          A SOAP envelope, with the namespaces and element order of the WSDL.
+        </Text>
+      </Group>
+    );
+  }
+
   return (
     <Group gap="sm" align="center">
       <Text size="sm">{tab === 'request' ? 'Send to the API as' : 'Return to callers as'}</Text>

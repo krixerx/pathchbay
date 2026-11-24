@@ -44,7 +44,13 @@ public final class CompiledIntegration {
         this.headers = headers;
         this.request = request;
         this.response = response;
-        this.responseLists = XmlFormat.listPaths(definition.response().links().stream().map(ServiceDefinition.Link::from).toList());
+        List<String> fromLinks = definition.response().links().stream().map(ServiceDefinition.Link::from).toList();
+        List<String> lists = new ArrayList<>(fromLinks);
+        // A SOAP answer also knows its lists from the XSD, so a repeated element that occurs once is a list (D-30).
+        if (soap() != null) {
+            lists.addAll(soap().responseLists());
+        }
+        this.responseLists = XmlFormat.listPaths(lists);
         this.readsWholeAnswer = definition.response().links().stream()
                 .anyMatch(l -> l.from().equals(LinkRules.WHOLE_ANSWER) || l.from().startsWith(LinkRules.WHOLE_ANSWER + "."));
     }
@@ -134,6 +140,7 @@ public final class CompiledIntegration {
             String secret, String baseUrl, List<Connections.Header> headers) {
         try {
             def.wire().check(def.id());
+            checkSoap(def);
             checkFiles(def, input, output);
             // Both scripts are generated before failing, so the problems of request and response come at once (R8).
             String req = null;
@@ -158,6 +165,23 @@ public final class CompiledIntegration {
         }
     }
 
+    /** A SOAP integration (D-30): format soap, a target.soap block and POST, all three or none. */
+    private static void checkSoap(ServiceDefinition def) {
+        SoapTarget soap = def.target().soap();
+        boolean format = def.wire().requestSoap();
+        if (format != (soap != null)) {
+            throw new IllegalArgumentException("Integration " + def.id() + ": request format soap and target.soap go together; choose the"
+                    + " SOAP operation again");
+        }
+        if (soap != null) {
+            soap.check(def.id());
+            if (!"POST".equals(def.target().method())) {
+                throw new IllegalArgumentException("Integration " + def.id() + ": a SOAP operation is called with POST, not "
+                        + def.target().method());
+            }
+        }
+    }
+
     /** How files and formats fit together (D-29); the single links are checked by {@link LinkRules}. */
     private static void checkFiles(ServiceDefinition def, PayloadDefinition input, PayloadDefinition output) {
         ServiceDefinition.Formats f = def.wire();
@@ -165,7 +189,7 @@ public final class CompiledIntegration {
             throw new IllegalArgumentException("Integration " + def.id() + ": request format " + f.request()
                     + " needs POST, PUT or PATCH, which send a body");
         }
-        if ((f.requestXml() && hasFile(input)) || (f.outputXml() && hasFile(output))) {
+        if (((f.requestXml() || f.requestSoap()) && hasFile(input)) || (f.outputXml() && hasFile(output))) {
             throw new IllegalArgumentException("Integration " + def.id() + ": files (blobs) can't go into XML yet");
         }
         if (f.outputBinary()) {
@@ -202,6 +226,11 @@ public final class CompiledIntegration {
 
     String secret() {
         return secret;
+    }
+
+    /** The SOAP details of a SOAP integration, null for any other (D-30). */
+    SoapTarget soap() {
+        return definition.target().soap();
     }
 
     String baseUrl() {
@@ -254,16 +283,36 @@ public final class CompiledIntegration {
     /** The request body as the external system takes it. */
     String requestBody(JsonNode body) throws JsonProcessingException {
         ServiceDefinition.Formats f = definition.wire();
+        if (f.requestSoap()) {
+            return SoapEnvelope.write(soap(), body);
+        }
         return f.requestXml() ? XmlFormat.write(body, f.requestRoot()) : Json.MAPPER.writeValueAsString(body);
     }
 
     String requestContentType() {
+        if (definition.wire().requestSoap()) {
+            return SoapEnvelope.contentType(soap());
+        }
         return definition.wire().requestXml() ? "application/xml" : "application/json";
     }
 
     /** What the external system may answer with: the request's own format, anything after a raw file (D-29). */
     String accept() {
+        if (definition.wire().requestSoap()) {
+            return SoapEnvelope.accept(soap());
+        }
         return definition.wire().requestBinary() ? "*/*" : requestContentType();
+    }
+
+    /**
+     * Maps the first Body child of a SOAP answer (D-30) like an XML answer: read by local names, lists from the
+     * links and the XSD, values typed by the Output. An empty Body maps as an empty answer.
+     */
+    String mapSoapBody(String bodyXml) {
+        if (bodyXml == null || bodyXml.isBlank()) {
+            return completeFiles(mapResponse("{}"));
+        }
+        return mapResponse(bodyXml, "text/xml");
     }
 
     /** The mapped Output as callers get it. */

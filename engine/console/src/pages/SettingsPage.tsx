@@ -20,7 +20,7 @@ import { api } from '../api';
 import type { Auth, IntegrationSettings } from '../model';
 import { meaning } from '../theme';
 
-type AuthKind = 'none' | 'bearer' | 'apiKey';
+type AuthKind = 'none' | 'bearer' | 'basic' | 'apiKey';
 
 /**
  * The integration's connection settings, outside the stepper (D-3): how the external system is authenticated, and the
@@ -63,7 +63,14 @@ export function SettingsPage() {
     );
   }
 
-  const auth: Auth | null = kind === 'none' ? null : kind === 'bearer' ? { type: 'bearer' } : { type: 'apiKey', in: keyIn, name: keyName };
+  const auth: Auth | null =
+    kind === 'none'
+      ? null
+      : kind === 'bearer'
+        ? { type: 'bearer' }
+        : kind === 'basic'
+          ? { type: 'basic' }
+          : { type: 'apiKey', in: keyIn, name: keyName };
 
   const save = async () => {
     setSaving(true);
@@ -141,6 +148,7 @@ export function SettingsPage() {
           data={[
             { value: 'none', label: 'None' },
             { value: 'bearer', label: 'Bearer token' },
+            { value: 'basic', label: 'Basic (user and password)' },
             { value: 'apiKey', label: 'API key' },
           ]}
           w="fit-content"
@@ -162,8 +170,13 @@ export function SettingsPage() {
       {kind !== 'none' && (
         <Stack gap="xs">
           <PasswordInput
-            label={kind === 'bearer' ? 'Token' : 'API key'}
-            description={`Currently ${secretSource}. Leave empty to keep it.`}
+            label={kind === 'bearer' ? 'Token' : kind === 'basic' ? 'User and password' : 'API key'}
+            description={
+              kind === 'basic'
+                ? `As username:password. Currently ${secretSource}. Leave empty to keep it.`
+                : `Currently ${secretSource}. Leave empty to keep it.`
+            }
+            placeholder={kind === 'basic' ? 'username:password' : undefined}
             value={secret}
             onChange={(e) => setSecret(e.currentTarget.value)}
             autoComplete="off"

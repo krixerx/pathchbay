@@ -99,6 +99,7 @@ public class IntegrationPublisher {
         if (def.auth() != null) {
             def.auth().check(def.id());
             secret = secrets.resolve(def.id());
+            def.auth().checkSecret(def.id(), secret);
         }
         return CompiledIntegration.compile(def, s.input(), s.output(), secret, connections.resolve(def), connections.headers(def));
     }

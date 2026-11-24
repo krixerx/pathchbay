@@ -94,7 +94,7 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
             clearable
           />
           <Select
-            label="Swagger configuration"
+            label="Swagger or WSDL configuration"
             description={
               <>
                 External system,{' '}
@@ -116,7 +116,8 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
             disabled={!contract}
             data={(contract?.operations ?? []).map((o) => ({
               value: o.id,
-              label: `${o.method} ${o.path}${o.summary ? ` · ${o.summary}` : ''}`,
+              label: `${operationLabel(o)}${o.summary ? ` · ${o.summary}` : ''}${o.unsupported ? ` (not supported: ${o.unsupported})` : ''}`,
+              disabled: !!o.unsupported,
             }))}
             value={currentOp}
             onChange={requestOperation}
@@ -160,7 +161,7 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
           <Text size="sm">
             New operation:{' '}
             <Code>
-              {pendingOp?.method} {pendingOp?.path}
+              {pendingOp && operationLabel(pendingOp)}
             </Code>
           </Text>
           <Group justify="flex-end">
@@ -175,4 +176,9 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
       </Modal>
     </Paper>
   );
+}
+
+/** How an operation is named in the list: SOAP and its port/operation for a WSDL (D-30), else method and path. */
+export function operationLabel(o: { method: string; path: string; id: string; protocol?: string; soap?: { version: string } }) {
+  return o.protocol === 'soap' ? `SOAP ${o.soap?.version ?? ''} ${o.id}`.replace('  ', ' ') : `${o.method} ${o.path}`;
 }

@@ -26,37 +26,51 @@ public record ServiceDefinition(String id, String version, String activeVersion,
     /**
      * The external operation. {@code path} may contain {@code {name}} placeholders filled from the request script's
      * {@code path} object. {@code connection} names the connection that gives the base URL in each environment
-     * (D-26); a literal {@code baseUrl} is only for files written before connections and for tests.
+     * (D-26); a literal {@code baseUrl} is only for files written before connections and for tests. {@code soap}:
+     * the SOAP details of a SOAP operation (D-30), with method POST and request format {@code soap}.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Target(String baseUrl, String method, String path, String connection) {
+    public record Target(String baseUrl, String method, String path, String connection, SoapTarget soap) {
 
         public Target(String baseUrl, String method, String path) {
-            this(baseUrl, method, path, null);
+            this(baseUrl, method, path, null, null);
+        }
+
+        public Target(String baseUrl, String method, String path, String connection) {
+            this(baseUrl, method, path, connection, null);
         }
     }
 
     /**
      * How the external system is authenticated. {@code bearer}: {@code Authorization: Bearer <secret>}.
-     * {@code apiKey}: the secret in header or query parameter {@code name}. The secret itself is never stored here
+     * {@code apiKey}: the secret in header or query parameter {@code name}. {@code basic} (D-30):
+     * {@code Authorization: Basic} from a secret {@code username:password}. The secret itself is never stored here
      * ({@link SecretResolver}).
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record Auth(String type, String in, String name) {
 
         void check(String slug) {
-            boolean ok = "bearer".equals(type)
+            boolean ok = "bearer".equals(type) || "basic".equals(type)
                     || ("apiKey".equals(type) && Set.of("header", "query").contains(in) && name != null && !name.isBlank());
             if (!ok) {
                 throw new IllegalArgumentException("Integration " + slug
-                        + ": auth must be {\"type\":\"bearer\"} or {\"type\":\"apiKey\",\"in\":\"header|query\",\"name\":\"...\"}");
+                        + ": auth must be {\"type\":\"bearer\"}, {\"type\":\"basic\"} or {\"type\":\"apiKey\",\"in\":\"header|query\",\"name\":\"...\"}");
+            }
+        }
+
+        /** A Basic auth secret must be {@code username:password}; checked at publish, with the secret in hand. */
+        void checkSecret(String slug, String secret) {
+            if ("basic".equals(type) && (secret == null || !secret.contains(":"))) {
+                throw new IllegalArgumentException("Integration " + slug + ": for Basic auth the secret must be username:password");
             }
         }
     }
 
     /**
-     * Wire formats (D-24, D-29). {@code request}: how the body goes to the external system, {@code json},
-     * {@code xml}, {@code binary} (one file as the raw body) or {@code multipart}; its answer is read by its
+     * Wire formats (D-24, D-29, D-30). {@code request}: how the body goes to the external system, {@code json},
+     * {@code xml}, {@code binary} (one file as the raw body), {@code multipart} or {@code soap} (a SOAP envelope,
+     * described by {@code target.soap}); its answer is read by its
      * Content-Type either way. {@code output}: what callers get back, {@code json}, {@code xml} or {@code binary}
      * (one file as raw bytes). Missing means json. An XML document needs one root element: {@code requestRoot} and
      * {@code outputRoot} name it.
@@ -65,7 +79,7 @@ public record ServiceDefinition(String id, String version, String activeVersion,
     public record Formats(String request, String requestRoot, String output, String outputRoot) {
 
         static final Formats JSON = new Formats(null, null, null, null);
-        static final List<String> REQUEST = List.of("json", "xml", "binary", "multipart");
+        static final List<String> REQUEST = List.of("json", "xml", "binary", "multipart", "soap");
         static final List<String> OUTPUT = List.of("json", "xml", "binary");
 
         boolean requestXml() {
@@ -84,13 +98,17 @@ public record ServiceDefinition(String id, String version, String activeVersion,
             return "multipart".equals(request);
         }
 
+        boolean requestSoap() {
+            return "soap".equals(request);
+        }
+
         boolean outputBinary() {
             return "binary".equals(output);
         }
 
         void check(String slug) {
             if (request != null && !REQUEST.contains(request)) {
-                throw new IllegalArgumentException("Integration " + slug + ": request format must be json, xml, binary or multipart, not "
+                throw new IllegalArgumentException("Integration " + slug + ": request format must be json, xml, binary, multipart or soap, not "
                         + request);
             }
             if (output != null && !OUTPUT.contains(output)) {
