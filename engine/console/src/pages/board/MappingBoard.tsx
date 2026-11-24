@@ -589,7 +589,8 @@ function TreePanel(props: {
   };
 
   return (
-    <Paper withBorder p="xs" style={{ flex: 1, minWidth: 0 }}>
+    // Not stretched to the tallest neighbour (the Test panel), so the board doesn't grow empty space below the rows.
+    <Paper withBorder p="xs" style={{ flex: 1, minWidth: 0, alignSelf: 'flex-start' }}>
       <Stack gap={6}>
         <Text fw={600}>{props.title}</Text>
         <TextInput
@@ -614,7 +615,8 @@ function TreePanel(props: {
             )}
           </Group>
         </Chip.Group>
-        <ScrollArea h={shown.length === 0 ? 0 : TREE_HEIGHT} viewportRef={parent} type="auto">
+        {/* As tall as the rows, up to the screen height, so a short tree isn't a tall empty box. */}
+        <ScrollArea h={shown.length === 0 ? 0 : `min(${virtual.getTotalSize()}px, ${TREE_HEIGHT})`} viewportRef={parent} type="auto">
           <div role="tree" aria-label={props.title} style={{ height: virtual.getTotalSize(), position: 'relative' }}>
             {virtual.getVirtualItems().map((v) => {
               const item = items[v.index];
@@ -981,7 +983,7 @@ function TestDrawer(props: { slug: string; input: PayloadDefinition | null; meth
           autosize
           minRows={5}
           maxRows={12}
-          ff="monospace"
+          styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)' } }}
           value={text}
           onChange={(e) => setText(e.currentTarget.value)}
         />

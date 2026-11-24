@@ -71,7 +71,7 @@ public class TestRunner {
     public Result run(String slug, JsonNode input, boolean real) throws IOException {
         ServiceDefinition def = Json.MAPPER.readValue(store.service(slug).toFile(), ServiceDefinition.class);
         if (def.input() == null || def.output() == null || def.target() == null || def.target().method() == null) {
-            return failed("setup", List.of("Pick the Input, Output and operation first (steps 1–3)"));
+            return failed("setup", List.of("Choose the external system, the operation, the Input and the Output first"));
         }
         PayloadDefinition in = library.get(def.input());
         PayloadDefinition out = library.get(def.output());
@@ -250,14 +250,15 @@ public class TestRunner {
                         : "Authorization".equals(authHeader) ? "Bearer " + secret : secret;
                 rb.header(authHeader, value);
             }
+            HttpRequest built = rb.build();
             try {
-                HttpResponse<byte[]> r = http.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
+                HttpResponse<byte[]> r = http.send(built, HttpResponse.BodyHandlers.ofByteArray());
                 status = r.statusCode();
                 responseBytes = r.body();
                 contentType = r.headers().firstValue("Content-Type").orElse(null);
                 contentDisposition = r.headers().firstValue("Content-Disposition").orElse(null);
             } catch (IOException e) {
-                return new Result("response", List.of("The external system did not answer: " + e.getMessage()), request, null, null, false);
+                return new Result("response", List.of(noAnswer(e, built.uri())), request, null, null, false);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException(e);
@@ -323,5 +324,34 @@ public class TestRunner {
 
     private static Result failed(String stage, List<String> problems) {
         return new Result(stage, problems, null, null, null, false);
+    }
+
+    /**
+     * Why no answer came back, in plain words: the Java exception's own message is often missing ("null") or says
+     * nothing a user can act on, so the cause and the address are named instead.
+     */
+    static String noAnswer(IOException e, URI uri) {
+        String where = uri.getHost() + (uri.getPort() > 0 ? ":" + uri.getPort() : "");
+        if (hasCause(e, java.net.http.HttpTimeoutException.class)) {
+            return "The external system at " + where + " did not answer in time.";
+        }
+        if (hasCause(e, java.net.ConnectException.class)) {
+            return "Nothing answered at " + where + ": the connection was refused. Check the base URL of the connection under Configuration and that the system is running.";
+        }
+        if (hasCause(e, java.net.UnknownHostException.class)) {
+            return "The host " + uri.getHost() + " is not known. Check the base URL of the connection under Configuration.";
+        }
+        String message = e.getMessage();
+        return "The external system at " + where + " did not answer: "
+                + (message == null || message.isBlank() ? e.getClass().getSimpleName() : message);
+    }
+
+    private static boolean hasCause(Throwable e, Class<? extends Throwable> type) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (type.isInstance(t)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

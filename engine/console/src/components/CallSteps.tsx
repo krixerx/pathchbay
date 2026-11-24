@@ -3,6 +3,17 @@ import { IconCheck, IconX } from '@tabler/icons-react';
 import type { TestResult } from '../model';
 import { meaning, statusText } from '../theme';
 
+/** Where a call stopped, in plain words (the engine's stage names are not for people). */
+export const STAGE_TEXT: Record<TestResult['stage'], string> = {
+  setup: 'Not ready: choose the operation, the Input and the Output first',
+  links: "Stopped: the links can't be used",
+  input: "Refused: the input doesn't match the Input",
+  request: "Not sent: the request couldn't be built",
+  response: 'No usable answer from the external system',
+  output: "The answer couldn't be mapped to the Output",
+  done: 'Went through',
+};
+
 /**
  * One call step by step, as the Test drawer and the call log (D-22) show it: the outcome, problems, the request sent,
  * the answer and the mapped Output. A call that stopped early shows only the steps it reached.
@@ -18,7 +29,7 @@ export function CallSteps(props: {
       <Group gap={4}>
         {ok ? <IconCheck size={16} color={statusText.passed} /> : <IconX size={16} color={statusText.broken} />}
         <Text size="sm" c={ok ? statusText.passed : statusText.broken} fw={500}>
-          {ok ? props.passed : `Stopped at: ${result.stage}`}
+          {ok ? props.passed : STAGE_TEXT[result.stage]}
         </Text>
         {result.mock && <Badge variant="light" color="gray">mock</Badge>}
       </Group>

@@ -158,7 +158,20 @@ export function SettingsPage() {
         />
         {kind === 'apiKey' && (
           <Group align="flex-end">
-            <SegmentedControl value={keyIn} onChange={(v) => setKeyIn(v as 'header' | 'query')} data={['header', 'query']} />
+            <Stack gap={4}>
+              <Text fw={500} size="sm" id="key-in-label">
+                Send the key as
+              </Text>
+              <SegmentedControl
+                aria-labelledby="key-in-label"
+                value={keyIn}
+                onChange={(v) => setKeyIn(v as 'header' | 'query')}
+                data={[
+                  { value: 'header', label: 'Header' },
+                  { value: 'query', label: 'Query parameter' },
+                ]}
+              />
+            </Stack>
             <TextInput
               label={keyIn === 'header' ? 'Header name' : 'Query parameter name'}
               placeholder={keyIn === 'header' ? 'X-Api-Key' : 'api_key'}

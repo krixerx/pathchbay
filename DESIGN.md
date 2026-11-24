@@ -51,7 +51,7 @@ A color is never the only signal: it always comes with an icon and words (D-16, 
 ## Words
 
 - Type names everywhere (D-4): text, number, whole number, yes/no, date, date-time, object, list.
-- Errors say what is wrong and where, in plain words; the engine's messages are shown as they are.
+- Errors say what is wrong and where, in plain words; the engine's messages are shown as they are, so they are written for people too (a failed call names its cause and address, never an exception's empty message). Internal names never show: where a call stopped is said as "Refused: the input doesn't match the Input", "No usable answer from the external system" and so on (`STAGE_TEXT`).
 - Empty states say what the page is for and offer the one next action (D-5).
 
 ## Accessibility
