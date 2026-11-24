@@ -16,9 +16,9 @@ import java.util.Set;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import integrationmapper.engine.config.MapperProperties;
 import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.config.Connections;
 import integrationmapper.engine.config.PayloadLibrary;
@@ -52,15 +52,17 @@ public class TestRunner {
     private final Connections connections;
     private final HttpClient http;
     private final long maxBlobBytes;
+    private final Duration timeout;
 
     public TestRunner(ConfigStore store, PayloadLibrary library, SecretResolver secrets, Connections connections,
-            @Value("${mapper.outbound-timeout-ms:10000}") long timeoutMs, @Value("${mapper.max-blob-bytes:52428800}") long maxBlobBytes) {
+            MapperProperties properties) {
         this.store = store;
         this.library = library;
         this.secrets = secrets;
         this.connections = connections;
-        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofMillis(timeoutMs)).build();
-        this.maxBlobBytes = maxBlobBytes;
+        this.timeout = Duration.ofMillis(properties.outboundTimeoutMs());
+        this.http = HttpClient.newBuilder().connectTimeout(timeout).build();
+        this.maxBlobBytes = properties.maxBlobBytes();
     }
 
     /** What the drawer shows, step by step; a step that failed stops the rest and fills {@code problem}. */
@@ -232,7 +234,7 @@ public class TestRunner {
                 realQuery = realQuery.isEmpty() ? p : realQuery + "&" + p;
             }
             HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(url + (realQuery.isEmpty() ? "" : "?" + realQuery)))
-                    .timeout(Duration.ofSeconds(10))
+                    .timeout(timeout) // the same budget as live calls, not a fixed 10 s
                     .method(def.target().method(), bytesBody ? HttpRequest.BodyPublishers.ofByteArray(bodyBytes)
                             : hasBody ? HttpRequest.BodyPublishers.ofString(body) : HttpRequest.BodyPublishers.noBody());
             String auth = authHeader;

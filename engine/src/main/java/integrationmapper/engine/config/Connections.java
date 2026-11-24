@@ -1,6 +1,8 @@
 package integrationmapper.engine.config;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -250,9 +252,32 @@ public class Connections {
         }
     }
 
+    /**
+     * A base URL is an absolute http(s) URL with a host. It goes into the route's Camel endpoint, so anything that
+     * isn't a valid URL (such as a {@code {{...}}} property placeholder) is refused, and so are user info and a
+     * fragment, which the call would not send as meant. A query is allowed: SOAP endpoints use one (SAP's
+     * {@code ?sap-client=100}).
+     */
     public static void check(String url) {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             throw new IllegalArgumentException("The base URL must start with http:// or https://");
+        }
+        URI u;
+        try {
+            u = new URI(url);
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("The base URL is not a valid URL: " + e.getReason() + " at character " + (e.getIndex() + 1));
+        }
+        // The authority, not getHost(): a Docker service name with an underscore (my_service) has no "host" for URI.
+        String authority = u.getRawAuthority();
+        if (authority == null || authority.isBlank()) {
+            throw new IllegalArgumentException("The base URL has no host name");
+        }
+        if (authority.contains("@")) {
+            throw new IllegalArgumentException("The base URL can't hold a user name or password; set the integration's authentication instead");
+        }
+        if (u.getRawFragment() != null) {
+            throw new IllegalArgumentException("The base URL can't have a fragment (#...)");
         }
     }
 

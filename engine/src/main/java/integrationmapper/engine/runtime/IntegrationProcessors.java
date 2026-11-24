@@ -22,14 +22,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.Message;
-import org.springframework.beans.factory.annotation.Value;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import integrationmapper.engine.config.MapperProperties;
 import integrationmapper.engine.config.Connections;
 import integrationmapper.engine.format.Blobs;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.format.Multipart;
 import integrationmapper.engine.format.SoapEnvelope;
+import integrationmapper.engine.format.XmlFormat;
 import integrationmapper.engine.model.PayloadDefinition;
 import integrationmapper.engine.model.ServiceDefinition;
 
@@ -42,6 +45,8 @@ public class IntegrationProcessors {
 
     static final String SLUG = "integrationSlug";
     private static final String TRACE = "integrationTrace";
+    private static final String REQUEST_ID = "integrationRequestId";
+    private static final Logger log = LoggerFactory.getLogger(IntegrationProcessors.class);
     private static final Set<String> BODY_METHODS = Set.of("POST", "PUT", "PATCH");
     private static final Pattern PATH_PARAM = Pattern.compile("\\{([^}]+)}");
 
@@ -50,11 +55,10 @@ public class IntegrationProcessors {
     /** The largest file a caller may send (D-29), decoded; 50 MiB unless {@code mapper.max-blob-bytes} says otherwise. */
     private final long maxBlobBytes;
 
-    public IntegrationProcessors(IntegrationRegistry registry, CallLog calls,
-            @Value("${mapper.max-blob-bytes:52428800}") long maxBlobBytes) {
+    public IntegrationProcessors(IntegrationRegistry registry, CallLog calls, MapperProperties properties) {
         this.registry = registry;
         this.calls = calls;
-        this.maxBlobBytes = maxBlobBytes;
+        this.maxBlobBytes = properties.maxBlobBytes();
     }
 
     /** What one call did so far, filled step by step; {@code stage} is the step it is in (the Test drawer's names). */
@@ -75,6 +79,8 @@ public class IntegrationProcessors {
         Trace trace = new Trace();
         exchange.setProperty(TRACE, trace);
         Message msg = exchange.getMessage();
+        // Set by RequestIdFilter; read before the inbound headers are removed.
+        exchange.setProperty(REQUEST_ID, msg.getHeader(integrationmapper.engine.web.RequestIdFilter.HEADER, String.class));
         CompiledIntegration ci = registry.get(exchange.getProperty(SLUG, String.class));
         ServiceDefinition.Target target = ci.definition().target();
         trace.version = ci.definition().version();
@@ -190,7 +196,11 @@ public class IntegrationProcessors {
             if (ci.soap() != null) {
                 shownHeaders.put(Exchange.CONTENT_TYPE, ci.requestContentType());
             }
-            msg.setBody(ci.requestBody(mapped.path("body")));
+            try {
+                msg.setBody(ci.requestBody(mapped.path("body")));
+            } catch (XmlFormat.BadNameException e) {
+                throw new BadInputException(e.getMessage());
+            }
         } else {
             msg.setBody(null);
         }
@@ -258,14 +268,14 @@ public class IntegrationProcessors {
         try {
             if (ci.soap() != null) {
                 if (soapAnswer == null) {
-                    throw new IllegalArgumentException("the answer is not a SOAP envelope");
+                    throw new MappingException("response mapping failed: the answer is not a SOAP envelope", null);
                 }
                 output = ci.mapSoapBody(soapAnswer.bodyXml());
             } else {
                 output = ci.mapAnswer(bytes, contentType, contentDisposition, maxBlobBytes);
             }
             answer = ci.answer(output);
-        } catch (CompiledIntegration.RemoteFileException e) {
+        } catch (CompiledIntegration.RemoteFileException | MappingException e) {
             throw e;
         } catch (Exception e) {
             throw new MappingException("response mapping failed: " + e.getMessage(), e);
@@ -282,7 +292,7 @@ public class IntegrationProcessors {
         trace.stage = "done";
     }
 
-    void mapError(Exchange exchange) {
+    void mapError(Exchange exchange) throws Exception {
         Exception e = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
         String slug = exchange.getProperty(SLUG, String.class);
         int status;
@@ -309,12 +319,32 @@ public class IntegrationProcessors {
             status = 502;
             error = "remote-failure";
         }
+        // A mapping error or a failure without a known cause is Patchbay's to find out: its cause goes to the log
+        // (types and stack, never exception messages, which can hold payload values) and to the call log; the caller
+        // gets a plain sentence and the request id to quote.
+        // A MappingException without a cause carries a sentence Patchbay wrote itself, which the caller may see.
+        boolean ownMessage = findCause(e, MappingException.class).map(m -> m.getCause() == null).orElse(false);
+        boolean unexpected = e != null && (("mapping-error".equals(error) && !ownMessage)
+                || ("remote-failure".equals(error) && !hasCause(e, CompiledIntegration.RemoteFileException.class)));
+        String requestId = exchange.getProperty(REQUEST_ID, String.class);
+        if (unexpected) {
+            Trace t = exchange.getProperty(TRACE, Trace.class);
+            log.warn("Call {} {} failed: {} {}, request {}\n{}", slug, t == null ? "?" : t.version, status, error, requestId, stackWithoutMessages(e));
+        }
         Message msg = exchange.getMessage();
         msg.removeHeaders("*");
         msg.setHeader(Exchange.HTTP_RESPONSE_CODE, status);
         msg.setHeader(Exchange.CONTENT_TYPE, "application/json");
         List<String> problems = e == null ? List.of() : findCause(e, BadInputException.class).map(b -> b.problems).orElse(List.of());
-        msg.setBody(Json.error(error, slug, e == null ? null : rootMessage(e), problems));
+        if (unexpected) {
+            ObjectNode body = (ObjectNode) Json.MAPPER.readTree(Json.error(error, slug, "mapping-error".equals(error)
+                    ? "The integration failed inside Patchbay; quote the request id to its administrator"
+                    : "The call to the external system failed; quote the request id to Patchbay's administrator"));
+            body.put("requestId", requestId);
+            msg.setBody(body.toString());
+        } else {
+            msg.setBody(Json.error(error, slug, e == null ? null : rootMessage(e), problems));
+        }
         Trace trace = exchange.getProperty(TRACE, Trace.class);
         if (trace != null) {
             List<String> shown = new ArrayList<>();
@@ -335,11 +365,28 @@ public class IntegrationProcessors {
         int status = exchange.getMessage().getHeader(Exchange.HTTP_RESPONSE_CODE, 200, Integer.class);
         long ms = (System.nanoTime() - trace.start) / 1_000_000;
         boolean keep = calls.enabled();
-        calls.add(exchange.getProperty(SLUG, String.class), trace.method, new CallLog.Call(trace.at.toString(), trace.version, status, ms,
+        calls.add(exchange.getProperty(SLUG, String.class), trace.method, exchange.getProperty(REQUEST_ID, String.class), new CallLog.Call(trace.at.toString(), trace.version, status, ms,
                 trace.stage, trace.problems, keep ? trace.input : null, keep ? trace.request : null, trace.response, trace.output));
     }
 
     // ---- helpers
+
+    /** The exception's cause chain as class names and stack frames, without messages (they can hold payload values). */
+    static String stackWithoutMessages(Throwable e) {
+        StringBuilder sb = new StringBuilder();
+        java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (Throwable t = e; t != null && seen.add(t); t = t.getCause()) {
+            sb.append(t == e ? "" : "Caused by: ").append(t.getClass().getName()).append('\n');
+            StackTraceElement[] frames = t.getStackTrace();
+            for (int i = 0; i < Math.min(frames.length, 12); i++) {
+                sb.append("\tat ").append(frames[i]).append('\n');
+            }
+            if (frames.length > 12) {
+                sb.append("\t... ").append(frames.length - 12).append(" more\n");
+            }
+        }
+        return sb.toString();
+    }
 
     /** Shows secret connection headers as ***, whatever the case of the name they were sent under. */
     static void maskSecrets(Map<String, ? super String> shown, List<Connections.Header> headers) {

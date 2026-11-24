@@ -3,9 +3,10 @@ package integrationmapper.engine.web;
 import org.apache.camel.CamelContext;
 import org.apache.camel.component.http.HttpComponent;
 import org.apache.camel.spring.boot.CamelContextConfiguration;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import integrationmapper.engine.config.MapperProperties;
 
 /**
  * Outbound timeouts for external calls (runtime rule: 10 seconds). Camel's defaults are 3 minutes, and the Spring
@@ -21,7 +22,8 @@ import org.springframework.context.annotation.Configuration;
 public class OutboundHttpConfig {
 
     @Bean
-    CamelContextConfiguration outboundTimeouts(@Value("${mapper.outbound-timeout-ms:10000}") long timeoutMs) {
+    CamelContextConfiguration outboundTimeouts(MapperProperties properties) {
+        long timeoutMs = properties.outboundTimeoutMs();
         return new CamelContextConfiguration() {
             @Override
             public void beforeApplicationStart(CamelContext camel) {

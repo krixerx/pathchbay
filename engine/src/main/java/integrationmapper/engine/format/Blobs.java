@@ -44,8 +44,16 @@ public final class Blobs {
             JsonNode t = v.get(text);
             if (t != null && !t.isNull() && !t.isTextual()) {
                 problems.add(path + "." + text + ": must be text");
+            } else if (t != null && hasControlCharacter(t.asText())) {
+                // They become header values of the external call (Content-Type, Content-Disposition, multipart part
+                // headers), where a line break would add headers or parts of the caller's choosing.
+                problems.add(path + "." + text + ": must not contain line breaks or other control characters");
             }
         }
+    }
+
+    public static boolean hasControlCharacter(String s) {
+        return s.chars().anyMatch(c -> c < 0x20 || c == 0x7f);
     }
 
     /**

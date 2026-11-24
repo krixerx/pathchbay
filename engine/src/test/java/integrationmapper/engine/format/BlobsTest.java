@@ -35,6 +35,17 @@ class BlobsTest {
         assertThat(InputValidator.validate(json("{\"file\":{\"data\":\"QUJD\",\"size\":99,\"extra\":1}}"), UPLOAD)).isEmpty();
     }
 
+    /** contentType and fileName become outbound header values, so a line break would forge headers or parts. */
+    @Test
+    void lineBreaksInTheFilesTypeOrNameAreRefused() throws Exception {
+        String forged = "text/plain\\r\\nContent-Disposition: form-data; name=\\\"role\\\"\\r\\n\\r\\nadmin";
+        assertThat(InputValidator.validate(json("{\"file\":{\"data\":\"QUJD\",\"contentType\":\"" + forged + "\",\"fileName\":\"a\\nb.pdf\"}}"), UPLOAD))
+                .containsExactlyInAnyOrder("file.contentType: must not contain line breaks or other control characters",
+                        "file.fileName: must not contain line breaks or other control characters");
+        assertThatThrownBy(() -> Multipart.write(json("{\"file\":{\"data\":\"QUJD\",\"contentType\":\"" + forged + "\"}}")))
+                .hasMessageContaining("control characters");
+    }
+
     @Test
     void sizeIsWorkedOutAndTheTypeDefaults() throws Exception {
         ObjectNode input = (ObjectNode) json("{\"title\":\"T\",\"file\":{\"data\":\"QUJD\",\"size\":99}}");

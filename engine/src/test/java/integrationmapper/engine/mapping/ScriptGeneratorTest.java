@@ -85,6 +85,15 @@ public class ScriptGeneratorTest {
     }
 
     @Test
+    void anObjectIsLinkedAsAWholeInBothDirections() throws Exception {
+        // The generator knows only one side's type, so the shape rule sees null for the other (was an NPE at publish).
+        CompiledIntegration ci = compile(List.of(link("i-a", "body.customer")), List.of(link("customer", "o-x")));
+        assertThat(Json.MAPPER.readTree(ci.mapRequest("{\"a\":{\"b\":5}}")).path("body").path("customer").toString())
+                .isEqualTo("{\"b\":5}");
+        assertThat(ci.mapResponse("{\"customer\":{\"y\":3}}")).isEqualTo("{\"x\":{\"y\":3}}");
+    }
+
+    @Test
     void fieldNamesWithQuotesAreEscaped() throws Exception {
         CompiledIntegration ci = compile(List.of(link("i-q", "body.ok")), List.of());
         assertThat(Json.MAPPER.readTree(ci.mapRequest("{\"we\\\"ird\":1}")).path("body").path("ok").asInt()).isEqualTo(1);

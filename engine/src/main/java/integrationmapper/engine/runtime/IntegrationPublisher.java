@@ -9,13 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.apache.camel.CamelContext;
 import org.springframework.stereotype.Component;
 
 import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.config.Connections;
+import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.config.SecretResolver;
 import integrationmapper.engine.format.Json;
@@ -30,7 +30,9 @@ import integrationmapper.engine.web.IntegrationGate;
 /**
  * Publishing and activating versions. Order (R9): build and compile first; only when that works write the version
  * file, then {@code activeVersion} in the service file, then swap the route behind the gate (R7). A failure before
- * the swap leaves files and the live version unchanged. One editor at a time (R3): calls are serialized here.
+ * the swap leaves files and the live version unchanged. A failed swap puts the previous route back and undoes both
+ * writes, so on any failure nothing on disk changes and the old version keeps serving (R9). One editor at a time
+ * (R3): calls are serialized here; the service file itself is written only through {@link Drafts}.
  */
 @Component
 public class IntegrationPublisher {
@@ -44,9 +46,10 @@ public class IntegrationPublisher {
     private final ConfigStore store;
     private final SecretResolver secrets;
     private final Connections connections;
+    private final Drafts drafts;
 
     public IntegrationPublisher(CamelContext camel, IntegrationGate gate, IntegrationRegistry registry,
-            PayloadLibrary library, ConfigStore store, SecretResolver secrets, Connections connections) {
+            PayloadLibrary library, ConfigStore store, SecretResolver secrets, Connections connections, Drafts drafts) {
         this.camel = camel;
         this.gate = gate;
         this.registry = registry;
@@ -54,6 +57,7 @@ public class IntegrationPublisher {
         this.store = store;
         this.secrets = secrets;
         this.connections = connections;
+        this.drafts = drafts;
     }
 
     /** Publishes the draft {@code services/<slug>.json} as the next version and makes it live. Returns the version. */
@@ -81,8 +85,14 @@ public class IntegrationPublisher {
             throw new IllegalArgumentException("Integration " + slug + " " + version + " does not compile: " + String.join("; ", shapes));
         }
         store.writeJson(store.version(slug, version), snapshot);
-        setActiveVersion(slug, version);
-        goLive(compiled);
+        String previous = setActiveVersion(slug, version);
+        try {
+            goLive(compiled);
+        } catch (Exception e) {
+            setActiveVersion(slug, previous);
+            Files.deleteIfExists(store.version(slug, version));
+            throw e;
+        }
         return version;
     }
 
@@ -107,8 +117,13 @@ public class IntegrationPublisher {
     /** Makes a stored version live again ("Make active", rollback). No new version file is written. */
     public synchronized void activateVersion(String slug, String version) throws Exception {
         CompiledIntegration compiled = compile(readSnapshot(slug, version));
-        setActiveVersion(slug, version);
-        goLive(compiled);
+        String previous = setActiveVersion(slug, version);
+        try {
+            goLive(compiled);
+        } catch (Exception e) {
+            setActiveVersion(slug, previous);
+            throw e;
+        }
     }
 
     /** At startup: serves the active version of one integration. Returns false for a draft that was never published. */
@@ -187,21 +202,52 @@ public class IntegrationPublisher {
         }
         Files.deleteIfExists(store.versionsDir(slug));
         Files.deleteIfExists(store.secret(slug));
-        Files.delete(store.service(slug));
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            Files.delete(store.service(slug));
+        }
     }
 
+    /**
+     * Swaps the route behind the gate. When the new route can't be added, the previous version's route is added back
+     * and the exception is rethrown; if even that fails, the integration is marked broken (R10).
+     */
     private void goLive(CompiledIntegration compiled) throws Exception {
-        ServiceDefinition def = compiled.definition();
-        String routeId = "int-" + def.id();
-        gate.swap(def.id(), () -> {
-            if (camel.getRoute(routeId) != null) {
-                camel.getRouteController().stopRoute(routeId);
-                camel.removeRoute(routeId);
+        String slug = compiled.definition().id();
+        String routeId = "int-" + slug;
+        gate.swap(slug, () -> {
+            CompiledIntegration previous = registry.find(slug);
+            removeRoute(routeId);
+            try {
+                addRoute(routeId, compiled);
+            } catch (Exception e) {
+                removeRoute(routeId);
+                if (previous != null) {
+                    try {
+                        addRoute(routeId, previous);
+                    } catch (Exception restore) {
+                        removeRoute(routeId);
+                        registry.remove(slug);
+                        registry.markBroken(slug, "the previous version could not be restored after a failed publish: "
+                                + restore.getMessage());
+                        e.addSuppressed(restore);
+                    }
+                }
+                throw e;
             }
             registry.activate(compiled);
-            camel.addRouteFromTemplate(routeId, IntegrationRoutes.templateId(def.target().method()),
-                    Map.of("slug", def.id(), "baseUrl", compiled.baseUrl()));
         });
+    }
+
+    private void addRoute(String routeId, CompiledIntegration ci) throws Exception {
+        camel.addRouteFromTemplate(routeId, IntegrationRoutes.templateId(ci.definition().target().method()),
+                Map.of("slug", ci.definition().id(), "baseUrl", ci.baseUrl()));
+    }
+
+    private void removeRoute(String routeId) throws Exception {
+        if (camel.getRoute(routeId) != null) {
+            camel.getRouteController().stopRoute(routeId);
+            camel.removeRoute(routeId);
+        }
     }
 
     private ServiceDefinition readDraft(String slug) throws IOException {
@@ -225,10 +271,20 @@ public class IntegrationPublisher {
         return s;
     }
 
-    /** Rewrites only {@code activeVersion} in the service file, keeping everything else as it is. */
-    private void setActiveVersion(String slug, String version) throws IOException {
-        ObjectNode file = (ObjectNode) Json.MAPPER.readTree(store.service(slug).toFile());
-        file.put("activeVersion", version);
-        store.writeJson(store.service(slug), file);
+    /**
+     * Rewrites only {@code activeVersion} in the service file (null removes it), keeping everything else as it is.
+     * Returns the value it replaced.
+     */
+    private String setActiveVersion(String slug, String version) throws IOException {
+        String[] previous = new String[1];
+        drafts.edit(slug, d -> {
+            previous[0] = d.path("activeVersion").asText(null);
+            if (version == null) {
+                d.remove("activeVersion");
+            } else {
+                d.put("activeVersion", version);
+            }
+        });
+        return previous[0];
     }
 }

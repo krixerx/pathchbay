@@ -58,6 +58,7 @@ public final class SoapEnvelope {
 
     /** The whole envelope for the mapped {@code body} (an object, a simple value, or missing). */
     public static String write(SoapTarget soap, JsonNode body) {
+        XmlFormat.checkNames(body);
         StringWriter out = new StringWriter();
         try {
             XMLStreamWriter w = OUT.createXMLStreamWriter(out);

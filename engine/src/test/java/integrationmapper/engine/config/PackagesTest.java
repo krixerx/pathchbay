@@ -52,7 +52,7 @@ public class PackagesTest {
         MockEnvironment vars = new MockEnvironment();
         IntegrationRegistry registry = new IntegrationRegistry();
         return new Env(store, library, registry,
-                new Packages(store, library, registry, new Connections(vars, store), new SecretResolver(vars, store)));
+                new Packages(store, library, registry, new Connections(vars, store), new SecretResolver(vars, store), new Drafts(store)));
     }
 
     /** DEV: the repository's example configuration, plus a Swagger configuration that get-book came from. */
@@ -181,5 +181,22 @@ public class PackagesTest {
                 .hasMessageContaining("Not a Patchbay package");
         assertThatThrownBy(() -> test.packages().importZip(zip(Map.of("manifest.json", "{\"format\":\"other\"}"))))
                 .hasMessageContaining("Not a Patchbay package this engine can read");
+    }
+
+    /** The manifest's integration ids are checked with everything else, before anything is written. */
+    @Test
+    void aManifestIntegrationWithoutADraftRefusesTheWholeImport(@TempDir Path devDir, @TempDir Path testDir) throws IOException {
+        Map<String, String> files = entries(dev(devDir).packages().export(List.of("get-book")));
+        ObjectNode manifest = (ObjectNode) Json.MAPPER.readTree(files.get("manifest.json"));
+        ((com.fasterxml.jackson.databind.node.ArrayNode) manifest.get("integrations")).addObject().put("id", "ghost");
+        ((com.fasterxml.jackson.databind.node.ArrayNode) manifest.get("integrations")).addObject().put("id", "../escape");
+        files.put("manifest.json", manifest.toString());
+        Env test = env(testDir);
+
+        assertThatThrownBy(() -> test.packages().importZip(zip(files)))
+                .isInstanceOfSatisfying(Packages.PackageException.class, e -> assertThat(e.problems)
+                        .anySatisfy(p -> assertThat(p).contains("ghost").contains("services/ghost.json"))
+                        .anySatisfy(p -> assertThat(p).contains("../escape").contains("not a valid integration id")));
+        assertThat(testDir.resolve("services/get-book.json")).as("nothing is written when anything is wrong").doesNotExist();
     }
 }

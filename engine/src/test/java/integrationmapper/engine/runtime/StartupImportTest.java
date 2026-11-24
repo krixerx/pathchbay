@@ -78,6 +78,25 @@ class StartupImportTest {
         r.add("MAPPER_URL_FAKE_REST_API", () -> "http://localhost:1");
     }
 
+    /** What was live when readiness turned on: it must come after the startup loading, not during it. */
+    static final java.util.concurrent.atomic.AtomicReference<Map<String, String>> LIVE_AT_READY = new java.util.concurrent.atomic.AtomicReference<>();
+
+    @org.springframework.boot.test.context.TestConfiguration
+    static class ReadinessProbe {
+        @org.springframework.context.annotation.Bean
+        org.springframework.context.ApplicationListener<org.springframework.boot.availability.AvailabilityChangeEvent<?>> recordReadiness(
+                IntegrationRegistry registry) {
+            return e -> {
+                if (e.getState() == org.springframework.boot.availability.ReadinessState.ACCEPTING_TRAFFIC) {
+                    LIVE_AT_READY.compareAndSet(null, registry.activeVersions());
+                }
+            };
+        }
+    }
+
+    @org.springframework.boot.test.web.server.LocalServerPort
+    int port;
+
     @Autowired
     IntegrationRegistry registry;
 
@@ -122,6 +141,24 @@ class StartupImportTest {
         assertThat(registry.activeVersions()).containsEntry("create-book", "1.1.0").containsEntry("get-book", "1.0.0");
         assertThat(activeVersion("create-book")).isEqualTo("1.1.0");
         assertThat(store.versions("create-book")).containsExactly("1.0.0", "1.1.0");
+    }
+
+    /** Readiness is UP only once the integrations are loaded; only the health endpoint of the actuator is exposed. */
+    @Test
+    void readinessComesAfterTheIntegrationsAreLoaded() throws Exception {
+        assertThat(LIVE_AT_READY.get()).as("live when readiness turned on").containsKeys("get-book", "create-book");
+        java.net.http.HttpClient http = java.net.http.HttpClient.newHttpClient();
+        for (String path : new String[] {"/actuator/health/readiness", "/actuator/health/liveness"}) {
+            var r = http.send(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://localhost:" + port + path)).build(),
+                    java.net.http.HttpResponse.BodyHandlers.ofString());
+            assertThat(r.statusCode()).as(path).isEqualTo(200);
+            assertThat(r.body()).as(path).contains("\"UP\"");
+        }
+        for (String path : new String[] {"/actuator/env", "/actuator/beans", "/actuator/info"}) {
+            var r = http.send(java.net.http.HttpRequest.newBuilder(java.net.URI.create("http://localhost:" + port + path)).build(),
+                    java.net.http.HttpResponse.BodyHandlers.discarding());
+            assertThat(r.statusCode()).as(path).isEqualTo(404);
+        }
     }
 
     @Test

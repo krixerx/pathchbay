@@ -128,10 +128,10 @@ public final class LinkRules {
      * Without it the engine sent {@code "customer": "Mari"} where the contract has an object.
      */
     public static Optional<Reason> checkShapes(String sourceType, String targetType) {
-        if ("object".equals(targetType) && SINGLE_TYPES.contains(sourceType)) {
+        if ("object".equals(targetType) && sourceType != null && SINGLE_TYPES.contains(sourceType)) {
             return Optional.of(Reason.SINGLE_TO_OBJECT);
         }
-        if ("object".equals(sourceType) && SINGLE_TYPES.contains(targetType)) {
+        if ("object".equals(sourceType) && targetType != null && SINGLE_TYPES.contains(targetType)) {
             return Optional.of(Reason.OBJECT_TO_SINGLE);
         }
         return Optional.empty();

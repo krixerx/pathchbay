@@ -55,7 +55,7 @@ public record ServiceDefinition(String id, String version, String activeVersion,
 
         public void check(String slug) {
             boolean ok = "bearer".equals(type) || "basic".equals(type)
-                    || ("apiKey".equals(type) && Set.of("header", "query").contains(in) && name != null && !name.isBlank());
+                    || ("apiKey".equals(type) && ("header".equals(in) || "query".equals(in)) && name != null && !name.isBlank());
             if (!ok) {
                 throw new IllegalArgumentException("Integration " + slug
                         + ": auth must be {\"type\":\"bearer\"}, {\"type\":\"basic\"} or {\"type\":\"apiKey\",\"in\":\"header|query\",\"name\":\"...\"}");

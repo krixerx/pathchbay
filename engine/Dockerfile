@@ -30,4 +30,9 @@ COPY --from=engine /build/target/engine-0.0.1-SNAPSHOT.jar app.jar
 USER mapper
 VOLUME /config
 EXPOSE 8080
+# Heap from the container's memory limit; on OutOfMemoryError stop, so the orchestrator restarts the engine instead
+# of leaving it half-working. Override with -e JAVA_TOOL_OPTIONS=...
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+# Ready once every integration is loaded; open without INBOUND_API_KEY.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=3     CMD curl -fs http://localhost:8080/actuator/health/readiness || exit 1
 ENTRYPOINT ["java", "-jar", "/app/app.jar", "--mapper.config-dir=/config"]

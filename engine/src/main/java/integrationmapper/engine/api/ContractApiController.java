@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import integrationmapper.engine.config.ConfigStore;
+import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.config.Connections;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.config.SecretResolver;
@@ -54,6 +55,7 @@ import integrationmapper.engine.runtime.IntegrationRegistry;
 public class ContractApiController {
 
     private final ConfigStore store;
+    private final Drafts drafts;
     private final ContractImporter importer;
     private final SecretResolver secrets;
     private final PayloadLibrary library;
@@ -61,9 +63,10 @@ public class ContractApiController {
     private final IntegrationPublisher publisher;
     private final IntegrationRegistry registry;
 
-    public ContractApiController(ConfigStore store, ContractImporter importer, SecretResolver secrets, PayloadLibrary library,
+    public ContractApiController(ConfigStore store, Drafts drafts, ContractImporter importer, SecretResolver secrets, PayloadLibrary library,
             Connections connections, IntegrationPublisher publisher, IntegrationRegistry registry) {
         this.store = store;
+        this.drafts = drafts;
         this.importer = importer;
         this.secrets = secrets;
         this.library = library;
@@ -200,21 +203,23 @@ public class ContractApiController {
         ArrayNode notes = out.putArray("notes");
         Set<String> ops = updated.operations().stream().map(Operation::id).collect(Collectors.toSet());
         for (String slug : usedBy(id)) {
-            ObjectNode d = draft(slug);
-            String opId = d.path("operationId").asText(null);
-            if (opId != null && !ops.contains(opId)) {
-                notes.add("Integration " + slug + " calls " + opId + ", which is not in the new file. Pick another operation on its board;"
-                        + " its live version keeps working until you publish again.");
-            } else if (opId != null && d.path("target").isObject()) {
-                // A SOAP draft takes the new namespaces, action and order at once; its live version keeps the old ones
-                // until it is published again (D-30).
-                Operation op = updated.operations().stream().filter(o -> o.id().equals(opId)).findFirst().orElseThrow();
-                JsonNode now = op instanceof SoapOperation soap && soap.unsupported() == null ? Json.MAPPER.valueToTree(soap.soap()) : null;
-                if (now != null && !now.equals(d.path("target").path("soap"))) {
-                    ((ObjectNode) d.get("target")).set("soap", now);
-                    store.writeJson(store.service(slug), d);
-                    notes.add("Integration " + slug + " takes the new SOAP details of " + opId + " when you publish it again;"
-                            + " its live version keeps the old ones until then.");
+            try (Drafts.Lock locked = drafts.lock(slug)) {
+                ObjectNode d = draft(slug);
+                String opId = d.path("operationId").asText(null);
+                if (opId != null && !ops.contains(opId)) {
+                    notes.add("Integration " + slug + " calls " + opId + ", which is not in the new file. Pick another operation on its board;"
+                            + " its live version keeps working until you publish again.");
+                } else if (opId != null && d.path("target").isObject()) {
+                    // A SOAP draft takes the new namespaces, action and order at once; its live version keeps the old ones
+                    // until it is published again (D-30).
+                    Operation op = updated.operations().stream().filter(o -> o.id().equals(opId)).findFirst().orElseThrow();
+                    JsonNode now = op instanceof SoapOperation soap && soap.unsupported() == null ? Json.MAPPER.valueToTree(soap.soap()) : null;
+                    if (now != null && !now.equals(d.path("target").path("soap"))) {
+                        ((ObjectNode) d.get("target")).set("soap", now);
+                        drafts.write(slug, d);
+                        notes.add("Integration " + slug + " takes the new SOAP details of " + opId + " when you publish it again;"
+                                + " its live version keeps the old ones until then.");
+                    }
                 }
             }
         }
@@ -311,74 +316,76 @@ public class ContractApiController {
         Contract c = readContract(req.contract());
         Operation op = c.operations().stream().filter(o -> o.id().equals(req.operationId())).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Contract " + c.id() + " has no operation " + req.operationId()));
-        ObjectNode d = draft(slug);
-        if (op instanceof SoapOperation s && s.unsupported() != null) {
-            throw new IllegalArgumentException("Operation " + op.id() + " can't be used: " + s.unsupported());
-        }
-        d.put("contract", c.id());
-        d.put("operationId", op.id());
-        ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
-        SoapOperation soap = switch (op) {
-            case RestOperation rest -> {
-                target.put("method", rest.method());
-                target.put("path", rest.path());
-                yield null;
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            ObjectNode d = draft(slug);
+            if (op instanceof SoapOperation s && s.unsupported() != null) {
+                throw new IllegalArgumentException("Operation " + op.id() + " can't be used: " + s.unsupported());
             }
-            case SoapOperation s -> {
-                target.put("method", s.method());
-                target.put("path", s.path());
-                yield s;
+            d.put("contract", c.id());
+            d.put("operationId", op.id());
+            ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
+            SoapOperation soap = switch (op) {
+                case RestOperation rest -> {
+                    target.put("method", rest.method());
+                    target.put("path", rest.path());
+                    yield null;
+                }
+                case SoapOperation s -> {
+                    target.put("method", s.method());
+                    target.put("path", s.path());
+                    yield s;
+                }
+            };
+            target.put("connection", c.id());
+            target.remove("baseUrl");
+            // A SOAP operation brings its envelope details and the soap request format; any other drops them (D-30).
+            ObjectNode formats = d.has("formats") && d.get("formats").isObject() ? (ObjectNode) d.get("formats") : null;
+            if (soap != null) {
+                target.set("soap", Json.MAPPER.valueToTree(soap.soap()));
+                if (formats == null) {
+                    formats = d.putObject("formats");
+                }
+                formats.put("request", "soap");
+                formats.remove("requestRoot");
+            } else {
+                target.remove("soap");
+                if (formats != null && "soap".equals(formats.path("request").asText())) {
+                    formats.remove("request");
+                }
             }
-        };
-        target.put("connection", c.id());
-        target.remove("baseUrl");
-        // A SOAP operation brings its envelope details and the soap request format; any other drops them (D-30).
-        ObjectNode formats = d.has("formats") && d.get("formats").isObject() ? (ObjectNode) d.get("formats") : null;
-        if (soap != null) {
-            target.set("soap", Json.MAPPER.valueToTree(soap.soap()));
-            if (formats == null) {
-                formats = d.putObject("formats");
+            String address = soap != null && soap.soap().address() != null && soap.soap().address().matches("https?://.+") ? soap.soap().address() : null;
+            if (connections.baseUrl(c.id()) == null) {
+                String first = address != null ? address
+                        : c.servers().stream().filter(s -> s.startsWith("http://") || s.startsWith("https://")).findFirst().orElse(null);
+                if (first != null) {
+                    connections.save(c.id(), first);
+                }
             }
-            formats.put("request", "soap");
-            formats.remove("requestRoot");
-        } else {
-            target.remove("soap");
-            if (formats != null && "soap".equals(formats.path("request").asText())) {
-                formats.remove("request");
+            List<String> notes = new ArrayList<>();
+            String name = d.path("name").asText(slug);
+            if (!d.hasNonNull("input")) {
+                Prefill.Result r = Prefill.input(freeDefinitionId(slug + "-input"), name + " input", op);
+                saveDefinition(r.definition());
+                d.put("input", r.definition().id());
+                d.putObject("request").set("links", Json.MAPPER.valueToTree(r.links()));
+                notes.add("Input " + r.definition().id() + (r.links().isEmpty() ? " was created empty"
+                        : " was created from the operation with " + r.links().size() + " links"));
+                notes.addAll(r.notes());
             }
-        }
-        String address = soap != null && soap.soap().address() != null && soap.soap().address().matches("https?://.+") ? soap.soap().address() : null;
-        if (connections.baseUrl(c.id()) == null) {
-            String first = address != null ? address
-                    : c.servers().stream().filter(s -> s.startsWith("http://") || s.startsWith("https://")).findFirst().orElse(null);
-            if (first != null) {
-                connections.save(c.id(), first);
+            if (!d.hasNonNull("output")) {
+                Prefill.Result r = Prefill.output(freeDefinitionId(slug + "-output"), name + " output", op);
+                saveDefinition(r.definition());
+                d.put("output", r.definition().id());
+                d.putObject("response").set("links", Json.MAPPER.valueToTree(r.links()));
+                notes.add("Output " + r.definition().id() + (r.links().isEmpty() ? " was created empty"
+                        : " was created from the operation with " + r.links().size() + " links"));
+                notes.addAll(r.notes());
             }
+            drafts.write(slug, d);
+            ObjectNode out = d.deepCopy();
+            notes.forEach(out.putArray("notes")::add);
+            return json(out);
         }
-        List<String> notes = new ArrayList<>();
-        String name = d.path("name").asText(slug);
-        if (!d.hasNonNull("input")) {
-            Prefill.Result r = Prefill.input(freeDefinitionId(slug + "-input"), name + " input", op);
-            saveDefinition(r.definition());
-            d.put("input", r.definition().id());
-            d.putObject("request").set("links", Json.MAPPER.valueToTree(r.links()));
-            notes.add("Input " + r.definition().id() + (r.links().isEmpty() ? " was created empty"
-                    : " was created from the operation with " + r.links().size() + " links"));
-            notes.addAll(r.notes());
-        }
-        if (!d.hasNonNull("output")) {
-            Prefill.Result r = Prefill.output(freeDefinitionId(slug + "-output"), name + " output", op);
-            saveDefinition(r.definition());
-            d.put("output", r.definition().id());
-            d.putObject("response").set("links", Json.MAPPER.valueToTree(r.links()));
-            notes.add("Output " + r.definition().id() + (r.links().isEmpty() ? " was created empty"
-                    : " was created from the operation with " + r.links().size() + " links"));
-            notes.addAll(r.notes());
-        }
-        store.writeJson(store.service(slug), d);
-        ObjectNode out = d.deepCopy();
-        notes.forEach(out.putArray("notes")::add);
-        return json(out);
     }
 
     private Path definitionFile(String id) {
@@ -426,32 +433,34 @@ public class ContractApiController {
     @PutMapping("/integrations/{slug}/settings")
     public ResponseEntity<String> saveSettings(@PathVariable String slug, @RequestBody String body) throws IOException {
         SettingsUpdate req = read(body, SettingsUpdate.class);
-        ObjectNode d = draft(slug);
-        if (req.baseUrl() != null) {
-            if (d.path("target").hasNonNull("connection")) {
-                throw new IllegalArgumentException("This integration's base URL comes from its connection; set it under Configuration");
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            ObjectNode d = draft(slug);
+            if (req.baseUrl() != null) {
+                if (d.path("target").hasNonNull("connection")) {
+                    throw new IllegalArgumentException("This integration's base URL comes from its connection; set it under Configuration");
+                }
+                String url = req.baseUrl().strip();
+                if (!url.isEmpty()) {
+                    Connections.check(url);
+                }
+                ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
+                target.put("baseUrl", url);
             }
-            String url = req.baseUrl().strip();
-            if (!url.isEmpty()) {
-                Connections.check(url);
+            if (req.auth() == null || req.auth().isNull()) {
+                d.remove("auth");
+            } else {
+                ServiceDefinition.Auth auth = Json.MAPPER.treeToValue(req.auth(), ServiceDefinition.Auth.class);
+                auth.check(slug);
+                d.set("auth", Json.MAPPER.valueToTree(auth));
             }
-            ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
-            target.put("baseUrl", url);
+            drafts.write(slug, d);
+            if (Boolean.TRUE.equals(req.removeSecret())) {
+                secrets.save(slug, null);
+            } else if (req.secret() != null && !req.secret().isBlank()) {
+                secrets.save(slug, req.secret());
+            }
+            return settings(slug);
         }
-        if (req.auth() == null || req.auth().isNull()) {
-            d.remove("auth");
-        } else {
-            ServiceDefinition.Auth auth = Json.MAPPER.treeToValue(req.auth(), ServiceDefinition.Auth.class);
-            auth.check(slug);
-            d.set("auth", Json.MAPPER.valueToTree(auth));
-        }
-        store.writeJson(store.service(slug), d);
-        if (Boolean.TRUE.equals(req.removeSecret())) {
-            secrets.save(slug, null);
-        } else if (req.secret() != null && !req.secret().isBlank()) {
-            secrets.save(slug, req.secret());
-        }
-        return settings(slug);
     }
 
     // ---- helpers
@@ -479,10 +488,7 @@ public class ContractApiController {
     }
 
     private ObjectNode draft(String slug) throws IOException {
-        if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*") || !Files.isRegularFile(store.service(slug))) {
-            throw new IllegalArgumentException("No integration " + slug);
-        }
-        return (ObjectNode) Json.MAPPER.readTree(store.service(slug).toFile());
+        return drafts.read(slug);
     }
 
     private static ResponseEntity<String> json(Object body) throws JsonProcessingException {

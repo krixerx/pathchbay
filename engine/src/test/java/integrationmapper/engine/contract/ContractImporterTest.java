@@ -122,6 +122,59 @@ public class ContractImporterTest {
                 .hasMessageContaining("OpenAPI 3, Swagger 2.0 or WSDL 1.1"); // D-30: names every accepted contract type
     }
 
+    /** A $ref to a local file is refused before parsing: Swagger 2.0's converter read it from the working folder. */
+    @Test
+    void aReferenceToALocalFileIsRefusedAndNotRead() throws Exception {
+        Path leak = Path.of("leak-ref-probe.json");
+        Files.writeString(leak, "{\"type\":\"object\",\"properties\":{\"secretKey\":{\"type\":\"string\"}}}");
+        try {
+            String swagger2 = """
+                    swagger: '2.0'
+                    info: {title: t, version: '1'}
+                    paths:
+                      /a:
+                        get:
+                          produces: [application/json]
+                          responses:
+                            '200': {description: ok, schema: {$ref: 'leak-ref-probe.json'}}
+                    """;
+            String oas3 = """
+                    openapi: 3.0.1
+                    info: {title: t, version: '1'}
+                    paths:
+                      /a:
+                        get:
+                          responses:
+                            '200':
+                              description: ok
+                              content: {application/json: {schema: {$ref: '../config/connections.json#/x'}}}
+                    """;
+            assertThatThrownBy(() -> importer().importContract("old", "Old", swagger2, null))
+                    .hasMessageContaining("leak-ref-probe.json").hasMessageNotContaining("secretKey");
+            assertThatThrownBy(() -> importer().importContract("new", "New", oas3, null))
+                    .hasMessageContaining("../config/connections.json#/x");
+            assertThat(Files.exists(dir.resolve("contracts/old.json"))).isFalse();
+        } finally {
+            Files.deleteIfExists(leak);
+        }
+    }
+
+    /** A URL import may refer to its own origin only; anything else is refused before any request is made. */
+    @Test
+    void aUrlImportMayReferOnlyToItsOwnOrigin() {
+        String text = """
+                {"openapi":"3.0.1","paths":{"/a":{"get":{"responses":{"200":{"description":"ok","content":{"application/json":{"schema":
+                  {"properties":{
+                    "same":{"$ref":"http://api.example.org:80/schemas.json#/A"},
+                    "meta":{"$ref":"http://169.254.169.254/latest/meta-data"},
+                    "relative":{"$ref":"schemas.json#/B"},
+                    "inside":{"$ref":"#/components/schemas/C"}}}}}}}}}}}""";
+        assertThat(OpenApiImporter.refusedRefs(text, "http://api.example.org/openapi.json"))
+                .containsExactly("http://169.254.169.254/latest/meta-data", "schemas.json#/B");
+        assertThat(OpenApiImporter.refusedRefs(text, null))
+                .containsExactly("http://169.254.169.254/latest/meta-data", "http://api.example.org:80/schemas.json#/A", "schemas.json#/B");
+    }
+
     /** D-29: format binary is a file (blob) in multipart parts, raw bodies and raw answers; format byte (base64) stays text. */
     @Test
     void binaryBecomesABlobAndBase64StaysText() throws Exception {
@@ -187,5 +240,43 @@ public class ContractImporterTest {
     void unreachableUrlSaysUploadTheFileInstead() {
         assertThatThrownBy(() -> importer().fetch("http://localhost:1/swagger.json"))
                 .hasMessageContaining("upload the file instead");
+    }
+
+    /** A URL that answers without end (chunked, no length) is cut off at the contract limit, not read whole. */
+    @Test
+    void aContractUrlThatAnswersTooMuchIsRefused() throws Exception {
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        java.util.concurrent.atomic.AtomicLong sent = new java.util.concurrent.atomic.AtomicLong();
+        server.createContext("/big.yaml", ex -> {
+            ex.sendResponseHeaders(200, 0); // chunked
+            byte[] block = new byte[64 * 1024];
+            java.util.Arrays.fill(block, (byte) 'a');
+            try (var out = ex.getResponseBody()) {
+                for (int i = 0; i < 1024; i++) { // up to 64 MB
+                    out.write(block);
+                    sent.addAndGet(block.length);
+                }
+            } catch (java.io.IOException e) {
+                // the engine stopped reading
+            }
+        });
+        server.start();
+        try {
+            assertThatThrownBy(() -> importer().fetch("http://127.0.0.1:" + server.getAddress().getPort() + "/big.yaml"))
+                    .hasMessageContaining("more than 20 MB");
+        } finally {
+            server.stop(0);
+        }
+        assertThat(sent.get()).as("bytes sent before the engine stopped reading").isLessThan(64L * 1024 * 1024);
+    }
+
+    /** The schemas one WSDL import may fetch are limited like a ZIP's files. */
+    @Test
+    void aWsdlCanFetchOnlySoManySchemas() {
+        var fetch = ContractImporter.limited(url -> "<xs:schema/>");
+        for (int i = 0; i < ContractImporter.MAX_ZIP_ENTRIES; i++) {
+            fetch.apply("http://x/" + i + ".xsd");
+        }
+        assertThatThrownBy(() -> fetch.apply("http://x/one-more.xsd")).hasMessageContaining("more than 500 schema files");
     }
 }

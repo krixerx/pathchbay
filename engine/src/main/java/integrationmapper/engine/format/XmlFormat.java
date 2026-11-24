@@ -47,7 +47,48 @@ public final class XmlFormat {
         return body != null && body.stripLeading().startsWith("<");
     }
 
+    /**
+     * An element name from mapped data: a letter or _ first, then letters, digits, _ - and . (no : and no markup).
+     * Keys come from callers and external systems when an object or a list is linked as a whole, and neither Jackson
+     * nor the StAX writer checks them, so {@code x/><Admin>true</Admin><y} would be written as three elements.
+     */
+    private static final java.util.regex.Pattern ELEMENT = java.util.regex.Pattern.compile("[\\p{L}_][\\p{L}\\p{N}_.\\-]*");
+
+    /** Throws {@link BadNameException} naming every key in {@code value} that can't be an XML element name. */
+    public static void checkNames(JsonNode value) {
+        List<String> bad = new java.util.ArrayList<>();
+        collectBadNames(value, "", bad);
+        if (!bad.isEmpty()) {
+            throw new BadNameException("Not an XML element name: " + String.join(", ", bad));
+        }
+    }
+
+    private static void collectBadNames(JsonNode value, String at, List<String> bad) {
+        if (value == null) {
+            return;
+        }
+        if (value.isObject()) {
+            value.properties().forEach(e -> {
+                String path = at.isEmpty() ? e.getKey() : at + "." + e.getKey();
+                if (!ELEMENT.matcher(e.getKey()).matches()) {
+                    bad.add("'" + (path.length() > 200 ? path.substring(0, 200) + "..." : path) + "'");
+                }
+                collectBadNames(e.getValue(), path, bad);
+            });
+        } else if (value.isArray()) {
+            value.forEach(item -> collectBadNames(item, at + "[]", bad));
+        }
+    }
+
+    /** A key that can't be written as an XML element; on the request side the caller's input is at fault (400). */
+    public static final class BadNameException extends IllegalArgumentException {
+        BadNameException(String message) {
+            super(message);
+        }
+    }
+
     public static String write(JsonNode value, String root) {
+        checkNames(value);
         JsonNode v = value.isArray() ? JsonNodeFactory.instance.objectNode().set(ITEM, value) : value;
         try {
             return XML.writer().withRootName(root).writeValueAsString(v);

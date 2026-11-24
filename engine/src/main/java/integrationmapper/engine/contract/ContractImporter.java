@@ -1,6 +1,7 @@
 package integrationmapper.engine.contract;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.ConnectException;
 import java.net.URI;
 import java.net.UnknownHostException;
@@ -8,6 +9,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpTimeoutException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.OffsetDateTime;
@@ -16,6 +18,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 import org.springframework.stereotype.Component;
 
@@ -56,15 +61,22 @@ public class ContractImporter {
 
     private String fetch(String url, HttpClient client) {
         try {
-            HttpResponse<String> r = client.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10)).GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
-            if (r.statusCode() >= 300 && r.statusCode() < 400) {
-                throw new IllegalArgumentException("The URL answered " + r.statusCode() + " (a redirect), which is not followed for schemas");
+            HttpResponse<InputStream> r = client.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10)).GET().build(),
+                    HttpResponse.BodyHandlers.ofInputStream());
+            try (InputStream body = r.body()) {
+                if (r.statusCode() >= 300 && r.statusCode() < 400) {
+                    throw new IllegalArgumentException("The URL answered " + r.statusCode() + " (a redirect), which is not followed for schemas");
+                }
+                if (r.statusCode() >= 400) {
+                    throw new IllegalArgumentException("The URL answered " + r.statusCode() + ". Check the address, or download the file and upload it instead.");
+                }
+                // Read no more than the limit of a ZIP import: a contract larger than that is refused, not read whole.
+                byte[] bytes = body.readNBytes((int) MAX_ZIP_BYTES + 1);
+                if (bytes.length > MAX_ZIP_BYTES) {
+                    throw new IllegalArgumentException("The URL answered more than " + MAX_ZIP_BYTES / 1024 / 1024 + " MB, the limit for a contract");
+                }
+                return new String(bytes, charset(r));
             }
-            if (r.statusCode() >= 400) {
-                throw new IllegalArgumentException("The URL answered " + r.statusCode() + ". Check the address, or download the file and upload it instead.");
-            }
-            return r.body();
         } catch (ConnectException | UnknownHostException | HttpTimeoutException e) {
             throw new IllegalArgumentException("The engine could not reach " + url + " (" + e.getClass().getSimpleName()
                     + "). If the file is only reachable from your computer, download it and upload the file instead.");
@@ -89,14 +101,14 @@ public class ContractImporter {
             throw new IllegalArgumentException("The contract is empty");
         }
         if (WsdlImporter.looksLikeWsdl(text)) {
-            SafeXml.Sources sources = sourceUrl == null ? SafeXml.Sources.none() : SafeXml.Sources.ofUrl(sourceUrl, this::fetchSchema);
+            SafeXml.Sources sources = sourceUrl == null ? SafeXml.Sources.none() : SafeXml.Sources.ofUrl(sourceUrl, limited(this::fetchSchema));
             return importWsdl(id, name, sourceUrl == null ? "service.wsdl" : sourceUrl, text.getBytes(StandardCharsets.UTF_8), sources,
                     sourceUrl);
         }
         if (text.stripLeading().startsWith("<")) {
             throw new IllegalArgumentException(NOT_A_CONTRACT);
         }
-        OpenApiImporter.Result r = OpenApiImporter.read(text);
+        OpenApiImporter.Result r = OpenApiImporter.read(text, sourceUrl);
 
         boolean json = text.stripLeading().startsWith("{");
         String sourceFile = id + ".openapi." + (json ? "json" : "yaml");
@@ -106,6 +118,38 @@ public class ContractImporter {
                 r.operations(), r.warnings());
         store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), contract);
         return contract;
+    }
+
+    /**
+     * The schemas one WSDL import may fetch: as many files and bytes in all as a ZIP import may hold, so a WSDL that
+     * imports schemas without end stops instead of filling the memory.
+     */
+    static Function<String, String> limited(Function<String, String> fetch) {
+        AtomicInteger files = new AtomicInteger();
+        AtomicLong bytes = new AtomicLong();
+        return url -> {
+            if (files.incrementAndGet() > MAX_ZIP_ENTRIES) {
+                throw new IllegalArgumentException("The WSDL imports more than " + MAX_ZIP_ENTRIES + " schema files");
+            }
+            String text = fetch.apply(url);
+            if (bytes.addAndGet(text.length()) > MAX_ZIP_BYTES) {
+                throw new IllegalArgumentException("The WSDL's schemas hold more than " + MAX_ZIP_BYTES / 1024 / 1024 + " MB");
+            }
+            return text;
+        };
+    }
+
+    private static Charset charset(HttpResponse<?> r) {
+        String type = r.headers().firstValue("Content-Type").orElse("");
+        int at = type.toLowerCase(java.util.Locale.ROOT).indexOf("charset=");
+        if (at >= 0) {
+            try {
+                return Charset.forName(type.substring(at + 8).split(";")[0].trim().replace("\"", ""));
+            } catch (RuntimeException e) {
+                // an unknown charset name: read it as UTF-8 like a file without one
+            }
+        }
+        return StandardCharsets.UTF_8;
     }
 
     static final String NOT_A_CONTRACT = "Not a contract Patchbay can read: give an OpenAPI 3, Swagger 2.0 or WSDL 1.1 file";

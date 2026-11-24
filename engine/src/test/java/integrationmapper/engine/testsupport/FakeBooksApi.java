@@ -114,6 +114,13 @@ public class FakeBooksApi {
         return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1}");
     }
 
+    /** Answers after 0.5 s, inside every timeout: for calls that run at the same time. */
+    @GetMapping("/fake/pause")
+    ResponseEntity<String> pause() throws InterruptedException {
+        Thread.sleep(500);
+        return ResponseEntity.ok().header("Content-Type", "application/json").body("{\"id\":1}");
+    }
+
     /** An XML flavour of create (D-24): takes a Book element, answers one. */
     @PostMapping("/fake/xml/Books")
     ResponseEntity<String> createXml(@RequestBody String body, @RequestHeader HttpHeaders headers) throws Exception {

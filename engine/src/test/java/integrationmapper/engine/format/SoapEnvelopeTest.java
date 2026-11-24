@@ -1,6 +1,7 @@
 package integrationmapper.engine.format;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.List;
 import java.util.Map;
@@ -47,6 +48,14 @@ class SoapEnvelopeTest {
 
         assertThat(xml).isEqualTo(HEAD + "<ns1:PlaceOrder xmlns:ns1=\"urn:example:order\"><id>O-1</id>"
                 + "<lines><sku>A</sku><qty>1</qty></lines><lines><sku>B</sku><qty>2</qty></lines></ns1:PlaceOrder>" + TAIL);
+    }
+
+    /** Keys come from callers when an object is linked as a whole; one that isn't an XML name is refused, not written. */
+    @Test
+    void aKeyThatIsNoXmlNameIsRefused() {
+        SoapTarget soap = new SoapTarget("1.1", "", new SoapTarget.Element("SavePerson", "urn:example:person"), null, null, null);
+        assertThatThrownBy(() -> write(soap, "{\"person\":{\"x/><Admin>true</Admin><y\":{}}}"))
+                .isInstanceOf(XmlFormat.BadNameException.class).hasMessageContaining("person.x/><Admin>");
     }
 
     @Test

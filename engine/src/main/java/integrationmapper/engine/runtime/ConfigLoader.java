@@ -12,13 +12,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
+import integrationmapper.engine.config.MapperProperties;
 import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.config.Connections;
+import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.config.Packages;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.format.Json;
@@ -45,20 +46,21 @@ public class ConfigLoader {
     private final Connections connections;
     private final ConfigStore store;
     private final Packages packages;
+    private final Drafts drafts;
     private final Path configDir;
     private final String importDir;
 
     public ConfigLoader(IntegrationPublisher publisher, IntegrationRegistry registry, PayloadLibrary library,
-            Connections connections, ConfigStore store, Packages packages,
-            @Value("${mapper.config-dir:config}") String configDir, @Value("${mapper.import-dir:}") String importDir) {
+            Connections connections, ConfigStore store, Packages packages, Drafts drafts, MapperProperties properties) {
         this.publisher = publisher;
         this.registry = registry;
         this.library = library;
         this.connections = connections;
         this.store = store;
         this.packages = packages;
-        this.configDir = Path.of(configDir);
-        this.importDir = importDir;
+        this.drafts = drafts;
+        this.configDir = Path.of(properties.configDir());
+        this.importDir = properties.importDir();
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -81,7 +83,7 @@ public class ConfigLoader {
                     log.info("{} is a draft that was never published; not served", slug);
                 }
             } catch (Exception e) {
-                registry.markBroken(slug, e.getMessage());
+                registry.markBroken(slug, String.valueOf(e.getMessage() != null ? e.getMessage() : e));
                 log.error("Skipped broken integration {} ({}): {}", slug, file, e.getMessage());
             }
         }
@@ -145,7 +147,9 @@ public class ConfigLoader {
      */
     private void moveBaseUrlsToConnections() throws IOException {
         for (Path file : jsonFiles("services")) {
-            try {
+            String slug = file.getFileName().toString().replaceFirst("\\.json$", "");
+            // The console is already up; a file named outside the slug rules is no draft it can edit.
+            try (Drafts.Lock locked = slug.matches(Drafts.SLUG) ? drafts.lock(slug) : () -> { }) {
                 ObjectNode d = (ObjectNode) Json.MAPPER.readTree(file.toFile());
                 String contract = d.path("contract").asText(null);
                 if (contract == null || !d.path("target").isObject() || d.path("target").hasNonNull("connection")) {

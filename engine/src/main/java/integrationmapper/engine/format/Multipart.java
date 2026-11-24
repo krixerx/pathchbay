@@ -145,6 +145,10 @@ public final class Multipart {
                     disposition += "; filename=\"" + e.getKey().replace("\"", "\\\"") + "\"";
                 }
                 type = v.path("contentType").asText(Blobs.DEFAULT_TYPE);
+                if (Blobs.hasControlCharacter(type)) {
+                    // Blobs.check refuses this in a caller's file; a line break here would add part headers or parts.
+                    throw new IllegalArgumentException("The content type of part " + e.getKey() + " has control characters");
+                }
                 content = Blobs.bytes(v);
             } else {
                 content = (v.isValueNode() ? v.asText() : v.toString()).getBytes(StandardCharsets.UTF_8);

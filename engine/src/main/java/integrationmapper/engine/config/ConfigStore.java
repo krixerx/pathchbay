@@ -6,12 +6,14 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Stream;
 
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import integrationmapper.engine.format.Json;
@@ -19,7 +21,8 @@ import integrationmapper.engine.model.Version;
 
 /**
  * Reads and writes the config folder. Every write is crash-safe (R4): the new content goes to a temp file in the
- * same folder, which then replaces the target in one rename, so a file is either old or new, never half. A rename
+ * same folder, which then replaces the target in one rename, so a file is either old or new, never half. Each write
+ * has its own temp file, so two writes of one file at the same time can't mix their content. A rename
  * blocked by another process (a Windows file lock, Docker Desktop shares) is retried before giving up (OV-11).
  */
 @Component
@@ -30,7 +33,13 @@ public class ConfigStore {
 
     private final Path root;
 
-    public ConfigStore(@Value("${mapper.config-dir:config}") String configDir) {
+    @Autowired
+    public ConfigStore(MapperProperties properties) {
+        this(properties.configDir());
+    }
+
+    /** For tests and tools that work on a folder of their own. */
+    public ConfigStore(String configDir) {
         this.root = Path.of(configDir);
     }
 
@@ -85,9 +94,10 @@ public class ConfigStore {
     /** Writes through a temp file in the target's folder; on any failure the target keeps its old content. */
     public void write(Path target, IoWriter writer) throws IOException {
         Files.createDirectories(target.getParent());
-        Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+        // A unique name opened with CREATE_NEW keeps the folder's default permissions (createTempFile would make it 0600).
+        Path tmp = target.resolveSibling(target.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
-            try (OutputStream out = Files.newOutputStream(tmp)) {
+            try (OutputStream out = Files.newOutputStream(tmp, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
                 writer.write(out);
             }
             move(tmp, target);

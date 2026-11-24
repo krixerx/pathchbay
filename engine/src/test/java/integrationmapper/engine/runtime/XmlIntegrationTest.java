@@ -76,6 +76,28 @@ class XmlIntegrationTest {
                 .build(), HttpResponse.BodyHandlers.ofString());
     }
 
+    /** A key that isn't an XML name, in an object linked as a whole, is refused before the call, not written as markup. */
+    @Test
+    void aKeyThatIsNoXmlNameIsRefusedWithoutACall() throws Exception {
+        library.put(definition("""
+                {"id":"with-meta","fields":[{"id":"wm-title","name":"title","type":"text"},
+                  {"id":"wm-meta","name":"meta","type":"object","fields":[{"id":"wm-note","name":"note","type":"text"}]}]}"""));
+        publisher.publish(new ServiceDefinition("xml-meta", "1.0.0", null, "with-meta", "book-ref",
+                new ServiceDefinition.Target(base(), "POST", "/xml/Books"), null,
+                new ServiceDefinition.Mapping(List.of(link("wm-title", "body.title"), link("wm-meta", "body.meta"))),
+                new ServiceDefinition.Mapping(List.of(link("id", "br-bookId"))),
+                new ServiceDefinition.Formats("xml", "Book", null, null)));
+
+        HttpResponse<String> bad = call("xml-meta", "POST", "", "{\"title\":\"T\",\"meta\":{\"x/><Admin>true</Admin><y\":{}}}");
+        assertThat(bad.statusCode()).as(bad.body()).isEqualTo(400);
+        assertThat(bad.body()).contains("Not an XML element name");
+        assertThat(fake.lastRequest).as("nothing sent").isEmpty();
+
+        HttpResponse<String> ok = call("xml-meta", "POST", "", "{\"title\":\"T\",\"meta\":{\"märkus\":\"ok\"}}");
+        assertThat(ok.statusCode()).as(ok.body()).isEqualTo(200);
+        assertThat(fake.lastRequest.get("body")).isEqualTo("<Book><title>T</title><meta><märkus>ok</märkus></meta></Book>");
+    }
+
     @Test
     void sendsXmlAndReadsTheXmlAnswerIntoTypedJson() throws Exception {
         publisher.publish(createBook(new ServiceDefinition.Formats("xml", "Book", null, null)));
