@@ -189,6 +189,12 @@ The step order stays as the user defined it. Step 1 does not depend on later ste
 > - **Basic auth:** integration auth type `basic`, secret `username:password`, for every integration.
 > - Not yet: WSDL 2.0, RPC style, SOAP headers in mappings, WS-Security, MTOM, callers sending XML or SOAP, publishing an integration as a SOAP service.
 
+> **D-31 Packages imported at startup (user decision, 2026-11-24; spec FR-060).** User: "add MAPPER_IMPORT_DIR to Patchbay", after asking whether configuration can be imported at the docker-compose level.
+> - `mapper.import-dir` (`MAPPER_IMPORT_DIR`): every `*.zip` in that folder is imported at startup in file-name order, after the payload library is loaded and before integrations are served, with the D-28 checks and rules.
+> - An integration with no `activeVersion` here is made active with the package's `activeVersion` (the version live where it came from), compiled first as any activation (R9). One that already has a live version keeps it, so a restart does not undo a rollback made here. Drafts never published where they came from are stored, not published.
+> - A refused package is logged with every problem and skipped; a version that can't go live is marked broken and tried again at the next start (R10). Connections and secrets stay environment variables, as in D-28.
+> - Each start imports again, so drafts, payload definitions and Swagger configurations from the folder replace console edits to them.
+
 - **D-1 Home and drafts:** after login the user lands on an **Integrations** list (name, active version, Draft/Published, last edited) with one primary button, "New integration". A new integration starts by asking its name, and the slug is derived from it (editable until first publish). The draft autosaves to `/config` on every change, so a refresh or closed tab loses nothing. Opening a published integration opens its draft (created from the active version if none exists).
 
 - **D-2 Step 4 layout and hierarchy:** first, a one-line status bar under the stepper: "3 required fields unmapped · last test passed 12:04". Each part is a link that jumps to the row or the test result. Second, the two trees side by side at full width. Third, the Test panel as a resizable right drawer, closed until the first link exists and then open by default (its width is remembered). This replaces the wireframe's three equal columns.

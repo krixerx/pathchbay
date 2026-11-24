@@ -56,6 +56,18 @@ curl -X POST localhost:8080/admin/api/import -H 'Content-Type: application/zip' 
 
 Import checks every file first and writes nothing if anything is wrong; the answer then lists every problem. A version that exists with other content is refused, because published versions never change. Versions already there are skipped, payload definitions and Swagger configurations are replaced, drafts are replaced but keep this environment's `activeVersion`. Nothing goes live: the answer lists per integration what this environment still needs (base URL, secret, header values) and which version was live where the package came from; `versions/<version>/activate` makes it live.
 
+To configure a container without calls (D-31), mount a folder of packages and set `MAPPER_IMPORT_DIR` (`mapper.import-dir`). At startup, after the payload library and before serving, every `*.zip` in it is imported in file-name order with the same checks as above. Then each integration that has no `activeVersion` here is made active with the version that was live where its package came from. A package that fails is logged with every problem and skipped; a version that can't go live (missing secret or base URL) is listed under `broken` and tried again at the next start. Set connections and secrets with `MAPPER_URL_<ID>`, `MAPPER_HEADER_<ID>_<NAME>` and `MAPPER_SECRET_<SLUG>`.
+
+```yaml
+services:
+  patchbay:
+    environment:
+      MAPPER_IMPORT_DIR: /import
+      MAPPER_URL_FAKE_REST_API: https://fakerestapi.azurewebsites.net
+    volumes:
+      - ./packages:/import:ro
+```
+
 ## Outbound auth and secrets
 
 A service can authenticate to the external system:

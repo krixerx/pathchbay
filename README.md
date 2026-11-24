@@ -101,6 +101,7 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 | Variable | Default | What it does |
 |---|---|---|
 | `MAPPER_CONFIGDIR` (option `--mapper.config-dir`) | `config` (in Docker: `/config`) | Folder with all configuration: payload definitions, contracts, integrations, versions and secrets. |
+| `MAPPER_IMPORT_DIR` (option `--mapper.import-dir`) | not set | A folder of packages (ZIPs made with **Export**) to import at every start, in file-name order, before anything is served. An integration with no live version here then gets the version that was live where its package came from. A package with problems or a version that can't go live (missing secret or base URL) is logged and skipped. Each start imports again: payload definitions, Swagger configurations and drafts from the folder replace what was changed in the console, while the live version chosen here is kept. Connections and secrets still come from the variables below. |
 | `SERVER_PORT` (option `--server.port`) | `8080` | Port of the console, the admin API and the published integrations. |
 | `MAPPER_OUTBOUNDTIMEOUTMS` (option `--mapper.outbound-timeout-ms`) | `10000` | How long a call to an external system may take, in milliseconds; after that the caller gets `504`. |
 | `INBOUND_API_KEY` | not set | When set, every call to a published integration, the console and the admin API must send this value in the `X-API-Key` header, otherwise `401`. The console asks for it once per browser tab. Not set: nothing is checked, which is meant for a closed Docker network only. |
