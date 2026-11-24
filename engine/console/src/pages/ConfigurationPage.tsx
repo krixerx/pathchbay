@@ -35,7 +35,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { ConnectionForm } from '../components/ConnectionForm';
 import type { Contract, ContractSummary } from '../model';
-import { meaning } from '../theme';
+import { meaning, statusText } from '../theme';
 import { shortWhen } from '../time';
 
 /**
@@ -131,7 +131,7 @@ export function ConfigurationPage() {
                       )}
                     </Text>
                   ) : (
-                    <Text size="sm" c="yellow.8">
+                    <Text size="sm" c={statusText.warning}>
                       Not set
                     </Text>
                   )}

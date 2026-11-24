@@ -40,7 +40,7 @@ import {
   requiredUnmapped,
   responseRows,
 } from '../../board';
-import { meaning } from '../../theme';
+import { meaning, statusText } from '../../theme';
 import { FormatSwitch } from './FormatSwitch';
 
 const ROW_HEIGHT = 34;
@@ -321,8 +321,8 @@ function StatusBar(props: {
         {props.unmapped > 0 ? (
           <UnstyledButton onClick={props.onShowUnmapped}>
             <Group gap={4}>
-              <IconAlertTriangle size={16} color="var(--mantine-color-yellow-7)" />
-              <Text size="sm" c="yellow.8">
+              <IconAlertTriangle size={16} color={statusText.warning} />
+              <Text size="sm" c={statusText.warning}>
                 {props.unmapped} required field{props.unmapped === 1 ? '' : 's'} unmapped ▸
               </Text>
             </Group>
@@ -339,8 +339,8 @@ function StatusBar(props: {
         {props.red > 0 && (
           <UnstyledButton onClick={props.onShowProblems}>
             <Group gap={4}>
-              <IconX size={16} color="var(--mantine-color-red-7)" />
-              <Text size="sm" c="red.7">
+              <IconX size={16} color={statusText.broken} />
+              <Text size="sm" c={statusText.broken}>
                 {props.red} link{props.red === 1 ? '' : 's'} can't be published ▸
               </Text>
             </Group>
@@ -348,15 +348,15 @@ function StatusBar(props: {
         )}
         {props.other.red > 0 && (
           <UnstyledButton onClick={props.onSwitch}>
-            <Text size="sm" c="red.7">
+            <Text size="sm" c={statusText.broken}>
               {props.other.red} problem{props.other.red === 1 ? '' : 's'} on the other tab ▸
             </Text>
           </UnstyledButton>
         )}
         {props.lastTest && (
           <Group gap={4}>
-            {props.lastTest.ok ? <IconCheck size={16} color="var(--mantine-color-green-7)" /> : <IconX size={16} color="var(--mantine-color-red-7)" />}
-            <Text size="sm" c={props.lastTest.ok ? 'green.8' : 'red.7'}>
+            {props.lastTest.ok ? <IconCheck size={16} color={statusText.passed} /> : <IconX size={16} color={statusText.broken} />}
+            <Text size="sm" c={props.lastTest.ok ? statusText.passed : statusText.broken}>
               Last test {props.lastTest.ok ? 'passed' : 'failed'} {props.lastTest.at}
             </Text>
           </Group>
@@ -547,13 +547,13 @@ function TreePanel(props: {
                       size="sm"
                       ff="monospace"
                       truncate
-                      c={r.missing ? 'red.7' : undefined}
+                      c={r.missing ? statusText.broken : undefined}
                       td={r.missing ? 'line-through' : undefined}
                       style={{ flexShrink: 1, minWidth: 0 }}
                     >
                       {r.label}
                       {r.required && (
-                        <Text span c="red.7" aria-label="required">
+                        <Text span c={statusText.broken} aria-label="required">
                           {' *'}
                         </Text>
                       )}
@@ -562,10 +562,10 @@ function TreePanel(props: {
                       {r.missing ? 'no longer exists' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
                       {r.constant ? ' · constant' : ''}
                     </Text>
-                    {amber && <IconAlertTriangle size={14} color="var(--mantine-color-yellow-7)" aria-label="required, not mapped" />}
+                    {amber && <IconAlertTriangle size={14} color={statusText.warning} aria-label="required, not mapped" />}
                     {state && state.kind !== 'ok' && (
                       <Tooltip label={state.reason} withArrow>
-                        <IconAlertTriangle size={14} color="var(--mantine-color-red-7)" aria-label={state.reason} />
+                        <IconAlertTriangle size={14} color={statusText.broken} aria-label={state.reason} />
                       </Tooltip>
                     )}
                     {r.added && props.onRemoveRow && (
@@ -765,7 +765,7 @@ function LinkList(props: { links: Link[]; states: LinkState[]; sources: Row[]; t
       </Group>
       <Stack gap={2}>
         {listed.map(({ l, s }) => {
-          const color = s.kind === 'ok' ? 'teal.9' : 'red.7';
+          const color = s.kind === 'ok' ? 'teal.9' : statusText.broken;
           return (
             <Group key={`${l.from}->${l.to}`} gap="xs" wrap="nowrap">
               <Text size="sm" ff="monospace" c={color}>
@@ -773,7 +773,7 @@ function LinkList(props: { links: Link[]; states: LinkState[]; sources: Row[]; t
                 {label(props.sources, l.from)} → {label(props.targets, l.to)}
               </Text>
               {s.kind !== 'ok' && (
-                <Text size="xs" c="red.7">
+                <Text size="xs" c={statusText.broken}>
                   {s.reason}
                 </Text>
               )}

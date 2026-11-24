@@ -18,7 +18,7 @@ import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api';
 import type { Auth, IntegrationSettings } from '../model';
-import { meaning } from '../theme';
+import { meaning, statusText } from '../theme';
 
 type AuthKind = 'none' | 'bearer' | 'basic' | 'apiKey';
 
@@ -115,7 +115,7 @@ export function SettingsPage() {
           {settings.baseUrl ? (
             <Code>{settings.baseUrl}</Code>
           ) : (
-            <Text size="sm" c="yellow.8">
+            <Text size="sm" c={statusText.warning}>
               Not set yet: needed before the integration can be tested for real or published.
             </Text>
           )}

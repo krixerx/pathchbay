@@ -1,7 +1,7 @@
 import { Alert, Badge, Code, Group, Stack, Text } from '@mantine/core';
 import { IconCheck, IconX } from '@tabler/icons-react';
 import type { TestResult } from '../model';
-import { meaning } from '../theme';
+import { meaning, statusText } from '../theme';
 
 /**
  * One call step by step, as the Test drawer and the call log (D-22) show it: the outcome, problems, the request sent,
@@ -16,8 +16,8 @@ export function CallSteps(props: {
   return (
     <Stack gap={6} aria-live="polite">
       <Group gap={4}>
-        {ok ? <IconCheck size={16} color="var(--mantine-color-green-7)" /> : <IconX size={16} color="var(--mantine-color-red-7)" />}
-        <Text size="sm" c={ok ? 'green.8' : 'red.7'} fw={500}>
+        {ok ? <IconCheck size={16} color={statusText.passed} /> : <IconX size={16} color={statusText.broken} />}
+        <Text size="sm" c={ok ? statusText.passed : statusText.broken} fw={500}>
           {ok ? props.passed : `Stopped at: ${result.stage}`}
         </Text>
         {result.mock && <Badge variant="light" color="gray">mock</Badge>}

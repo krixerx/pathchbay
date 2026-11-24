@@ -63,4 +63,4 @@ Visible focus ring in the accent color, WCAG AA contrast, all actions reachable 
 - The accent is `teal.9` (5.0:1 on white) so links and white text on primary buttons meet AA; `teal.8` reached 3.95:1. The light teal behind teal text (active menu item, Live badges, selected row) is `teal.0`, giving 4.7:1.
 - Graphics that carry meaning reach 3:1 (WCAG 1.4.11): the board's free dots are `gray.6`, linked dots `teal.7` / `red.7`, valid lines `teal.8`, problem lines `red.6`.
 - Authentication stays per integration (user decision 2026-11-24): one system can mix open and protected operations, and integrations can use different credentials. The Settings page says so and points to connection headers for a key every call needs.
-- Open: the status text colors fall below 4.5:1 on white: `yellow.8` 2.5:1, `green.8` 3.5:1, `red.7` 3.8:1.
+- Status text and the icons beside it use `statusText` in `theme.ts`: warning `#9c5d00`, broken `red.9`, passed `#247534`, at least 4.9:1 on white and on the light backgrounds (Mantine's `yellow.8`, `green.8` and `red.7` reached 2.5, 3.5 and 3.8:1). Mantine's light variants (alert titles, light buttons) use the same amber and green.
