@@ -328,9 +328,13 @@ function StatusBar(props: {
             </Group>
           </UnstyledButton>
         ) : (
-          <Text size="sm" c="dimmed">
-            All required fields mapped
-          </Text>
+          // Neutral, not green: green means only "test passed" (DESIGN.md).
+          <Group gap={4}>
+            <IconCheck size={16} color="var(--mantine-color-dimmed)" aria-hidden />
+            <Text size="sm" c="dimmed">
+              All required fields mapped
+            </Text>
+          </Group>
         )}
         {props.red > 0 && (
           <UnstyledButton onClick={props.onShowProblems}>
