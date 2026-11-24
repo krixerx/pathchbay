@@ -64,7 +64,7 @@ public record SoapTarget(String version, String action, Element body, String add
 
     /** Structural checks at compile time; throws naming the integration. */
     public void check(String slug) {
-        if (!VERSIONS.contains(version)) {
+        if (version == null || !VERSIONS.contains(version)) {
             throw new IllegalArgumentException("Integration " + slug + ": target.soap.version must be 1.1 or 1.2, not " + version);
         }
         if (body != null) {

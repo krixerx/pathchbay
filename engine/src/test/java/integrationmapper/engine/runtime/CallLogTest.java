@@ -18,7 +18,7 @@ class CallLogTest {
     void keepsTheLastHundredNewestFirst() {
         CallLog log = new CallLog("on");
         for (int i = 1; i <= CallLog.KEEP + 5; i++) {
-            log.add("a", "GET", call(i));
+            log.add("a", "GET", "req-1", call(i));
         }
         assertThat(log.list("a")).hasSize(CallLog.KEEP);
         assertThat(log.list("a").get(0).durationMs()).isEqualTo(CallLog.KEEP + 5);
@@ -30,7 +30,7 @@ class CallLogTest {
     @Test
     void offKeepsNothing() {
         CallLog log = new CallLog("OFF");
-        log.add("a", "GET", call(1));
+        log.add("a", "GET", "req-1", call(1));
         assertThat(log.enabled()).isFalse();
         assertThat(log.list("a")).isEmpty();
     }

@@ -64,6 +64,8 @@
     { "name": "number into an object", "source": "amount", "sourceType": "number", "target": "body.total", "targetType": "object", "listLinks": [], "reason": "single-to-object" },
     { "name": "object into a text field", "source": "address", "sourceType": "object", "target": "body.line", "targetType": "text", "listLinks": [], "reason": "object-to-single" },
     { "name": "object into an object", "source": "address", "sourceType": "object", "target": "body.ADDRESS", "targetType": "object", "listLinks": [], "reason": null },
-    { "name": "text into an external path of unknown type", "source": "firstName", "sourceType": "text", "target": "body.customer", "listLinks": [], "reason": null }
+    { "name": "text into an external path of unknown type", "source": "firstName", "sourceType": "text", "target": "body.customer", "listLinks": [], "reason": null },
+    { "name": "object into an external path of unknown type", "source": "address", "sourceType": "object", "target": "body.ADDRESS", "listLinks": [], "reason": null },
+    { "name": "answer path of unknown type into an object", "source": "ADDRESS", "target": "address", "targetType": "object", "listLinks": [], "reason": null }
   ]
 }

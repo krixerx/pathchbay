@@ -50,6 +50,16 @@ class PayloadDefinitionTest {
                 .hasMessageContaining("list has no valid item type");
     }
 
+    @Test
+    void aMissingTypeIsAProblemNotAnError() throws Exception {
+        PayloadDefinition bad = parse("""
+                {"id":"bad","fields":[{"id":"x","name":"a"},{"id":"y","name":"l","type":"list","items":{}}]}""");
+        assertThatThrownBy(bad::check).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("a: unknown type null")
+                .hasMessageContaining("l: list has no valid item type");
+        assertThat(bad.isFlat()).isFalse();
+    }
+
     /** D-29: a blob is a file at the top level of a definition, never nested, listed, constant or a query parameter. */
     @Test
     void aBlobIsATopLevelFileOnly() throws Exception {

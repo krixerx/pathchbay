@@ -25,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import integrationmapper.engine.config.ConfigStore;
+import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.mapping.SampleInference;
@@ -45,11 +46,13 @@ public class ConsoleApiController {
     private static final String SLUG = "[a-z0-9]+(-[a-z0-9]+)*";
 
     private final ConfigStore store;
+    private final Drafts drafts;
     private final PayloadLibrary library;
     private final IntegrationRegistry registry;
 
-    public ConsoleApiController(ConfigStore store, PayloadLibrary library, IntegrationRegistry registry) {
+    public ConsoleApiController(ConfigStore store, Drafts drafts, PayloadLibrary library, IntegrationRegistry registry) {
         this.store = store;
+        this.drafts = drafts;
         this.library = library;
         this.registry = registry;
     }
@@ -135,14 +138,16 @@ public class ConsoleApiController {
         if (slug.isEmpty()) {
             throw new IllegalArgumentException("Give the integration a name with at least one letter or digit");
         }
-        if (Files.exists(store.service(slug))) {
-            throw new IllegalArgumentException("An integration called " + slug + " already exists");
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            if (Files.exists(store.service(slug))) {
+                throw new IllegalArgumentException("An integration called " + slug + " already exists");
+            }
+            ObjectNode draft = Json.MAPPER.createObjectNode().put("id", slug).put("name", req.name().strip());
+            draft.putObject("request").putArray("links");
+            draft.putObject("response").putArray("links");
+            drafts.write(slug, draft);
+            return json(draft);
         }
-        ObjectNode draft = Json.MAPPER.createObjectNode().put("id", slug).put("name", req.name().strip());
-        draft.putObject("request").putArray("links");
-        draft.putObject("response").putArray("links");
-        store.writeJson(store.service(slug), draft);
-        return json(draft);
     }
 
     record Payloads(String input, String output) {
@@ -152,16 +157,18 @@ public class ConsoleApiController {
     @PutMapping("/integrations/{slug}/payloads")
     public ResponseEntity<String> setPayloads(@PathVariable String slug, @RequestBody String body) throws IOException {
         Payloads req = read(body, Payloads.class);
-        ObjectNode d = draft(slug);
-        for (String id : new String[] {req.input(), req.output()}) {
-            if (id != null && !id.isBlank()) {
-                library.get(id); // fails with a clear message if unknown
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            ObjectNode d = draft(slug);
+            for (String id : new String[] {req.input(), req.output()}) {
+                if (id != null && !id.isBlank()) {
+                    library.get(id); // fails with a clear message if unknown
+                }
             }
+            putOrRemove(d, "input", req.input());
+            putOrRemove(d, "output", req.output());
+            drafts.write(slug, d);
+            return json(d);
         }
-        putOrRemove(d, "input", req.input());
-        putOrRemove(d, "output", req.output());
-        store.writeJson(store.service(slug), d);
-        return json(d);
     }
 
     // ---- helpers
@@ -194,10 +201,7 @@ public class ConsoleApiController {
     }
 
     private ObjectNode draft(String slug) throws IOException {
-        if (!slug.matches(SLUG) || !Files.isRegularFile(store.service(slug))) {
-            throw new IllegalArgumentException("No integration " + slug);
-        }
-        return (ObjectNode) Json.MAPPER.readTree(store.service(slug).toFile());
+        return drafts.read(slug);
     }
 
     /** Integrations whose draft uses the definition as Input or Output. */

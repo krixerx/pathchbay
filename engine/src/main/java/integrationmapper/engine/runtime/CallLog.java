@@ -41,8 +41,9 @@ public class CallLog {
         return enabled;
     }
 
-    void add(String slug, String method, Call call) {
-        log.info("Call {} {} {} -> {} ({}) {} ms", slug, call.version(), method, call.status(), call.stage(), call.durationMs());
+    void add(String slug, String method, String requestId, Call call) {
+        log.info("Call {} {} {} -> {} ({}) {} ms, request {}", slug, call.version(), method, call.status(), call.stage(), call.durationMs(),
+                requestId);
         if (!enabled) {
             return;
         }

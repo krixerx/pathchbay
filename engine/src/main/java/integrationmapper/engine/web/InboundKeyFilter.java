@@ -3,6 +3,7 @@ package integrationmapper.engine.web;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.util.regex.Pattern;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -19,16 +20,21 @@ import integrationmapper.engine.format.Json;
 
 /**
  * The optional inbound key (slice plan "Inbound access"): when the environment variable {@code INBOUND_API_KEY} is
- * set, published integrations and the console/admin API answer 401 unless the request carries the same value in
- * {@code X-API-Key}. The console's page and its static files stay open so it can ask for the key. Without the
+ * set, every request answers 401 unless it carries the same value in {@code X-API-Key}, except the console's page and
+ * static files (so it can ask for the key) and the published OpenAPI documents. Deny by default, decided on the path
+ * the router sees ({@link RequestPaths}), so an encoded or {@code ;}-parameter path can't slip past. Without the
  * variable nothing is checked (closed Docker network). The header never reaches the external system: the routes
  * remove all inbound headers before the outbound call (OV-8).
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 1)
 public class InboundKeyFilter extends OncePerRequestFilter {
 
     public static final String HEADER = "X-API-Key";
+
+    /** Open without the key: the console (a hash router, so no deep links), the OpenAPI documents and the health probes. */
+    private static final Pattern OPEN = Pattern.compile(
+            "/|/index\\.html|/favicon\\.svg|/assets/.+|/api/openapi\\.json|/api/openapi/[^/]+\\.json|/actuator/health(/liveness|/readiness)?");
 
     private final byte[] key;
 
@@ -38,8 +44,12 @@ public class InboundKeyFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        String uri = request.getRequestURI();
-        return key == null || !(uri.startsWith(IntegrationGate.INTEGRATIONS) || uri.startsWith("/admin/"));
+        if (key == null) {
+            return true;
+        }
+        String path = RequestPaths.of(request);
+        boolean read = "GET".equals(request.getMethod()) || "HEAD".equals(request.getMethod());
+        return read && OPEN.matcher(path).matches() && !RequestPaths.hasDotSegment(path);
     }
 
     @Override

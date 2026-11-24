@@ -72,7 +72,7 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
             } else if (!names.add(f.name())) {
                 problems.add(where + ": two fields named " + f.name());
             }
-            if (!TYPES.contains(f.type())) {
+            if (f.type() == null || !TYPES.contains(f.type())) {
                 problems.add(where + ": unknown type " + f.type() + " (use one of " + TYPES + ")");
                 continue;
             }
@@ -86,7 +86,7 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
                 checkFields(f.children(), where + ".", false, ids, problems);
             }
             if ("list".equals(f.type())) {
-                if (f.items() == null || !TYPES.contains(f.items().type())) {
+                if (f.items() == null || f.items().type() == null || !TYPES.contains(f.items().type())) {
                     problems.add(where + ": list has no valid item type");
                 } else if ("blob".equals(f.items().type())) {
                     problems.add(where + ": a list can't hold blobs");
@@ -128,8 +128,8 @@ public record PayloadDefinition(String id, String name, List<Field> fields) {
     @JsonIgnore
     public boolean isFlat() {
         for (Field f : fields == null ? List.<Field>of() : fields) {
-            boolean simpleList = "list".equals(f.type()) && f.items() != null && SIMPLE.contains(f.items().type());
-            if (!f.isConstant() && !SIMPLE.contains(f.type()) && !simpleList) {
+            boolean simpleList = "list".equals(f.type()) && f.items() != null && f.items().type() != null && SIMPLE.contains(f.items().type());
+            if (!f.isConstant() && (f.type() == null || !SIMPLE.contains(f.type())) && !simpleList) {
                 return false;
             }
         }

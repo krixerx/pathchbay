@@ -56,6 +56,11 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
+            <!-- Health only: liveness, and readiness once every integration is loaded (Docker HEALTHCHECK, orchestrators) -->
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
             <!-- JSON <-> XML at the edges of a call (TODO-T4, D-24); Jackson 2, like Json.MAPPER -->
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-xml</artifactId>

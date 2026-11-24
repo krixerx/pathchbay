@@ -67,10 +67,12 @@ public class Packages {
     private final IntegrationRegistry registry;
     private final Connections connections;
     private final SecretResolver secrets;
+    private final Drafts draftStore;
 
     public Packages(ConfigStore store, PayloadLibrary library, IntegrationRegistry registry, Connections connections,
-            SecretResolver secrets) {
+            SecretResolver secrets, Drafts drafts) {
         this.store = store;
+        this.draftStore = drafts;
         this.library = library;
         this.registry = registry;
         this.connections = connections;
@@ -246,6 +248,14 @@ public class Packages {
                 problems.add(name + ": " + e.getMessage());
             }
         }
+        for (JsonNode listed : manifest.path("integrations")) {
+            String slug = listed.path("id").asText("");
+            if (!slug.matches(SLUG)) {
+                problems.add("manifest.json: '" + slug + "' is not a valid integration id");
+            } else if (!drafts.containsKey(slug) && !Files.isRegularFile(store.service(slug))) {
+                problems.add("manifest.json lists integration " + slug + ", but there is no services/" + slug + ".json in the package or here");
+            }
+        }
         for (String slug : versions.keySet()) {
             if (!drafts.containsKey(slug) && !Files.isRegularFile(store.service(slug))) {
                 problems.add("Integration " + slug + " has versions but no services/" + slug + ".json");
@@ -306,12 +316,14 @@ public class Packages {
         }
         for (Map.Entry<String, ObjectNode> d : drafts.entrySet()) {
             ObjectNode draft = d.getValue();
-            String live = activeHere(d.getKey());
-            draft.remove("activeVersion");
-            if (live != null) {
-                draft.put("activeVersion", live);
+            try (Drafts.Lock locked = draftStore.lock(d.getKey())) {
+                String live = activeHere(d.getKey());
+                draft.remove("activeVersion");
+                if (live != null) {
+                    draft.put("activeVersion", live);
+                }
+                draftStore.write(d.getKey(), draft);
             }
-            store.writeJson(store.service(d.getKey()), draft);
         }
 
         // 3. Report, with what each integration still needs in this environment before it can go live.

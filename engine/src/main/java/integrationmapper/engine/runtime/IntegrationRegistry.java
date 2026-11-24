@@ -37,7 +37,7 @@ public class IntegrationRegistry {
     }
 
     void markBroken(String slug, String reason) {
-        broken.put(slug, reason);
+        broken.put(slug, reason != null ? reason : "failed without a message");
     }
 
     /** Every live version, by slug in name order. */

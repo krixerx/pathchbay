@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import integrationmapper.engine.config.ConfigStore;
+import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.config.Connections;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.format.Json;
@@ -46,14 +47,16 @@ import integrationmapper.engine.runtime.TestRunner;
 public class MappingApiController {
 
     private final ConfigStore store;
+    private final Drafts drafts;
     private final PayloadLibrary library;
     private final TestRunner tests;
     private final IntegrationPublisher publisher;
     private final CallLog calls;
 
-    public MappingApiController(ConfigStore store, PayloadLibrary library, TestRunner tests, IntegrationPublisher publisher,
+    public MappingApiController(ConfigStore store, Drafts drafts, PayloadLibrary library, TestRunner tests, IntegrationPublisher publisher,
             CallLog calls) {
         this.store = store;
+        this.drafts = drafts;
         this.library = library;
         this.tests = tests;
         this.publisher = publisher;
@@ -82,11 +85,13 @@ public class MappingApiController {
     @PutMapping("/links")
     public ResponseEntity<String> saveLinks(@PathVariable String slug, @RequestBody String body) throws IOException {
         Links links = read(body, Links.class);
-        ObjectNode d = draft(slug);
-        d.putObject("request").set("links", Json.MAPPER.valueToTree(links.request() == null ? List.of() : links.request()));
-        d.putObject("response").set("links", Json.MAPPER.valueToTree(links.response() == null ? List.of() : links.response()));
-        store.writeJson(store.service(slug), d);
-        return json(d);
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            ObjectNode d = draft(slug);
+            d.putObject("request").set("links", Json.MAPPER.valueToTree(links.request() == null ? List.of() : links.request()));
+            d.putObject("response").set("links", Json.MAPPER.valueToTree(links.response() == null ? List.of() : links.response()));
+            drafts.write(slug, d);
+            return json(d);
+        }
     }
 
     /**
@@ -98,25 +103,27 @@ public class MappingApiController {
     public ResponseEntity<String> saveFormats(@PathVariable String slug, @RequestBody String body) throws IOException {
         ServiceDefinition.Formats f = read(body, ServiceDefinition.Formats.class);
         f.check(slug);
-        ObjectNode d = draft(slug);
-        boolean soapOperation = d.path("target").path("soap").isObject();
-        if (f.requestSoap() && !soapOperation) {
-            throw new IllegalArgumentException("Request format soap comes with a SOAP operation; choose one from a WSDL contract");
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            ObjectNode d = draft(slug);
+            boolean soapOperation = d.path("target").path("soap").isObject();
+            if (f.requestSoap() && !soapOperation) {
+                throw new IllegalArgumentException("Request format soap comes with a SOAP operation; choose one from a WSDL contract");
+            }
+            if (soapOperation) {
+                f = new ServiceDefinition.Formats("soap", null, f.output(), f.outputRoot());
+            }
+            String request = "json".equals(f.request()) ? null : f.request();
+            String output = "json".equals(f.output()) ? null : f.output();
+            if (request != null || output != null) {
+                ServiceDefinition.Formats kept = new ServiceDefinition.Formats(request, f.requestXml() ? f.requestRoot() : null, output,
+                        f.outputXml() ? f.outputRoot() : null);
+                d.set("formats", Json.MAPPER.valueToTree(kept));
+            } else {
+                d.remove("formats");
+            }
+            drafts.write(slug, d);
+            return json(d);
         }
-        if (soapOperation) {
-            f = new ServiceDefinition.Formats("soap", null, f.output(), f.outputRoot());
-        }
-        String request = "json".equals(f.request()) ? null : f.request();
-        String output = "json".equals(f.output()) ? null : f.output();
-        if (request != null || output != null) {
-            ServiceDefinition.Formats kept = new ServiceDefinition.Formats(request, f.requestXml() ? f.requestRoot() : null, output,
-                    f.outputXml() ? f.outputRoot() : null);
-            d.set("formats", Json.MAPPER.valueToTree(kept));
-        } else {
-            d.remove("formats");
-        }
-        store.writeJson(store.service(slug), d);
-        return json(d);
     }
 
     record AddedHeaders(List<String> headers) {
@@ -129,43 +136,45 @@ public class MappingApiController {
     @PutMapping("/headers")
     public ResponseEntity<String> saveHeaders(@PathVariable String slug, @RequestBody String body) throws IOException {
         List<String> headers = read(body, AddedHeaders.class).headers();
-        ObjectNode d = draft(slug);
-        Operation op = operation(d);
-        Set<String> seen = new HashSet<>();
-        List<String> kept = new ArrayList<>();
-        for (String raw : headers == null ? List.<String>of() : headers) {
-            String h = raw == null ? "" : raw.strip();
-            Connections.checkHeaderName(h);
-            if (op instanceof RestOperation rest && rest.parameters().stream().anyMatch(p -> "header".equals(p.in()) && p.name().equalsIgnoreCase(h))) {
-                throw new IllegalArgumentException("The API request already has header " + h);
+        try (Drafts.Lock locked = drafts.lock(slug)) {
+            ObjectNode d = draft(slug);
+            Operation op = operation(d);
+            Set<String> seen = new HashSet<>();
+            List<String> kept = new ArrayList<>();
+            for (String raw : headers == null ? List.<String>of() : headers) {
+                String h = raw == null ? "" : raw.strip();
+                Connections.checkHeaderName(h);
+                if (op instanceof RestOperation rest && rest.parameters().stream().anyMatch(p -> "header".equals(p.in()) && p.name().equalsIgnoreCase(h))) {
+                    throw new IllegalArgumentException("The API request already has header " + h);
+                }
+                if (!seen.add(h.toLowerCase(Locale.ROOT))) {
+                    throw new IllegalArgumentException("Header " + h + " is listed twice");
+                }
+                kept.add(h);
             }
-            if (!seen.add(h.toLowerCase(Locale.ROOT))) {
-                throw new IllegalArgumentException("Header " + h + " is listed twice");
-            }
-            kept.add(h);
-        }
-        Set<String> removed = new HashSet<>();
-        d.path("addedHeaders").forEach(n -> {
-            if (!kept.contains(n.asText())) {
-                removed.add("headers." + n.asText());
-            }
-        });
-        if (!removed.isEmpty() && d.path("request").path("links").isArray()) {
-            ArrayNode links = Json.MAPPER.createArrayNode();
-            d.path("request").path("links").forEach(l -> {
-                if (!removed.contains(l.path("to").asText())) {
-                    links.add(l);
+            Set<String> removed = new HashSet<>();
+            d.path("addedHeaders").forEach(n -> {
+                if (!kept.contains(n.asText())) {
+                    removed.add("headers." + n.asText());
                 }
             });
-            ((ObjectNode) d.get("request")).set("links", links);
+            if (!removed.isEmpty() && d.path("request").path("links").isArray()) {
+                ArrayNode links = Json.MAPPER.createArrayNode();
+                d.path("request").path("links").forEach(l -> {
+                    if (!removed.contains(l.path("to").asText())) {
+                        links.add(l);
+                    }
+                });
+                ((ObjectNode) d.get("request")).set("links", links);
+            }
+            if (kept.isEmpty()) {
+                d.remove("addedHeaders");
+            } else {
+                d.set("addedHeaders", Json.MAPPER.valueToTree(kept));
+            }
+            drafts.write(slug, d);
+            return json(d);
         }
-        if (kept.isEmpty()) {
-            d.remove("addedHeaders");
-        } else {
-            d.set("addedHeaders", Json.MAPPER.valueToTree(kept));
-        }
-        store.writeJson(store.service(slug), d);
-        return json(d);
     }
 
     record TestRequest(JsonNode input, boolean real) {
@@ -247,10 +256,7 @@ public class MappingApiController {
     }
 
     private ObjectNode draft(String slug) throws IOException {
-        if (!slug.matches("[a-z0-9]+(-[a-z0-9]+)*") || !Files.isRegularFile(store.service(slug))) {
-            throw new IllegalArgumentException("No integration " + slug);
-        }
-        return (ObjectNode) Json.MAPPER.readTree(store.service(slug).toFile());
+        return drafts.read(slug);
     }
 
     private static ResponseEntity<String> json(Object body) throws JsonProcessingException {

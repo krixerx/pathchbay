@@ -52,5 +52,31 @@ class InboundKeyTest {
     @Test
     void consolePageStaysOpenSoItCanAskForTheKey() throws Exception {
         assertThat(status("/", null)).isNotEqualTo(401);
+        assertThat(status("/index.html", null)).isNotEqualTo(401);
+        assertThat(status("/favicon.svg", null)).isNotEqualTo(401);
+        assertThat(status("/assets/index.js", null)).isNotEqualTo(401);
+        assertThat(status("/api/openapi.json", null)).isEqualTo(200);
+        // Health probes answer without the key (Docker HEALTHCHECK); no other actuator endpoint is open.
+        assertThat(status("/actuator/health/readiness", null)).isEqualTo(200);
+        assertThat(status("/actuator/health", null)).isEqualTo(200);
+        assertThat(status("/actuator/env", null)).isEqualTo(401);
+    }
+
+    /** The key is checked on the path the router sees: decoded and without ;parameters (they used to bypass it). */
+    @Test
+    void encodedOrParameterisedPathsNeedTheKeyToo() throws Exception {
+        for (String path : new String[] {"/%61dmin/api/integrations", "/admin;x/api/integrations", "/admin/api;x/integrations",
+                "/api/v1/%69ntegrations/nothing", "/api/v1/integrations;x/nothing", "/%61pi/v1/integrations/nothing",
+                "/assets/../admin/api/integrations", "/assets;x/..;/admin/api/integrations"}) {
+            assertThat(status(path, null)).as(path).isEqualTo(401);
+        }
+        assertThat(status("/%61dmin/api/integrations", "k-inbound")).isEqualTo(200);
+    }
+
+    /** Deny by default: a path that is neither the console's files nor an OpenAPI document needs the key. */
+    @Test
+    void anyOtherPathNeedsTheKey() throws Exception {
+        assertThat(status("/actuator", null)).isEqualTo(401);
+        assertThat(status("/error", null)).isEqualTo(401);
     }
 }

@@ -1,5 +1,6 @@
 package integrationmapper.engine.contract;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -7,6 +8,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 
 import io.swagger.parser.OpenAPIParser;
 import io.swagger.v3.oas.models.OpenAPI;
@@ -38,11 +43,33 @@ final class OpenApiImporter {
     private OpenApiImporter() {
     }
 
-    static Result read(String text) {
+    private static final YAMLMapper YAML = new YAMLMapper();
+
+    /**
+     * {@code sourceUrl}: where the text was fetched from, null for an upload. Only references inside the file
+     * ({@code #/...}) and, for a URL import, absolute references to the same origin are read; any other external
+     * {@code $ref} refuses the import before the parser can read a local file or call another host. The parser can't be
+     * trusted with this itself: its safe-URL options are ignored for Swagger 2.0.
+     */
+    static Result read(String text, String sourceUrl) {
+        Set<String> refused = refusedRefs(text, sourceUrl);
+        if (!refused.isEmpty()) {
+            throw new IllegalArgumentException("The contract refers to " + String.join(", ", refused) + " outside the file. Patchbay reads only"
+                    + " references inside the file" + (sourceUrl == null ? "" : " and absolute ones to " + origin(URI.create(sourceUrl)))
+                    + "; put those definitions into the file itself.");
+        }
         ParseOptions options = new ParseOptions();
         options.setResolve(true);
         options.setResolveFully(true);
-        SwaggerParseResult result = new OpenAPIParser().readContents(text, null, options);
+        // Defence in depth for OpenAPI 3: an empty allowlist (not null) makes refused references warnings.
+        options.setSafelyResolveURL(true);
+        options.setRemoteRefAllowList(sourceUrl == null ? List.of() : List.of(URI.create(sourceUrl).getHost()));
+        SwaggerParseResult result;
+        try {
+            result = new OpenAPIParser().readContents(text, null, options);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException(ContractImporter.NOT_A_CONTRACT + ": " + e.getMessage(), e);
+        }
         OpenAPI api = result.getOpenAPI();
         List<String> warnings = new ArrayList<>(result.getMessages() == null ? List.of() : result.getMessages());
         boolean declared = text.contains("openapi") || text.contains("swagger");
@@ -63,6 +90,50 @@ final class OpenApiImporter {
         List<String> servers = api.getServers() == null ? List.of()
                 : api.getServers().stream().map(OpenApiImporter::serverUrl).filter(s -> s != null && !s.isBlank()).toList();
         return new Result(operations, servers, warnings);
+    }
+
+    /** Every {@code $ref} value that would make the parser read something outside the text, sorted. */
+    static Set<String> refusedRefs(String text, String sourceUrl) {
+        JsonNode tree;
+        try {
+            tree = YAML.readTree(text);
+        } catch (Exception e) {
+            return Set.of(); // the parser reports what it can't read
+        }
+        Set<String> refused = new TreeSet<>();
+        collectRefs(tree, sourceUrl == null ? null : origin(URI.create(sourceUrl)), refused);
+        return refused;
+    }
+
+    private static void collectRefs(JsonNode node, String allowedOrigin, Set<String> refused) {
+        if (node == null) {
+            return;
+        }
+        if (node.isObject()) {
+            JsonNode ref = node.get("$ref");
+            if (ref != null && ref.isTextual() && !ref.asText().startsWith("#") && !sameOrigin(ref.asText(), allowedOrigin)) {
+                refused.add(ref.asText());
+            }
+        }
+        node.forEach(child -> collectRefs(child, allowedOrigin, refused));
+    }
+
+    private static boolean sameOrigin(String ref, String allowedOrigin) {
+        if (allowedOrigin == null) {
+            return false;
+        }
+        try {
+            URI u = new URI(ref);
+            return u.isAbsolute() && u.getRawUserInfo() == null && allowedOrigin.equals(origin(u));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static String origin(URI u) {
+        String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(java.util.Locale.ROOT);
+        int port = u.getPort() != -1 ? u.getPort() : "https".equals(scheme) ? 443 : 80;
+        return scheme + "://" + (u.getHost() == null ? u.getRawAuthority() : u.getHost().toLowerCase(java.util.Locale.ROOT)) + ":" + port;
     }
 
     /** Server URL with its variables filled with their defaults (base URL rule). */

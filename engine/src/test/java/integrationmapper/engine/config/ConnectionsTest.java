@@ -122,6 +122,19 @@ class ConnectionsTest {
     }
 
     @Test
+    void aBaseUrlMustBeAPlainHttpUrl() {
+        Connections.check("https://api.example.org/v1");
+        Connections.check("http://sap.example.org:8000/sap/bc/srt/rfc/sap/zperson?sap-client=100");
+        Connections.check("http://my_service:8080/api");
+        assertThatThrownBy(() -> Connections.check("http://user:pw@my_service:8080")).hasMessageContaining("user name or password");
+        assertThatThrownBy(() -> Connections.check("ftp://api.example.org")).hasMessageContaining("http:// or https://");
+        assertThatThrownBy(() -> Connections.check("https://api.example.org/{{secret}}")).hasMessageContaining("not a valid URL");
+        assertThatThrownBy(() -> Connections.check("https://user:pw@api.example.org")).hasMessageContaining("user name or password");
+        assertThatThrownBy(() -> Connections.check("https://api.example.org/v1#top")).hasMessageContaining("fragment");
+        assertThatThrownBy(() -> Connections.check("https:///v1")).hasMessageContaining("no host");
+    }
+
+    @Test
     void theEnvironmentWinsOverTheFile(@TempDir Path dir) throws IOException {
         ConfigStore store = new ConfigStore(dir.toString());
         Connections fileOnly = new Connections(new MockEnvironment(), store);

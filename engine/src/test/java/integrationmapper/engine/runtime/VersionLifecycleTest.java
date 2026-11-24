@@ -23,6 +23,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 import integrationmapper.engine.config.ConfigStore;
+import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.format.Multipart;
 import integrationmapper.engine.testsupport.FakeBooksApi;
@@ -49,6 +50,7 @@ class VersionLifecycleTest {
         r.add("mapper.config-dir", CONFIG::toString);
         r.add("mapper.outbound-timeout-ms", () -> 1000);
         r.add("mapper.max-blob-bytes", () -> 1000);
+        r.add("mapper.max-body-bytes", () -> 20000);
         r.add("MAPPER_SECRET_SECURE_BOOK", () -> "tok-123");
         r.add("MAPPER_SECRET_KEYED_BOOK", () -> "key-456");
     }
@@ -64,6 +66,12 @@ class VersionLifecycleTest {
 
     @Autowired
     ConfigStore store;
+
+    @Autowired
+    Drafts drafts;
+
+    @Autowired
+    integrationmapper.engine.web.IntegrationGate gate;
 
     @Autowired
     FakeBooksApi fake;
@@ -238,6 +246,64 @@ class VersionLifecycleTest {
         assertThat(store.versions("nosecret-book")).isEmpty();
     }
 
+    /** NFR-001: calls waiting for a slow external system don't queue behind each other (they ran 8 at a time). */
+    @Test
+    void parallelSlowCallsAreNotServedInBatches() throws Exception {
+        write("services/pause-book.json", service("pause-book", "GET", "/pause", null, null));
+        publisher.publishDraft("pause-book");
+        call("GET", "pause-book", null); // warm up
+
+        int calls = 24;
+        long t0 = System.nanoTime();
+        List<java.util.concurrent.CompletableFuture<HttpResponse<String>>> sent = new java.util.ArrayList<>();
+        for (int i = 0; i < calls; i++) {
+            sent.add(http.sendAsync(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/pause-book")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString()));
+        }
+        for (var f : sent) {
+            HttpResponse<String> r = f.get();
+            assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
+        }
+        long ms = (System.nanoTime() - t0) / 1_000_000;
+        // Each external call takes 0.5 s; three batches of 8 would take 1.5 s.
+        assertThat(ms).as("%d calls of 0.5 s at once", calls).isLessThan(1200);
+    }
+
+    /** R7: a call that is inside the route when a new version is published finishes on the version it started on. */
+    @Test
+    void aCallInFlightDuringPublishFinishesOnItsVersion() throws Exception {
+        String v1 = service("drain-book", "GET", "/pause", null, null);
+        write("services/drain-book.json", v1);
+        publisher.publishDraft("drain-book");
+
+        var inFlight = http.sendAsync(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/drain-book")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        Thread.sleep(200); // the call now waits for the external system (0.5 s)
+        assertThat(gate.inFlight("drain-book")).as("the gate counts the call until it ends, not until the filter returns").isEqualTo(1);
+        var draft = (com.fasterxml.jackson.databind.node.ObjectNode) read(store.service("drain-book"));
+        draft.putObject("response").set("links", Json.MAPPER.readTree("[{\"from\":\"id\",\"to\":\"br-title\"}]"));
+        write("services/drain-book.json", draft.toString());
+        long t0 = System.nanoTime();
+        publisher.publishDraft("drain-book");
+        long publishMs = (System.nanoTime() - t0) / 1_000_000;
+
+        HttpResponse<String> r = inFlight.get();
+        assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
+        assertThat(Json.MAPPER.readTree(r.body()).has("bookId")).as("answered by 1.0.0: " + r.body()).isTrue();
+        assertThat(publishMs).as("publish waited for the call").isGreaterThan(100);
+        HttpResponse<String> after = call("GET", "drain-book", null);
+        assertThat(Json.MAPPER.readTree(after.body()).has("title")).as("answered by 1.1.0: " + after.body()).isTrue();
+        // The caller has the answer a moment before the async dispatch that sent it counts the call out.
+        for (int i = 0; i < 100 && gate.inFlight("drain-book") > 0; i++) {
+            Thread.sleep(10);
+        }
+        assertThat(gate.inFlight("drain-book")).isZero();
+
+        // Calls to integrations nobody published leave nothing behind.
+        call("GET", "never-published-" + System.nanoTime(), null);
+        assertThat(gate.inFlight("never-published")).isZero();
+    }
+
     @Test
     void slowRemoteTimesOutWith504() throws Exception {
         write("services/slow-book.json", service("slow-book", "GET", "/slow", null, null));
@@ -270,6 +336,31 @@ class VersionLifecycleTest {
         call("GET", "cookie-book", null);
         call("GET", "cookie-book", null);
         assertThat(((HttpHeaders) fake.lastRequest.get("headers")).get("Cookie")).isNull();
+    }
+
+    /** mapper.max-body-bytes limits a JSON body too, also when it is chunked and so declares no length. */
+    @Test
+    void aJsonBodyOverTheLimitIs413EvenWhenChunked() throws Exception {
+        write("services/size-book.json", service("size-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("size-book");
+        fake.lastRequest.clear();
+        String big = "{\"title\":\"" + "x".repeat(30_000) + "\"}";
+        URI uri = URI.create("http://localhost:" + PORT + "/api/v1/integrations/size-book");
+
+        HttpResponse<String> declared = http.send(HttpRequest.newBuilder(uri).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(big)).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(declared.statusCode()).as(declared.body()).isEqualTo(413);
+        assertThat(declared.body()).contains("payload-too-large").contains("more than the limit of 20000 bytes");
+
+        HttpResponse<String> chunked = http.send(HttpRequest.newBuilder(uri).header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new java.io.ByteArrayInputStream(big.getBytes(java.nio.charset.StandardCharsets.UTF_8))))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(chunked.statusCode()).as(chunked.body()).isEqualTo(413);
+        assertThat(chunked.body()).contains("payload-too-large");
+        assertThat(fake.lastRequest).as("nothing sent").isEmpty();
+
+        HttpResponse<String> small = call("POST", "size-book", "{\"title\":\"T\"}");
+        assertThat(small.statusCode()).as(small.body()).isEqualTo(200);
     }
 
     /** D-29: a file over mapper.max-blob-bytes is refused with 413 before anything is sent; one under it goes out as JSON. */
@@ -433,6 +524,34 @@ class VersionLifecycleTest {
         assertThat(new String(plain.body())).contains("mapping-error");
     }
 
+    /** An unexpected failure goes to the log with its stack and the request id; the caller gets the id, not the cause. */
+    @Test
+    @org.junit.jupiter.api.extension.ExtendWith(org.springframework.boot.test.system.OutputCaptureExtension.class)
+    void anUnexpectedFailureIsLoggedAndTheCallerGetsTheRequestId(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
+        publishFileGet("file-get-odd", "/files/{id}/content", "stored", false, "{\"from\":\"documentId\",\"to\":\"st-id\"}");
+
+        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/file-get-odd?documentId=x"))
+                .header("X-Request-Id", "case-4711").build(), HttpResponse.BodyHandlers.ofString());
+
+        assertThat(r.statusCode()).isEqualTo(500);
+        assertThat(r.headers().firstValue("X-Request-Id")).contains("case-4711");
+        JsonNode body = Json.MAPPER.readTree(r.body());
+        assertThat(body.path("error").asText()).isEqualTo("mapping-error");
+        assertThat(body.path("requestId").asText()).isEqualTo("case-4711");
+        assertThat(body.path("detail").asText()).startsWith("The integration failed inside Patchbay");
+        assertThat(output.getOut()).contains("Call file-get-odd 1.0.0 failed: 500 mapping-error, request case-4711").contains("\tat ");
+        // The call's own log line is written right after the answer went out.
+        for (int i = 0; i < 100 && !output.getOut().contains("Call file-get-odd 1.0.0 GET -> 500"); i++) {
+            Thread.sleep(10);
+        }
+        assertThat(output.getOut()).containsPattern("Call file-get-odd 1\\.0\\.0 GET -> 500 \\(\\w+\\) \\d+ ms, request case-4711");
+
+        // An id that isn't a plain token is replaced, not echoed.
+        HttpResponse<String> odd = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/nothing"))
+                .header("X-Request-Id", "a b<script>").build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(odd.headers().firstValue("X-Request-Id")).hasValueSatisfying(id -> assertThat(id).matches("[0-9a-f-]{36}"));
+    }
+
     void publishUpload(String slug, String format, String requestLinks) throws Exception {
         write("services/" + slug + ".json", """
                 {"id":"%s","input":"doc-upload","output":"stored",
@@ -525,5 +644,55 @@ class VersionLifecycleTest {
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(bad.statusCode()).isEqualTo(400);
         assertThat(bad.body()).contains("has no version 9.9.9").contains("\"integration\":\"admin-book\"");
+    }
+
+    /** R9: a route that can't be added leaves the previous version serving and nothing changed on disk. */
+    @Test
+    void failedRouteSwapKeepsTheLiveVersionAndChangesNoFiles() throws Exception {
+        write("services/swap-book.json", service("swap-book", "POST", "/api/v1/Books", "body.title", null));
+        publisher.publishDraft("swap-book");
+        String published = Files.readString(store.service("swap-book"));
+
+        // A literal base URL (files from before connections are not checked) whose scheme no Camel component has:
+        // compiling works, adding the route fails inside Camel.
+        write("services/swap-book.json", published.replace("http://localhost:" + PORT + "/fake", "nosuchscheme://localhost/fake"));
+        String draft = Files.readString(store.service("swap-book"));
+        assertThatThrownBy(() -> publisher.publishDraft("swap-book")).hasMessageContaining("nosuchscheme");
+
+        assertThat(Files.readString(store.service("swap-book"))).as("activeVersion still 1.0.0").isEqualTo(draft);
+        assertThat(store.versions("swap-book")).containsExactly("1.0.0");
+        assertThat(registry.activeVersions()).containsEntry("swap-book", "1.0.0");
+        assertThat(registry.brokenReasons()).doesNotContainKey("swap-book");
+        HttpResponse<String> still = call("POST", "swap-book", "{\"title\":\"T\"}");
+        assertThat(still.statusCode()).as(still.body()).isEqualTo(200);
+    }
+
+    /** A console save that holds the draft while a publish runs keeps both changes (the publish waits for it). */
+    @Test
+    void aDraftEditDuringPublishKeepsBothChanges() throws Exception {
+        write("services/race-book.json", service("race-book", "POST", "/api/v1/Books", "body.title", null));
+        java.util.concurrent.atomic.AtomicReference<Throwable> failed = new java.util.concurrent.atomic.AtomicReference<>();
+        Thread publish = new Thread(() -> {
+            try {
+                publisher.publishDraft("race-book");
+            } catch (Throwable t) {
+                failed.set(t);
+            }
+        });
+
+        drafts.edit("race-book", d -> {
+            publish.start();
+            // Without the lock the publish would write activeVersion now and this save would undo it.
+            while (publish.isAlive() && publish.getState() != Thread.State.WAITING) {
+                Thread.onSpinWait();
+            }
+            d.put("name", "Renamed while publishing");
+        });
+        publish.join(10_000);
+
+        assertThat(failed.get()).isNull();
+        JsonNode saved = read(store.service("race-book"));
+        assertThat(saved.path("name").asText()).isEqualTo("Renamed while publishing");
+        assertThat(saved.path("activeVersion").asText()).isEqualTo("1.0.0");
     }
 }
