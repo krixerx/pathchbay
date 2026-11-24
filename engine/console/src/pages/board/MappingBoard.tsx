@@ -90,6 +90,13 @@ export function MappingBoard(props: {
   });
   const [added, setAdded] = useState<string[]>(draft.addedHeaders ?? []);
   const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef<string | null>(null);
+  selectedRef.current = selected;
+  // What just happened, in the hint line under the tabs (a live region): a link made, or why one can't be made.
+  const [notice, setNotice] = useState<{ text: string; broken: boolean } | null>(null);
+  // Bumped to move keyboard focus into a tree: the target tree after choosing a source, the source tree after linking.
+  const [focusSignal, setFocusSignal] = useState({ source: 0, target: 0 });
+  const focusTree = (side: 'source' | 'target') => setFocusSignal((old) => ({ ...old, [side]: old[side] + 1 }));
   const [filters, setFilters] = useState<Record<'source' | 'target', Filter>>({ source: 'all', target: 'all' });
   const [saved, setSaved] = useState<'idle' | 'saving' | 'saved'>('idle');
   // Why the last change could not be saved; the change itself is undone on the board.
@@ -108,9 +115,14 @@ export function MappingBoard(props: {
     api.board(draft.id).then(setData, (e: Error) => setError(e.message));
   }, [draft.id]);
 
-  // Esc cancels a pending source selection (D-17).
+  // Esc cancels a pending source selection (D-17) and puts keyboard focus back on that source.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setSelected(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !selectedRef.current) return;
+      setSelected(null);
+      setNotice(null);
+      setFocusSignal((old) => ({ ...old, source: old.source + 1 }));
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
@@ -201,13 +213,29 @@ export function MappingBoard(props: {
 
   const sourceRow = selected ? sides.sources.find((r) => r.key === selected) ?? null : null;
 
-  const clickSource = (r: Row) => !r.missing && setSelected(selected === r.key ? null : r.key);
-  const clickTarget = (r: Row) => {
-    if (!sourceRow) return;
+  // With the keyboard, choosing a source moves focus to the target tree and linking moves it back, so mapping is
+  // arrows and Enter on the left, arrows and Enter on the right.
+  const clickSource = (r: Row, byKey: boolean) => {
+    if (r.missing) return;
+    const next = selected === r.key ? null : r.key;
+    setSelected(next);
+    setNotice(null);
+    if (next && byKey) focusTree('target');
+  };
+  const clickTarget = (r: Row, byKey: boolean) => {
+    if (!sourceRow) {
+      setNotice({ text: `Choose a field on the left first, then “${r.label}”.`, broken: false });
+      return;
+    }
     if (canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat)) return;
     save({ ...links, [tab]: addLink(current, sourceRow.key, r.key) });
     setSelected(null);
+    setNotice({ text: `Linked “${sourceRow.label}” to “${r.label}”.`, broken: false });
+    if (byKey) focusTree('source');
   };
+  // A row that can't be used says why, for keyboard users too (the tooltip only shows on hover).
+  const blocked = (r: Row, reason: string) =>
+    setNotice({ text: sourceRow && !r.missing ? `Can't link “${sourceRow.label}” to “${r.label}”: ${reason}` : reason, broken: true });
   const remove = (l: Link) => save({ ...links, [tab]: current.filter((x) => x !== l) });
 
   // Headers added on the board (D-27); the engine drops the links of a removed one, so links follow its answer.
@@ -247,6 +275,7 @@ export function MappingBoard(props: {
           onChange={(v) => {
             props.onTab(v as Tab);
             setSelected(null);
+            setNotice(null);
           }}
           data={[
             { value: 'request', label: 'Input → API request' },
@@ -256,10 +285,12 @@ export function MappingBoard(props: {
         <FormatSwitch draft={draft} tab={tab} onChange={props.onChange} onError={setSaveError} />
       </Group>
 
-      <Text size="sm" c="dimmed" aria-live="polite">
-        {sourceRow
-          ? `Now click the field on the right that “${sourceRow.label}” goes into. Esc cancels.`
-          : 'Click a field on the left, then the field on the right it goes into.'}
+      <Text size="sm" c={notice?.broken ? statusText.broken : 'dimmed'} aria-live="polite">
+        {notice
+          ? notice.text
+          : sourceRow
+            ? `Now choose the field on the right that “${sourceRow.label}” goes into. Esc cancels.`
+            : 'Click a field on the left, then the field on the right it goes into. With the keyboard: arrow keys to move, Enter to choose.'}
       </Text>
 
       <Group align="stretch" gap={0} wrap="nowrap">
@@ -271,6 +302,8 @@ export function MappingBoard(props: {
           states={states}
           selected={selected}
           onClick={clickSource}
+          onBlocked={blocked}
+          focusSignal={focusSignal.source}
           isDisabled={(r) => (r.missing ? MISSING_TEXT : null)}
           filter={filters.source}
           onFilter={(f) => setFilters((old) => ({ ...old, source: f }))}
@@ -299,6 +332,8 @@ export function MappingBoard(props: {
           states={states}
           selected={null}
           onClick={clickTarget}
+          onBlocked={blocked}
+          focusSignal={focusSignal.target}
           isDisabled={(r) =>
             r.missing ? MISSING_TEXT : sourceRow ? canLink(sourceRow, r, current, sides.sources, sides.targets, requestFormat) : null
           }
@@ -425,7 +460,12 @@ function TreePanel(props: {
   links: Link[];
   states: LinkState[];
   selected: string | null;
-  onClick: (r: Row) => void;
+  /** A row chosen by click or by Enter/Space (`byKey`). */
+  onClick: (r: Row, byKey: boolean) => void;
+  /** Enter/Space on a row that can't be used, with the reason. */
+  onBlocked: (r: Row, reason: string) => void;
+  /** Changes when the board wants keyboard focus in this tree (on its current row). */
+  focusSignal: number;
   isDisabled: (r: Row) => string | null;
   filter: Filter;
   onFilter: (f: Filter) => void;
@@ -466,6 +506,52 @@ function TreePanel(props: {
     return out;
   }, [shown]);
   const virtual = useVirtualizer({ count: items.length, getScrollElement: () => parent.current, estimateSize: () => ROW_HEIGHT, overscan: 12 });
+
+  // Keyboard (WAI-ARIA tree pattern): the tree is one Tab stop, its current row; arrows, Home and End move. Rows are
+  // virtualized, so a row is scrolled into view first and focused once it is rendered.
+  const rowKeys = useMemo(() => items.flatMap((it) => (it.kind === 'row' ? [it.row.key] : [])), [items]);
+  const [current, setCurrent] = useState<string | null>(null);
+  const currentKey = current && rowKeys.includes(current) ? current : (rowKeys[0] ?? null);
+  const pendingFocus = useRef<string | null>(null);
+  const [, rerender] = useState(0);
+  const moveTo = (key: string) => {
+    setCurrent(key);
+    pendingFocus.current = key;
+    virtual.scrollToIndex(items.findIndex((it) => it.kind === 'row' && it.row.key === key), { align: 'auto' });
+    rerender((n) => n + 1);
+  };
+  useEffect(() => {
+    const key = pendingFocus.current;
+    if (!key) return;
+    const el = document.getElementById(`row-${props.side}-${key}`);
+    if (el) {
+      el.focus({ preventScroll: true });
+      pendingFocus.current = null;
+    }
+  });
+  const { focusSignal } = props;
+  useEffect(() => {
+    if (focusSignal > 0 && currentKey) moveTo(currentKey);
+    // Only when the board asks, not whenever the current row changes.
+  }, [focusSignal]);
+  const onRowKey = (e: React.KeyboardEvent, r: Row, disabled: string | null) => {
+    const i = rowKeys.indexOf(r.key);
+    const go = (j: number) => {
+      e.preventDefault();
+      moveTo(rowKeys[Math.max(0, Math.min(rowKeys.length - 1, j))]);
+    };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(rowKeys.length - 1);
+    else if (e.key === 'PageDown') go(i + 10);
+    else if (e.key === 'PageUp') go(i - 10);
+    else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (disabled) props.onBlocked(r, disabled);
+      else props.onClick(r, true);
+    }
+  };
 
   // Report where every row is (also rows scrolled out of view), so the board can draw lines to them.
   const { side, onLayout, anchor } = props;
@@ -565,7 +651,8 @@ function TreePanel(props: {
                     aria-level={r.depth + 1}
                     aria-selected={isSelected}
                     aria-disabled={!!disabled}
-                    tabIndex={0}
+                    tabIndex={r.key === currentKey ? 0 : -1}
+                    className="mantine-focus-auto"
                     style={{
                       ...style,
                       display: 'flex',
@@ -574,7 +661,6 @@ function TreePanel(props: {
                       paddingLeft: 6 + r.depth * 18,
                       paddingRight: 6,
                       cursor: disabled ? 'not-allowed' : 'pointer',
-                      opacity: disabled && !r.missing ? 0.4 : 1,
                       borderRadius: 4,
                       background: isSelected
                         ? 'var(--mantine-color-teal-light)'
@@ -583,56 +669,65 @@ function TreePanel(props: {
                           : undefined,
                       outline: isSelected ? '2px solid var(--mantine-color-teal-7)' : undefined,
                     }}
-                    onClick={() => !disabled && props.onClick(r)}
-                    onKeyDown={(e) => e.key === 'Enter' && !disabled && props.onClick(r)}
+                    onClick={() => {
+                      setCurrent(r.key);
+                      if (!disabled) props.onClick(r, false);
+                    }}
+                    onKeyDown={(e) => onRowKey(e, r, disabled)}
+                    onFocus={() => setCurrent(r.key)}
                   >
-                    {props.side === 'target' && dot}
-                    {r.depth > 0 && (
-                      <Text size="xs" c="dimmed" aria-hidden>
-                        └
-                      </Text>
-                    )}
-                    <Text
-                      size="sm"
-                      ff="monospace"
-                      truncate
-                      c={r.missing ? statusText.broken : undefined}
-                      td={r.missing ? 'line-through' : undefined}
-                      style={{ flexShrink: 1, minWidth: 0 }}
+                    {/* Only the content fades on a row that can't be used; the focus ring around it stays at full strength. */}
+                    <Box
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, opacity: disabled && !r.missing ? 0.4 : 1 }}
                     >
-                      {r.label}
-                      {r.required && (
-                        <Text span c={statusText.broken} aria-label="required">
-                          {' *'}
+                      {props.side === 'target' && dot}
+                      {r.depth > 0 && (
+                        <Text size="xs" c="dimmed" aria-hidden>
+                          └
                         </Text>
                       )}
-                    </Text>
-                    <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
-                      {r.missing ? 'no longer exists' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
-                      {r.constant ? ' · constant' : ''}
-                    </Text>
-                    {amber && <IconAlertTriangle size={14} color={statusText.warning} aria-label="required, not mapped" />}
-                    {state && state.kind !== 'ok' && (
-                      <Tooltip label={state.reason} withArrow>
-                        <IconAlertTriangle size={14} color={statusText.broken} aria-label={state.reason} />
-                      </Tooltip>
-                    )}
-                    {r.added && props.onRemoveRow && (
-                      <ActionIcon
-                        size="xs"
-                        variant="subtle"
-                        color="gray"
-                        ml="auto"
-                        aria-label={`Remove header ${r.label}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          props.onRemoveRow?.(r);
-                        }}
+                      <Text
+                        size="sm"
+                        ff="monospace"
+                        truncate
+                        c={r.missing ? statusText.broken : undefined}
+                        td={r.missing ? 'line-through' : undefined}
+                        style={{ flexShrink: 1, minWidth: 0 }}
                       >
-                        <IconX size={12} />
-                      </ActionIcon>
-                    )}
-                    {props.side === 'source' && dot}
+                        {r.label}
+                        {r.required && (
+                          <Text span c={statusText.broken} aria-label="required">
+                            {' *'}
+                          </Text>
+                        )}
+                      </Text>
+                      <Text size="xs" c="dimmed" style={{ whiteSpace: 'nowrap' }}>
+                        {r.missing ? 'no longer exists' : r.type ? TYPE_LABELS[r.type] ?? r.type : r.added ? 'added' : ''}
+                        {r.constant ? ' · constant' : ''}
+                      </Text>
+                      {amber && <IconAlertTriangle size={14} color={statusText.warning} aria-label="required, not mapped" />}
+                      {state && state.kind !== 'ok' && (
+                        <Tooltip label={state.reason} withArrow>
+                          <IconAlertTriangle size={14} color={statusText.broken} aria-label={state.reason} />
+                        </Tooltip>
+                      )}
+                      {r.added && props.onRemoveRow && (
+                        <ActionIcon
+                          size="xs"
+                          variant="subtle"
+                          color="gray"
+                          ml="auto"
+                          aria-label={`Remove header ${r.label}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            props.onRemoveRow?.(r);
+                          }}
+                        >
+                          <IconX size={12} />
+                        </ActionIcon>
+                      )}
+                      {props.side === 'source' && dot}
+                    </Box>
                   </Box>
                 </Tooltip>
               );

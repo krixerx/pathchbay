@@ -122,7 +122,7 @@ function Integration({ slug }: { slug: string }) {
               leftSection={<IconRocket size={16} />}
               rightSection={
                 problems ? (
-                  <Badge color={meaning.broken} size="sm" circle aria-hidden>
+                  <Badge color={meaning.broken} size="sm" aria-hidden>
                     {problems}
                   </Badge>
                 ) : undefined
