@@ -624,7 +624,7 @@ function AddHeader(props: { onAdd: (name: string) => Promise<void> }) {
       <TextInput
         size="xs"
         style={{ flex: 1 }}
-        placeholder="X-Correlation-Id"
+        placeholder="Header name, e.g. X-Correlation-Id"
         aria-label="Header name"
         value={name}
         error={error}
@@ -656,6 +656,7 @@ function Lines(props: {
 }) {
   const { source, target } = props;
   const [hovered, setHovered] = useState<Link | null>(null);
+  const [focused, setFocused] = useState<Link | null>(null);
   if (!source || !target) return null;
   const clamp = (y: number, l: Layout) => Math.min(Math.max(y, l.top), l.bottom);
   const inside = (y: number, l: Layout) => y >= l.top && y <= l.bottom;
@@ -682,7 +683,7 @@ function Lines(props: {
                 d={d}
                 fill="none"
                 stroke={color}
-                strokeWidth={props.selected === l.from || hovered === l ? 3 : 1.75}
+                strokeWidth={props.selected === l.from || hovered === l || focused === l ? 3 : 1.75}
                 strokeDasharray={state.kind === 'broken' ? '5 4' : undefined}
                 opacity={visible ? 1 : 0.3}
               />
@@ -691,7 +692,9 @@ function Lines(props: {
         })}
       </svg>
       {/* An x on every line in view removes that link. It sits near the target end (t = 0.8 on the curve): a target
-          field has one link at most, so two x's never land on the same spot, as they would where lines cross. */}
+          field has one link at most, so two x's never land on the same spot, as they would where lines cross.
+          It is shown only while its line is pointed at or the x has keyboard focus, so the gutter stays clear; it
+          stays in the tab order, and the link list offers the same removal. */}
       {drawn
         .filter((x) => x.visible)
         .map(({ l, y1, y2 }) => {
@@ -710,11 +713,20 @@ function Lines(props: {
                 aria-label={`Remove link ${label(props.sources, l.from)} to ${label(props.targets, l.to)}`}
                 onMouseEnter={() => setHovered(l)}
                 onMouseLeave={() => setHovered(null)}
+                onFocus={() => setFocused(l)}
+                onBlur={() => setFocused(null)}
                 onClick={() => {
                   setHovered(null);
+                  setFocused(null);
                   props.onRemove(l);
                 }}
-                style={{ position: 'absolute', left: x - 9, top: y - 9 }}
+                style={{
+                  position: 'absolute',
+                  left: x - 9,
+                  top: y - 9,
+                  opacity: hovered === l || focused === l ? 1 : 0,
+                  transition: 'opacity 120ms',
+                }}
               >
                 <IconX size={12} />
               </ActionIcon>

@@ -95,7 +95,11 @@ function Integration({ slug }: { slug: string }) {
             )}
           </Text>
         </div>
+        {/* Settings first and the primary action, Publish, last. */}
         <Group gap="xs">
+          <Button variant="default" leftSection={<IconSettings size={16} />} component={Link} to={`/integrations/${slug}/settings`}>
+            Settings
+          </Button>
           <Button
             variant={testOpen ? 'light' : 'default'}
             leftSection={<IconFlask size={16} />}
@@ -122,9 +126,6 @@ function Integration({ slug }: { slug: string }) {
             disabled={!ready}
           >
             Publish
-          </Button>
-          <Button variant="default" leftSection={<IconSettings size={16} />} component={Link} to={`/integrations/${slug}/settings`}>
-            Settings
           </Button>
         </Group>
       </Group>

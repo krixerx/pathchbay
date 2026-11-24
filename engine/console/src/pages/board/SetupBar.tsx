@@ -7,11 +7,16 @@ import { api } from '../../api';
 import type { Contract, ContractSummary, DefinitionSummary, IntegrationDraft } from '../../model';
 import { meaning } from '../../theme';
 
-/** Every search word must appear in the option's text (method, path, summary). */
-const wordFilter: OptionsFilter = ({ options, search }) => {
-  const words = search.toLowerCase().split(/\s+/).filter(Boolean);
-  return (options as ComboboxItem[]).filter((o) => words.every((w) => o.label.toLowerCase().includes(w)));
-};
+/** Every search word must appear in the option's text: its label and, when given, its summary. */
+const wordFilter =
+  (summaries: Map<string, string>): OptionsFilter =>
+  ({ options, search }) => {
+    const words = search.toLowerCase().split(/\s+/).filter(Boolean);
+    return (options as ComboboxItem[]).filter((o) => {
+      const text = `${o.label} ${summaries.get(o.value) ?? ''}`.toLowerCase();
+      return words.every((w) => text.includes(w));
+    });
+  };
 
 /**
  * The top of the board: what callers send (Input) and get back (Output), and which operation of which Swagger
@@ -68,12 +73,16 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
 
   const definitionOptions = definitions.map((d) => ({ value: d.id, label: `${d.name ?? d.id} · ${d.fieldCount} fields` }));
   const pendingOp = contract?.operations.find((o) => o.id === pending);
+  // The operation's summary is shown under the select and in the list, not in the select itself, where it was cut off.
+  const summaries = new Map((contract?.operations ?? []).filter((o) => o.summary).map((o) => [o.id, o.summary!]));
+  const currentSummary = currentOp ? summaries.get(currentOp) : undefined;
 
   return (
     <Paper withBorder p="sm">
       <Stack gap="xs">
-        <Group align="flex-start" grow wrap="nowrap">
+        <Group align="flex-start" wrap="nowrap">
           <Select
+            style={{ flex: 1, minWidth: 0 }}
             label="Input"
             description="What callers send"
             placeholder="Empty: created from the operation"
@@ -84,6 +93,7 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
             clearable
           />
           <Select
+            style={{ flex: 1, minWidth: 0 }}
             label="Output"
             description="What callers get back"
             placeholder="Empty: created from the operation"
@@ -94,14 +104,12 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
             clearable
           />
           <Select
-            label="Swagger or WSDL configuration"
+            style={{ flex: 1, minWidth: 0 }}
+            label="External system"
             description={
-              <>
-                External system,{' '}
-                <Anchor component={Link} to="/configuration" size="xs">
-                  import under Configuration
-                </Anchor>
-              </>
+              <Anchor component={Link} to="/configuration" size="xs">
+                Imported under Configuration
+              </Anchor>
             }
             placeholder={contracts?.length === 0 ? 'Nothing imported yet' : 'Choose'}
             data={(contracts ?? []).map((c) => ({ value: c.id, label: `${c.name} · ${c.operationCount} operations` }))}
@@ -109,22 +117,39 @@ export function SetupBar(props: { draft: IntegrationDraft; baseUrl: string | nul
             onChange={setContractId}
             searchable
           />
-          <Select
-            label="Operation"
-            description="What this integration calls"
-            placeholder={contractId ? 'Search method, path or name' : 'Choose a configuration first'}
-            disabled={!contract}
-            data={(contract?.operations ?? []).map((o) => ({
-              value: o.id,
-              label: `${operationLabel(o)}${o.summary ? ` · ${o.summary}` : ''}${o.unsupported ? ` (not supported: ${o.unsupported})` : ''}`,
-              disabled: !!o.unsupported,
-            }))}
-            value={currentOp}
-            onChange={requestOperation}
-            filter={wordFilter}
-            searchable
-            maxDropdownHeight={360}
-          />
+          <Stack gap={4} style={{ flex: 2, minWidth: 0 }}>
+            <Select
+              label="Operation"
+              description="What this integration calls"
+              placeholder={contractId ? 'Search method, path or name' : 'Choose an external system first'}
+              disabled={!contract}
+              data={(contract?.operations ?? []).map((o) => ({
+                value: o.id,
+                label: `${operationLabel(o)}${o.unsupported ? ` (not supported: ${o.unsupported})` : ''}`,
+                disabled: !!o.unsupported,
+              }))}
+              value={currentOp}
+              onChange={requestOperation}
+              filter={wordFilter(summaries)}
+              renderOption={({ option }) => (
+                <div>
+                  <Text size="sm">{option.label}</Text>
+                  {summaries.has(option.value) && (
+                    <Text size="xs" c="dimmed">
+                      {summaries.get(option.value)}
+                    </Text>
+                  )}
+                </div>
+              )}
+              searchable
+              maxDropdownHeight={360}
+            />
+            {currentSummary && (
+              <Text size="xs" c="dimmed" lineClamp={2} title={currentSummary}>
+                {currentSummary}
+              </Text>
+            )}
+          </Stack>
         </Group>
 
         {draft.operationId && draft.target && !props.baseUrl && (
