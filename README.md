@@ -18,6 +18,7 @@ Most integration work is the same small job over and over: take what a caller se
 - **Your model stays yours.** Callers see your field names and shapes, not the vendor's. When the vendor changes, you move a line, not your callers.
 - **Try before you publish.** **Test** runs a sample through exactly the code a live call uses, against a mock built from the contract or the real system, and shows each step: what the caller sent, the request that went out, the answer, and your Output.
 - **Safe changes.** Every publish is an immutable version. Links that can't work are shown in red and block publishing. Any earlier version can be made live again with one click, without a restart.
+- **REST or SOAP.** Import an OpenAPI or Swagger file for a REST API, or a WSDL 1.1 contract (with its XSD files) for a SOAP service. A SOAP operation is mapped on the same board and published as an ordinary REST endpoint: callers send JSON, and Patchbay writes the SOAP 1.1 or 1.2 envelope with the right namespaces, reads the answer, and turns a SOAP fault into a JSON error.
 - **JSON or XML.** Send the request to the external system as JSON or XML and return JSON or XML to callers, with one switch per direction. XML answers are read automatically.
 - **See what happened.** **Calls** shows the last live calls step by step, including where a failed one stopped.
 - **Callers get documentation.** Every live integration appears in an OpenAPI document at `/api/openapi.json`, ready for Swagger UI, code generators, or for another integration to call.
@@ -120,19 +121,19 @@ None are required. Set them as environment variables (`-e` with Docker), or for 
 
 1. **Configuration:** import the external system's Swagger, OpenAPI or WSDL file (upload or URL; a WSDL with separate XSD files as a ZIP). Every integration can use it. A SOAP service's operations are listed as SOAP `<port>/<operation>` and are published as ordinary REST endpoints; `engine/README.md` describes how. Its **Connection** holds the base URL in this environment, taken from the file when it has an absolute server address.
 2. **Payload definitions** (optional): describe what your callers send and get back, by hand or from a pasted JSON sample.
-3. **Integrations → New integration**, then on its board pick the Input, the Output, the Swagger configuration and the operation. Leave Input or Output empty to have it created from the operation, already linked.
+3. **Integrations → New integration**, then on its board pick the Input, the Output, the Swagger or WSDL configuration and the operation. Leave Input or Output empty to have it created from the operation, already linked.
 4. **Map:** click a field on the left, then the field on the right it goes into; a line connects them. Red lines can't be published; amber warnings can. **Test** runs a sample through the same code as a live call. The JSON/XML switch next to the tabs sets how the request goes out and what callers get back.
 5. **Publish:** shows the live URL and a ready `curl` command. Earlier versions can be made active again.
 6. **Calls:** every live call, step by step, with where it stopped if it failed. `docker logs` shows one line per call.
 7. **OpenAPI:** `http://localhost:8080/api/openapi.json` describes every live integration, `/api/openapi/<slug>.json` one of them (linked from the Integrations list and the Publish dialog). Give it to callers, or import it under Configuration so one integration can call another; then set that integration's base URL to the engine itself and, if `INBOUND_API_KEY` is set, its auth to an API key in the `X-API-Key` header.
 
-Authentication and the secret are on the integration's **Settings** page; the base URL belongs to the Swagger configuration's connection.
+Authentication (bearer token, Basic user and password, or API key) and the secret are on the integration's **Settings** page; the base URL belongs to the Swagger or WSDL configuration's connection.
 
 ## Environments
 
 Integrations and their versions never contain an address or a secret: they name a connection, and each environment sets that connection's base URL (`MAPPER_URL_<ID>` or **Connection** under Configuration) and the integrations' secrets (`MAPPER_SECRET_<SLUG>` or Settings). So the same version file can run in DEV, TEST and LIVE. The folders `connections/` and `secrets/` in the configuration folder belong to their environment and are not copied along. Integrations published before connections existed keep their literal base URL in those older version files until they are published again.
 
-To move integrations, tick them on the Integrations list and click **Export**: you get a ZIP with their drafts, all their versions, and the payload definitions and Swagger configurations they use. In the other environment, **Import** stores it and shows per integration what that environment still needs (a base URL, a secret, header values). Nothing goes live until you click **Make active** there.
+To move integrations, tick them on the Integrations list and click **Export**: you get a ZIP with their drafts, all their versions, and the payload definitions and Swagger or WSDL configurations they use (a WSDL with its XSD files). In the other environment, **Import** stores it and shows per integration what that environment still needs (a base URL, a secret, header values). Nothing goes live until you click **Make active** there.
 
 ## More
 
