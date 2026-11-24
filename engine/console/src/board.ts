@@ -1,6 +1,6 @@
 import type { ContractOperation, Field, FieldType, PayloadDefinition } from './model';
 import { TYPE_LABELS } from './model';
-import { checkLink, REASON_TEXT, typesFit } from './linkRules';
+import { checkLink, checkShapes, REASON_TEXT, typesFit } from './linkRules';
 import type { LinkContext, ListLink } from './linkRules';
 
 /**
@@ -27,6 +27,8 @@ export interface Row {
   ruleType?: FieldType;
   /** Stands in for a linked field that no longer exists, so the board can draw its broken link (shown, never linkable). */
   missing?: boolean;
+  /** A linked path inside a free-form object of the contract: not declared, but allowed (shown under its object). */
+  freeForm?: boolean;
 }
 
 /** The parts of a file (D-29) and their types, as the engine's ScriptGenerator.BLOB_PARTS. */
@@ -190,22 +192,37 @@ export function linkStates(links: Link[], sources: Row[], targets: Row[], reques
   }
   const src = new Map(sources.map((r) => [r.key, r]));
   const tgt = new Map(targets.map((r) => [r.key, r]));
+  const end = (rows: Row[], byKey: Map<string, Row>, key: string) => byKey.get(key) ?? freeFormRow(rows, key);
   const listLinks: ListLink[] = [];
   for (const l of links) {
-    const s = src.get(l.from);
-    const t = tgt.get(l.to);
+    const s = end(sources, src, l.from);
+    const t = end(targets, tgt, l.to);
     if (s && t && s.isList && t.isList) listLinks.push({ source: s.rule, target: t.rule });
   }
   return links.map((l) => {
-    const s = src.get(l.from);
-    const t = tgt.get(l.to);
+    const s = end(sources, src, l.from);
+    const t = end(targets, tgt, l.to);
     if (!s) return { kind: 'broken', reason: `Field ${l.from} no longer exists` };
     if (!t) return { kind: 'broken', reason: `Field ${l.to} no longer exists` };
-    const reason = checkLink(s.rule, t.rule, listLinks, context(s, t, requestFormat));
+    const reason = checkLink(s.rule, t.rule, listLinks, context(s, t, requestFormat)) ?? checkShapes(s.type, t.type);
     if (reason) return { kind: 'red', reason: REASON_TEXT[reason] };
     if (!typesFit(s.type, t.type)) return { kind: 'red', reason: typeReason(s.type, t.type) };
+    const conflict = writeConflict(t, links.filter((o) => o !== l).map((o) => end(targets, tgt, o.to)?.rule));
+    if (conflict) return { kind: 'red', reason: conflict };
     return { kind: 'ok' };
   });
+}
+
+/**
+ * Two links can't write into the same place: a field linked as a whole and, at the same time, fields inside it. The
+ * engine refuses that at publish ("another link already writes to ..."); the board says so on the outer link. A list
+ * is the exception: a list link and links into its items belong together.
+ */
+function writeConflict(target: Row, otherTargets: (string | undefined)[]): string | null {
+  if (target.isList) return null;
+  return otherTargets.some((r) => r?.startsWith(`${target.rule}.`))
+    ? `Other links already write into fields of ${target.label}; keep this link or those, not both`
+    : null;
 }
 
 /** D-6 in plain words, with the same type names as everywhere else (D-4). */
@@ -228,9 +245,14 @@ export function canLink(source: Row, target: Row, links: Link[], sources: Row[],
     const t = targets.find((r) => r.key === l.to);
     if (s && t && s.isList && t.isList && states[i].kind === 'ok') listLinks.push({ source: s.rule, target: t.rule });
   });
-  const reason = checkLink(source.rule, target.rule, listLinks, context(source, target, requestFormat));
+  const reason = checkLink(source.rule, target.rule, listLinks, context(source, target, requestFormat)) ?? checkShapes(source.type, target.type);
   if (reason) return REASON_TEXT[reason];
   if (!typesFit(source.type, target.type)) return typeReason(source.type, target.type);
+  const otherRules = others.map((l) => targets.find((r) => r.key === l.to)?.rule);
+  const conflict = writeConflict(target, otherRules);
+  if (conflict) return conflict;
+  const outer = otherRules.find((r) => r && !r.endsWith('[]') && target.rule.startsWith(`${r}.`));
+  if (outer) return `${outer} is already linked as a whole; remove that link first`;
   return null;
 }
 
@@ -242,7 +264,7 @@ export function missingRows(links: Link[], sources: Row[], targets: Row[]): { so
   const ghosts = (rows: Row[], keys: string[]): Row[] => {
     if (rows.length === 0) return [];
     const known = new Set(rows.map((r) => r.key));
-    return [...new Set(keys.filter((k) => !known.has(k)))].map((key) => ({
+    return [...new Set(keys.filter((k) => !known.has(k) && !freeFormRow(rows, k)))].map((key) => ({
       key,
       label: key,
       required: false,
@@ -282,6 +304,52 @@ export function emptySideText(side: Side, op: ContractOperation | null): string 
  */
 export function nothingLinked(links: Link[], sources: Row[], targets: Row[]): boolean {
   return links.length === 0 && sources.length > 0 && targets.length > 0;
+}
+
+/**
+ * A row for an undeclared path inside a free-form object of the contract (an object declared without fields, as
+ * OpenAPI `additionalProperties` gives), or undefined when the path has no such object above it. The engine accepts
+ * any path there; the console used to call each one a field that "no longer exists". Only contract sides count:
+ * payload rows carry `ruleType`, and a payload field that is gone stays a problem. Lists of free-form items are not
+ * covered: a list row without children may as well be a list of simple values.
+ */
+export function freeFormRow(rows: Row[], key: string): Row | undefined {
+  const parent = rows
+    .filter(
+      (r) =>
+        r.ruleType === undefined &&
+        r.type === 'object' &&
+        !r.freeForm &&
+        key.startsWith(`${r.key}.`) &&
+        !rows.some((c) => c.key.startsWith(`${r.key}.`) && !c.freeForm),
+    )
+    .sort((a, b) => b.key.length - a.key.length)[0];
+  if (!parent) return undefined;
+  const rest = key.slice(parent.key.length + 1);
+  return {
+    key,
+    label: rest,
+    required: false,
+    constant: false,
+    depth: parent.depth + 1,
+    group: parent.group,
+    rule: `${parent.rule}.${rest}`,
+    isList: key.endsWith('[]'),
+    freeForm: true,
+  };
+}
+
+/** The rows with a row for every linked path inside a free-form object, placed right after that object. */
+export function withFreeFormRows(rows: Row[], keys: string[]): Row[] {
+  const known = new Set(rows.map((r) => r.key));
+  const extra = [...new Set(keys)].filter((k) => !known.has(k)).flatMap((k) => freeFormRow(rows, k) ?? []);
+  if (extra.length === 0) return rows;
+  const out: Row[] = [];
+  for (const r of rows) {
+    out.push(r);
+    out.push(...extra.filter((e) => e.key.startsWith(`${r.key}.`) && freeFormRow(rows, e.key)?.depth === r.depth + 1));
+  }
+  return out;
 }
 
 /** Required target fields without a link (amber, D-6). Constants count as filled. */

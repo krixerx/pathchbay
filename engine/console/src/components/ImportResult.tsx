@@ -3,7 +3,8 @@ import { Alert, Badge, Button, Code, Divider, Group, List, Stack, Text } from '@
 import { IconAlertTriangle, IconCheck } from '@tabler/icons-react';
 import { api } from '../api';
 import type { ImportedIntegration, ImportReport } from '../model';
-import { meaning } from '../theme';
+import { meaning, statusText } from '../theme';
+import { shortWhen } from '../time';
 
 /**
  * What an import stored (D-28). Nothing is live yet: each integration gets its own Make active, enabled once this
@@ -15,8 +16,10 @@ export function ImportResult(props: { report: ImportReport; onChanged: () => voi
     <Stack>
       <Text size="sm">
         Stored {report.integrations.length} {report.integrations.length === 1 ? 'integration' : 'integrations'}
-        {report.exportedAt && ` exported ${new Date(report.exportedAt).toLocaleString()}`}. Nothing went live; make each one active
-        when this environment is ready.
+        {report.exportedAt && (
+          <span title={new Date(report.exportedAt).toLocaleString()}> exported {shortWhen(new Date(report.exportedAt))}</span>
+        )}
+        . The import changed nothing that is live here; make each one active when this environment is ready.
       </Text>
       {(report.definitions.length > 0 || report.contracts.length > 0) && (
         <Text size="sm" c="dimmed">
@@ -60,11 +63,11 @@ function ImportedRow(props: { item: ImportedIntegration; onChanged: () => void }
       <Group justify="space-between" wrap="nowrap" align="flex-start">
         <div>
           <Text fw={500}>{it.name}</Text>
-          <Code>{it.id}</Code>
+          {it.name !== it.id && <Code>{it.id}</Code>}
         </div>
         {live ? (
           <Badge color={meaning.accent} variant="light">
-            Live {live}
+            Live here {live}
           </Badge>
         ) : (
           <Badge color={meaning.neutral} variant="light">
@@ -87,7 +90,7 @@ function ImportedRow(props: { item: ImportedIntegration; onChanged: () => void }
         </Alert>
       )}
       {it.warnings.map((w) => (
-        <Text key={w} size="sm" c={meaning.warning}>
+        <Text key={w} size="sm" c={statusText.warning}>
           {w}
         </Text>
       ))}

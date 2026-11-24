@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ContractOperation, PayloadDefinition } from './model';
-import { addLink, canLink, emptySideText, exampleInput, filterRows, linkStates, missingRows, nothingLinked, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
+import type { Row } from './board';
+import { addLink, canLink, emptySideText, freeFormRow, withFreeFormRows, exampleInput, filterRows, linkStates, missingRows, nothingLinked, payloadRows, requestRows, requiredUnmapped, responseRows } from './board';
 
 const person: PayloadDefinition = {
   id: 'person',
@@ -122,6 +123,87 @@ describe('links', () => {
 
   it('required targets without a link are reported', () => {
     expect(requiredUnmapped(tgt, [{ from: 'p-name', to: 'body.fullName' }]).map((r) => r.key)).toEqual(['path.tenant']);
+  });
+});
+
+describe('objects and single values', () => {
+  const nested: ContractOperation = {
+    ...op,
+    requestBody: {
+      name: 'body',
+      type: 'object',
+      fields: [
+        { name: 'customer', type: 'object', fields: [{ name: 'first', type: 'text' }] },
+        { name: 'note', type: 'text' },
+      ],
+    },
+  };
+  const targets = requestRows(nested);
+  const customer = targets.find((r) => r.key === 'body.customer')!;
+  const first = targets.find((r) => r.key === 'body.customer.first')!;
+
+  it('refuses a single value into an object, with the contract type the board knows', () => {
+    expect(canLink(src[0], customer, [], src, targets)).toBe("A single value can't go into an object; link it to one of the object's fields");
+    expect(linkStates([{ from: 'p-name', to: 'body.customer' }], src, targets)[0]).toEqual({
+      kind: 'red',
+      reason: "A single value can't go into an object; link it to one of the object's fields",
+    });
+    expect(canLink(src[0], first, [], src, targets)).toBeNull();
+  });
+
+  it('flags an object linked as a whole while fields inside it are linked too', () => {
+    const objectSource: Row = { ...src[0], key: 'p-obj', rule: 'obj', type: 'object' };
+    const links = [
+      { from: 'p-obj', to: 'body.customer' },
+      { from: 'p-name', to: 'body.customer.first' },
+    ];
+    const states = linkStates(links, [...src, objectSource], targets);
+    expect(states[0]).toEqual({ kind: 'red', reason: 'Other links already write into fields of customer; keep this link or those, not both' });
+    expect(states[1]).toEqual({ kind: 'ok' });
+    expect(canLink(src[0], first, [links[0]], [...src, objectSource], targets)).toBe('body.customer is already linked as a whole; remove that link first');
+  });
+});
+
+describe('free-form objects', () => {
+  const answer: ContractOperation = {
+    ...op,
+    response: {
+      name: 'response',
+      type: 'object',
+      fields: [
+        { name: 'customerId', type: 'text' },
+        { name: 'received', type: 'object' },
+        { name: 'meta', type: 'object', fields: [{ name: 'id', type: 'text' }] },
+      ],
+    },
+  };
+  const rows = responseRows(answer);
+
+  it('accepts a path inside an object the contract declares without fields', () => {
+    expect(freeFormRow(rows, 'received.group01.attr001')).toMatchObject({ label: 'group01.attr001', freeForm: true, depth: 1 });
+    expect(linkStates([{ from: 'received.group01.attr001', to: 'p-name' }], rows, payloadRows(person))).toEqual([{ kind: 'ok' }]);
+  });
+
+  it('still reports a path that is not under a free-form object, or under one with declared fields', () => {
+    expect(freeFormRow(rows, 'gone')).toBeUndefined();
+    expect(freeFormRow(rows, 'meta.other')).toBeUndefined();
+    expect(linkStates([{ from: 'meta.other', to: 'p-name' }], rows, payloadRows(person))[0].kind).toBe('broken');
+    expect(missingRows([{ from: 'received.x', to: 'p-name' }, { from: 'gone', to: 'p-name' }], rows, payloadRows(person)).sources.map((r) => r.key)).toEqual(['gone']);
+  });
+
+  it('never treats a payload field as free-form: a payload field that is gone stays a problem', () => {
+    expect(linkStates([{ from: 'customerId', to: 'p-gone.x' }], rows, payloadRows(person))[0].kind).toBe('broken');
+  });
+
+  it('places the rows for linked free-form paths right under their object', () => {
+    expect(withFreeFormRows(rows, ['received.b', 'received.a', 'customerId']).map((r) => r.key)).toEqual([
+      'customerId',
+      'received',
+      'received.b',
+      'received.a',
+      'meta',
+      'meta.id',
+    ]);
   });
 });
 

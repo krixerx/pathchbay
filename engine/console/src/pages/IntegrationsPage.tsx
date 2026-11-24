@@ -165,7 +165,7 @@ export function IntegrationsPage() {
         />
       )}
 
-      <NewIntegrationModal opened={creating} onClose={() => setCreating(false)} />
+      <NewIntegrationModal opened={creating} onClose={() => setCreating(false)} taken={(items ?? []).map((it) => it.id)} />
       <Modal opened={!!imported} onClose={() => setImported(null)} title="Imported" size="lg">
         {imported && <ImportResult report={imported} onChanged={load} />}
       </Modal>
@@ -360,12 +360,14 @@ function IntegrationTable({
   );
 }
 
-function NewIntegrationModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+function NewIntegrationModal({ opened, onClose, taken }: { opened: boolean; onClose: () => void; taken: string[] }) {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const slug = slugify(name);
+  // Said while typing, not after Create; the engine still checks, for a name taken in the meantime.
+  const exists = !!slug && taken.includes(slug);
 
   const create = async () => {
     setBusy(true);
@@ -388,7 +390,8 @@ function NewIntegrationModal({ opened, onClose }: { opened: boolean; onClose: ()
           description="What the integration does, for example “Register person”"
           value={name}
           onChange={(e) => setName(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === 'Enter' && slug && create()}
+          onKeyDown={(e) => e.key === 'Enter' && slug && !exists && create()}
+          error={exists ? `An integration called ${slug} already exists` : undefined}
           data-autofocus
         />
         <Text size="sm" c="dimmed">
@@ -403,7 +406,7 @@ function NewIntegrationModal({ opened, onClose }: { opened: boolean; onClose: ()
           <Button variant="default" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={create} disabled={!slug} loading={busy}>
+          <Button onClick={create} disabled={!slug || exists} loading={busy}>
             Create
           </Button>
         </Group>

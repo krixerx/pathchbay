@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Accordion, Alert, Badge, Code, Drawer, Group, Stack, Text } from '@mantine/core';
 import { IconAlertTriangle, IconInfoCircle } from '@tabler/icons-react';
 import { api } from '../../api';
-import { CallSteps } from '../../components/CallSteps';
+import { CallSteps, STAGE_TEXT } from '../../components/CallSteps';
 import type { CallList } from '../../model';
 import { meaning, statusText } from '../../theme';
 
@@ -65,7 +65,7 @@ export function CallsDrawer(props: { slug: string; opened: boolean; onClose: () 
                       {c.status}
                     </Badge>
                     <Text size="sm" c={c.stage === 'done' ? undefined : statusText.broken}>
-                      {c.stage === 'done' ? 'went through' : `stopped at ${c.stage}`}
+                      {STAGE_TEXT[c.stage]}
                     </Text>
                     <Text size="sm" c="dimmed" ml="auto">
                       {c.durationMs} ms · version {c.version ?? '?'}

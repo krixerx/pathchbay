@@ -19,6 +19,9 @@ import integrationmapper.engine.config.Connections;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.config.SecretResolver;
 import integrationmapper.engine.format.Json;
+import integrationmapper.engine.mapping.ContractShapes;
+import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.Operation;
 import integrationmapper.engine.model.ServiceDefinition;
 import integrationmapper.engine.model.Version;
 import integrationmapper.engine.model.VersionSnapshot;
@@ -62,11 +65,43 @@ public class IntegrationPublisher {
         VersionSnapshot snapshot = new VersionSnapshot(version, OffsetDateTime.now(ZoneOffset.UTC).toString(),
                 draft.withVersion(version), library.get(draft.input()), library.get(draft.output()));
 
-        CompiledIntegration compiled = compile(snapshot);
+        // The shape rule needs the contract's types, which only the draft knows; its problems come with the compile
+        // problems, so every problem is listed at once (R8).
+        List<String> shapes = ContractShapes.problems(snapshot.service(), snapshot.input(), snapshot.output(), draftOperation(slug));
+        CompiledIntegration compiled;
+        try {
+            compiled = compile(snapshot);
+        } catch (IllegalArgumentException e) {
+            if (shapes.isEmpty()) {
+                throw e;
+            }
+            throw new IllegalArgumentException(e.getMessage() + "; " + String.join("; ", shapes), e);
+        }
+        if (!shapes.isEmpty()) {
+            throw new IllegalArgumentException("Integration " + slug + " " + version + " does not compile: " + String.join("; ", shapes));
+        }
         store.writeJson(store.version(slug, version), snapshot);
         setActiveVersion(slug, version);
         goLive(compiled);
         return version;
+    }
+
+    /**
+     * The contract operation a draft was built from, or null: the draft names it (contract, operationId), the
+     * published version doesn't. Null too when the contract is gone, so publishing doesn't depend on it.
+     */
+    private Operation draftOperation(String slug) throws IOException {
+        var draft = Json.MAPPER.readTree(store.service(slug).toFile());
+        if (!draft.hasNonNull("contract") || !draft.hasNonNull("operationId")) {
+            return null;
+        }
+        var file = store.root().resolve("contracts").resolve(draft.get("contract").asText() + ".json");
+        if (!Files.isRegularFile(file)) {
+            return null;
+        }
+        String opId = draft.get("operationId").asText();
+        return Json.MAPPER.readValue(file.toFile(), Contract.class).operations().stream()
+                .filter(o -> o.id().equals(opId)).findFirst().orElse(null);
     }
 
     /** Makes a stored version live again ("Make active", rollback). No new version file is written. */

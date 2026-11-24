@@ -165,6 +165,7 @@ Rules (D-12), shared with the console in `../rules/link-cases.json`:
 4. Nested lists are linked level by level, outer first.
 5. A field inside a nested list can't go to a less nested place.
 6. A list can only go into a list, and a single value can't go into a list.
+7. A single value can't go into an object, and an object can't go into a single value; link the object's fields instead. The type of an external end comes from the contract operation the draft was built from, so this is checked when a draft is published (a published version is compiled without its contract). An external path the contract doesn't describe, such as one inside a free-form object, is not checked.
 
 A list linked without item links is copied as it is.
 
