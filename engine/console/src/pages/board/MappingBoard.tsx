@@ -500,7 +500,8 @@ function TreePanel(props: {
                     flexShrink: 0,
                     borderRadius: '50%',
                     marginLeft: props.side === 'source' ? 'auto' : 0,
-                    border: `2px solid var(--mantine-color-${dotColor ?? 'gray'}-${dotColor ? 7 : 4})`,
+                    // At least 3:1 on white (WCAG 1.4.11): teal.7 / red.7 when linked, gray.6 when free.
+                    border: `2px solid var(--mantine-color-${dotColor ?? 'gray'}-${dotColor ? 7 : 6})`,
                     background: dotColor ? `var(--mantine-color-${dotColor}-7)` : 'transparent',
                   }}
                 />
@@ -678,7 +679,8 @@ function Lines(props: {
       <svg width={GUTTER} height="100%" style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }} aria-hidden>
         {drawn.map(({ l, state, y1, y2, visible }) => {
           const d = `M -6 ${y1} C ${GUTTER / 2} ${y1}, ${GUTTER / 2} ${y2}, ${GUTTER + 6} ${y2}`;
-          const color = state.kind === 'ok' ? 'var(--mantine-color-teal-6)' : 'var(--mantine-color-red-6)';
+          // teal.8 (3.95:1) and red.6 (3.3:1) keep the lines at 3:1 on white (WCAG 1.4.11); teal.6 reached 2.55:1.
+          const color = state.kind === 'ok' ? 'var(--mantine-color-teal-8)' : 'var(--mantine-color-red-6)';
           return (
             <g key={`${l.from}->${l.to}`} onMouseEnter={() => setHovered(l)} onMouseLeave={() => setHovered(null)}>
               {/* A wide invisible stroke, so the line is easy to point at. */}
@@ -763,7 +765,7 @@ function LinkList(props: { links: Link[]; states: LinkState[]; sources: Row[]; t
       </Group>
       <Stack gap={2}>
         {listed.map(({ l, s }) => {
-          const color = s.kind === 'ok' ? 'teal.8' : 'red.7';
+          const color = s.kind === 'ok' ? 'teal.9' : 'red.7';
           return (
             <Group key={`${l.from}->${l.to}`} gap="xs" wrap="nowrap">
               <Text size="sm" ff="monospace" c={color}>

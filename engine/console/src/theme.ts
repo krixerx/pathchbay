@@ -4,7 +4,8 @@ import { createTheme } from '@mantine/core';
 // Tokens from DESIGN.md (D-16): IBM Plex, one teal accent, small radius, 16px body.
 export const theme = createTheme({
   primaryColor: 'teal',
-  primaryShade: 8,
+  // Shade 9 (#087f5b): 5.0:1 on white, so links and white text on primary buttons meet WCAG AA. Shade 8 reached 3.95:1.
+  primaryShade: 9,
   fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
   fontFamilyMonospace: '"IBM Plex Mono", ui-monospace, monospace',
   headings: { fontFamily: '"IBM Plex Sans", system-ui, sans-serif', fontWeight: '600' },
@@ -27,6 +28,10 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
   light: {
     '--mantine-color-dimmed': SECONDARY_TEXT,
     '--mantine-color-placeholder': SECONDARY_TEXT,
+    // The light teal behind teal text (active menu item, Live badges, selected row): teal.0 instead of Mantine's
+    // teal.1-based tint, so teal.9 text on it reaches 4.7:1 instead of 4.3:1.
+    '--mantine-color-teal-light': 'var(--mantine-color-teal-0)',
+    '--mantine-primary-color-light': 'var(--mantine-color-teal-0)',
   },
   dark: {},
 });

@@ -139,9 +139,20 @@ export function SettingsPage() {
       )}
 
       <Stack gap="xs">
-        <Text fw={500} size="sm">
-          Authentication
-        </Text>
+        <div>
+          <Text fw={500} size="sm">
+            Authentication
+          </Text>
+          <Text size="sm" c="dimmed">
+            Set for this integration only, unlike the base URL: one system can have open and protected operations, and
+            two integrations can call it with different credentials. A key that every call to the system needs, such as a
+            shared client id or token, can instead be a header on its connection under{' '}
+            <Anchor component={Link} to="/configuration" size="sm">
+              Configuration
+            </Anchor>
+            .
+          </Text>
+        </div>
         <SegmentedControl
           value={kind}
           onChange={(v) => setKind(v as AuthKind)}

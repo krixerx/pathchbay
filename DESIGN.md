@@ -15,7 +15,7 @@ Both fonts are SIL OFL.
 
 | Meaning | Mantine color | Used for |
 |---|---|---|
-| Accent | `teal` (shade 8) | Primary actions, selected source while linking (D-11), live status, normal links (D-20) |
+| Accent | `teal` (shade 9, `#087f5b`) | Primary actions, selected source while linking (D-11), live status, normal links (D-20) |
 | Warning | `yellow` (amber) | Something to look at, does not block: required field unmapped, guessed type (D-6, D-13) |
 | Broken / not allowed | `red` | Broken or incompatible link, invalid input, publish blocked (D-6, D-7, R8); also the confirming button of a destructive dialog, but never a row action |
 | Passed | `green` | Only "test passed" (D-2) |
@@ -32,7 +32,7 @@ A color is never the only signal: it always comes with an icon and words (D-16, 
 ## Layout
 
 - Desktop first, from 1280px. Below 1024px the mapping step shows "Use a wider screen to map fields"; other pages work at any width (D-17).
-- Header: the Patchbay logo and name (links to Integrations), then **Integrations**, **Payload definitions** and **Configuration** (D-21, D-25). The logo is a teal (shade 8) tile with jacks on both sides and two cables: filled jacks are connected, hollow ones free, as on the board. Files: `engine/console/src/components/Logo.tsx`, `engine/console/public/favicon.svg`, `docs/images/patchbay-logo.svg`.
+- Header: the Patchbay logo and name (links to Integrations), then **Integrations**, **Payload definitions** and **Configuration** (D-21, D-25). The logo is a teal (shade 9) tile with jacks on both sides and two cables: filled jacks are connected, hollow ones free, as on the board. Files: `engine/console/src/components/Logo.tsx`, `engine/console/public/favicon.svg`, `docs/images/patchbay-logo.svg`.
 - An integration is one page, no wizard (user decision 2026-10-22, replaces the D-2 stepper). Header actions in this order: Settings, Test, Calls, **Publish** (the primary action, last). Under it the setup bar: Input, Output, External system and Operation; the Operation select is twice as wide and shows method and path, with the operation's summary on a line under it. Then the mapping board. Connection settings live on the integration's Settings page (D-3).
 - The mapping board fills the viewport height once scrolled to (the trees are never shorter than 360px). Lines are teal when valid, red when they can't be published, dashed when an end no longer exists. A field that no longer exists gets its own row under "No longer exists" (red, struck through), so its broken link is drawn like any other. The × that removes a link shows only while its line is pointed at or the × has focus. A **Problems** filter (shown only when there are problems) narrows both trees to the ends of links that can't be published; the status bar's problem counts switch to it. The text list of links under the board is folded and always lists the problem links; it is also the keyboard and screen-reader way to read and remove links.
 - When something blocks publishing, Publish turns grey with a red count (the publish dialog's count). The dialog can remove all links to fields that no longer exist in one step.
@@ -60,4 +60,7 @@ Visible focus ring in the accent color, WCAG AA contrast, all actions reachable 
 
 - Secondary text and placeholders use `#62696f` (set in `theme.ts` through the provider's `cssVariablesResolver`): at least 5:1 on white and on the light gray, teal, yellow and red backgrounds the console uses. Mantine's defaults, `#868e96` and `#adb5bd`, reach only 3.3:1 and 2.1:1.
 - Popovers that hold links move focus into themselves and close on Escape (`trapFocus`, `returnFocus`).
-- Open: the accent, `teal.8` (`#099268`), reaches 3.95:1 on white, below AA for link text and for white text on primary buttons; `teal.9` gives 5.0:1. The hollow dots of unlinked fields (`gray.4`) reach about 1.5:1, below the 3:1 for graphics. Both wait for a decision.
+- The accent is `teal.9` (5.0:1 on white) so links and white text on primary buttons meet AA; `teal.8` reached 3.95:1. The light teal behind teal text (active menu item, Live badges, selected row) is `teal.0`, giving 4.7:1.
+- Graphics that carry meaning reach 3:1 (WCAG 1.4.11): the board's free dots are `gray.6`, linked dots `teal.7` / `red.7`, valid lines `teal.8`, problem lines `red.6`.
+- Authentication stays per integration (user decision 2026-11-24): one system can mix open and protected operations, and integrations can use different credentials. The Settings page says so and points to connection headers for a key every call needs.
+- Open: the status text colors fall below 4.5:1 on white: `yellow.8` 2.5:1, `green.8` 3.5:1, `red.7` 3.8:1.

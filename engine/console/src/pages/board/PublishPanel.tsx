@@ -140,7 +140,7 @@ export function PublishPanel(props: {
                 version {live}
               </Badge>
               {published && (
-                <Text size="sm" c="teal.8">
+                <Text size="sm" c="teal.9">
                   Just published
                 </Text>
               )}
