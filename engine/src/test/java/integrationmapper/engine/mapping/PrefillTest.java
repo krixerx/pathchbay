@@ -9,8 +9,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
 import integrationmapper.engine.format.Json;
-import integrationmapper.engine.model.Contract;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.RestOperation;
 import integrationmapper.engine.model.ServiceDefinition;
 import integrationmapper.engine.runtime.CompiledIntegration;
 
@@ -29,7 +29,7 @@ class PrefillTest {
         return new PayloadDefinition.Field(null, name, "list", false, null, null, null, items);
     }
 
-    static JsonNode run(Contract.Operation op, String input, String response) throws Exception {
+    static JsonNode run(RestOperation op, String input, String response) throws Exception {
         Prefill.Result in = Prefill.input("t-input", "T input", op);
         Prefill.Result out = Prefill.output("t-output", "T output", op);
         in.definition().check();
@@ -50,8 +50,8 @@ class PrefillTest {
                 list("lines", object(null, f("sku", "text", true), f("qty", "integer", false),
                         list("tags", f(null, "text", false)))),
                 object("address", f("city", "text", false)));
-        Contract.Operation op = new Contract.Operation("POST /orders/{shop}", "POST", "/orders/{shop}", null,
-                List.of(new Contract.Parameter("shop", "path", true, "text"), new Contract.Parameter("dryRun", "query", false, "boolean")),
+        RestOperation op = new RestOperation("POST /orders/{shop}", "POST", "/orders/{shop}", null,
+                List.of(new RestOperation.Parameter("shop", "path", true, "text"), new RestOperation.Parameter("dryRun", "query", false, "boolean")),
                 order, "201", object(null, f("orderId", "integer", false), list("lines", object(null, f("sku", "text", false)))));
 
         JsonNode r = run(op, """
@@ -71,8 +71,8 @@ class PrefillTest {
 
     @Test
     void parameterAndBodyFieldWithTheSameNameShareOneInputField() throws Exception {
-        Contract.Operation op = new Contract.Operation("PUT /Books/{id}", "PUT", "/Books/{id}", null,
-                List.of(new Contract.Parameter("id", "path", true, "integer")),
+        RestOperation op = new RestOperation("PUT /Books/{id}", "PUT", "/Books/{id}", null,
+                List.of(new RestOperation.Parameter("id", "path", true, "integer")),
                 object(null, f("id", "integer", false), f("title", "text", false)), "200", null);
         Prefill.Result in = Prefill.input("t-input", "T input", op);
         assertThat(in.definition().fields()).extracting(PayloadDefinition.Field::name).containsExactly("id", "title");
@@ -85,7 +85,7 @@ class PrefillTest {
 
     @Test
     void aListResponseBecomesOneItemsField() throws Exception {
-        Contract.Operation op = new Contract.Operation("GET /Books", "GET", "/Books", null, List.of(), null, "200",
+        RestOperation op = new RestOperation("GET /Books", "GET", "/Books", null, List.of(), null, "200",
                 list(null, object(null, f("id", "integer", false), f("title", "text", false))));
         JsonNode r = run(op, "{}", "[{\"id\":1,\"title\":\"A\"},{\"id\":2,\"title\":\"B\"}]");
         assertThat(r.at("/output").toString()).isEqualTo("{\"items\":[{\"id\":1,\"title\":\"A\"},{\"id\":2,\"title\":\"B\"}]}");
@@ -94,7 +94,7 @@ class PrefillTest {
     /** D-29: a multipart file part and a raw body become top-level blobs; a blob nested deeper is left out with a note. */
     @Test
     void blobsArePrefilledAtTheTopLevelOnly() throws Exception {
-        Contract.Operation multipart = new Contract.Operation("upload", "POST", "/documents", null, List.of(),
+        RestOperation multipart = new RestOperation("upload", "POST", "/documents", null, List.of(),
                 object("body", f("title", "text", false), f("file", "blob", true), object("meta", f("scan", "blob", false))),
                 "201", null);
         Prefill.Result in = Prefill.input("u-input", "U input", multipart);
@@ -106,8 +106,8 @@ class PrefillTest {
         assertThat(in.links()).extracting(ServiceDefinition.Link::to).containsExactly("body.title", "body.file");
         assertThat(in.notes()).anyMatch(n -> n.contains("meta.scan") && n.contains("blob"));
 
-        Contract.Operation raw = new Contract.Operation("replace", "PUT", "/documents/{id}/content", null,
-                List.of(new Contract.Parameter("id", "path", true, "text")), f("body", "blob", true), "200", null);
+        RestOperation raw = new RestOperation("replace", "PUT", "/documents/{id}/content", null,
+                List.of(new RestOperation.Parameter("id", "path", true, "text")), f("body", "blob", true), "200", null);
         Prefill.Result rawIn = Prefill.input("r-input", "R input", raw);
         rawIn.definition().check();
         assertThat(rawIn.definition().fields()).extracting(PayloadDefinition.Field::name, PayloadDefinition.Field::type)

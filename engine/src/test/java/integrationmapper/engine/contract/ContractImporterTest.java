@@ -13,7 +13,9 @@ import org.junit.jupiter.api.io.TempDir;
 import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.OpenApiContract;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.RestOperation;
 
 public class ContractImporterTest {
 
@@ -30,18 +32,18 @@ public class ContractImporterTest {
         }
     }
 
-    static Contract.Operation op(Contract c, String method, String path) {
+    static RestOperation op(OpenApiContract c, String method, String path) {
         return c.operations().stream().filter(o -> o.method().equals(method) && o.path().equals(path)).findFirst().orElseThrow();
     }
 
     @Test
     void fakeRestApiIsNormalizedAndBothFilesAreStored() throws Exception {
-        Contract c = importer().importContract("fake-rest-api", "FakeRESTApi", fixture(), null);
+        OpenApiContract c = (OpenApiContract) importer().importContract("fake-rest-api", "FakeRESTApi", fixture(), null);
 
         assertThat(c.operations()).hasSizeGreaterThan(20);
         assertThat(c.servers()).containsExactly("/"); // no servers in FakeRESTApi: the parser adds "/", a relative URL, so the base URL must be typed in
-        Contract.Operation get = op(c, "GET", "/api/v1/Books/{id}");
-        assertThat(get.parameters()).containsExactly(new Contract.Parameter("id", "path", true, "integer"));
+        RestOperation get = op(c, "GET", "/api/v1/Books/{id}");
+        assertThat(get.parameters()).containsExactly(new RestOperation.Parameter("id", "path", true, "integer"));
         assertThat(get.response().type()).isEqualTo("object");
         assertThat(get.response().fields()).extracting(PayloadDefinition.Field::name)
                 .contains("id", "title", "description", "pageCount", "publishDate");
@@ -62,10 +64,10 @@ public class ContractImporterTest {
                 {"swagger":"2.0","info":{"title":"Old","version":"1"},"host":"api.example.org","basePath":"/v1","schemes":["https"],
                  "paths":{"/people/{id}":{"get":{"operationId":"getPerson","parameters":[{"name":"id","in":"path","required":true,"type":"string"}],
                    "responses":{"200":{"description":"ok","schema":{"type":"object","properties":{"name":{"type":"string"},"born":{"type":"string","format":"date"}}}}}}}}}""";
-        Contract c = importer().importContract("old", "Old", swagger2, null);
+        OpenApiContract c = (OpenApiContract) importer().importContract("old", "Old", swagger2, null);
         assertThat(c.warnings().get(0)).isEqualTo("Swagger 2.0 file converted to OpenAPI 3");
         assertThat(c.servers()).containsExactly("https://api.example.org/v1");
-        Contract.Operation get = c.operations().get(0);
+        RestOperation get = c.operations().get(0);
         assertThat(get.id()).isEqualTo("getPerson");
         assertThat(get.response().fields()).extracting(PayloadDefinition.Field::type).containsExactly("text", "date");
         assertThat(Files.exists(dir.resolve("contracts/old.openapi.json"))).isTrue();
@@ -102,8 +104,8 @@ public class ContractImporterTest {
                         name: {type: string}
                         child: {$ref: '#/components/schemas/Node'}
                 """;
-        Contract c = importer().importContract("t", "T", spec, null);
-        Contract.Operation post = c.operations().get(0);
+        OpenApiContract c = (OpenApiContract) importer().importContract("t", "T", spec, null);
+        RestOperation post = c.operations().get(0);
         assertThat(post.id()).isEqualTo("POST /things");
         assertThat(post.requestBody().fields()).extracting(PayloadDefinition.Field::name).containsExactly("a", "b");
         assertThat(post.requestBody().fields().get(0).required()).isTrue();
@@ -168,7 +170,7 @@ public class ContractImporterTest {
                             application/pdf:
                               schema: { type: string, format: binary }
                 """;
-        Contract c = importer().importContract("docs", "Docs", docs, null);
+        OpenApiContract c = (OpenApiContract) importer().importContract("docs", "Docs", docs, null);
 
         assertThat(op(c, "POST", "/documents").requestBody().fields())
                 .extracting(PayloadDefinition.Field::name, PayloadDefinition.Field::type)

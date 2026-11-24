@@ -1,0 +1,933 @@
+{
+  "id" : "fake-rest-api",
+  "name" : "FakeRESTApi",
+  "sourceFile" : "fake-rest-api.openapi.json",
+  "sourceUrl" : "https://fakerestapi.azurewebsites.net/swagger/v1/swagger.json",
+  "importedAt" : "2026-11-24T16:19:40.772111800Z",
+  "servers" : [ "/" ],
+  "operations" : [ {
+    "id" : "GET /api/v1/Activities",
+    "method" : "GET",
+    "path" : "/api/v1/Activities",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "title",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "dueDate",
+          "type" : "datetime",
+          "required" : false,
+          "format" : "date-time"
+        }, {
+          "name" : "completed",
+          "type" : "boolean",
+          "required" : false
+        } ]
+      }
+    }
+  }, {
+    "id" : "POST /api/v1/Activities",
+    "method" : "POST",
+    "path" : "/api/v1/Activities",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "dueDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      }, {
+        "name" : "completed",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "dueDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      }, {
+        "name" : "completed",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    }
+  }, {
+    "id" : "GET /api/v1/Activities/{id}",
+    "method" : "GET",
+    "path" : "/api/v1/Activities/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "dueDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      }, {
+        "name" : "completed",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    }
+  }, {
+    "id" : "PUT /api/v1/Activities/{id}",
+    "method" : "PUT",
+    "path" : "/api/v1/Activities/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "dueDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      }, {
+        "name" : "completed",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "dueDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      }, {
+        "name" : "completed",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    }
+  }, {
+    "id" : "DELETE /api/v1/Activities/{id}",
+    "method" : "DELETE",
+    "path" : "/api/v1/Activities/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200"
+  }, {
+    "id" : "GET /api/v1/Authors",
+    "method" : "GET",
+    "path" : "/api/v1/Authors",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "idBook",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "firstName",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "lastName",
+          "type" : "text",
+          "required" : false
+        } ]
+      }
+    }
+  }, {
+    "id" : "POST /api/v1/Authors",
+    "method" : "POST",
+    "path" : "/api/v1/Authors",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : false
+      } ]
+    }
+  }, {
+    "id" : "GET /api/v1/Authors/authors/books/{idBook}",
+    "method" : "GET",
+    "path" : "/api/v1/Authors/authors/books/{idBook}",
+    "parameters" : [ {
+      "name" : "idBook",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "idBook",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "firstName",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "lastName",
+          "type" : "text",
+          "required" : false
+        } ]
+      }
+    }
+  }, {
+    "id" : "GET /api/v1/Authors/{id}",
+    "method" : "GET",
+    "path" : "/api/v1/Authors/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : false
+      } ]
+    }
+  }, {
+    "id" : "PUT /api/v1/Authors/{id}",
+    "method" : "PUT",
+    "path" : "/api/v1/Authors/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : false
+      } ]
+    }
+  }, {
+    "id" : "DELETE /api/v1/Authors/{id}",
+    "method" : "DELETE",
+    "path" : "/api/v1/Authors/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200"
+  }, {
+    "id" : "GET /api/v1/Books",
+    "method" : "GET",
+    "path" : "/api/v1/Books",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "title",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "description",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "pageCount",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "excerpt",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "publishDate",
+          "type" : "datetime",
+          "required" : false,
+          "format" : "date-time"
+        } ]
+      }
+    }
+  }, {
+    "id" : "POST /api/v1/Books",
+    "method" : "POST",
+    "path" : "/api/v1/Books",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "description",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "pageCount",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "excerpt",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "publishDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      } ]
+    },
+    "responseStatus" : "200"
+  }, {
+    "id" : "GET /api/v1/Books/{id}",
+    "method" : "GET",
+    "path" : "/api/v1/Books/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "description",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "pageCount",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "excerpt",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "publishDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      } ]
+    }
+  }, {
+    "id" : "PUT /api/v1/Books/{id}",
+    "method" : "PUT",
+    "path" : "/api/v1/Books/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "title",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "description",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "pageCount",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "excerpt",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "publishDate",
+        "type" : "datetime",
+        "required" : false,
+        "format" : "date-time"
+      } ]
+    },
+    "responseStatus" : "200"
+  }, {
+    "id" : "DELETE /api/v1/Books/{id}",
+    "method" : "DELETE",
+    "path" : "/api/v1/Books/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200"
+  }, {
+    "id" : "GET /api/v1/CoverPhotos",
+    "method" : "GET",
+    "path" : "/api/v1/CoverPhotos",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "idBook",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "url",
+          "type" : "text",
+          "required" : false,
+          "format" : "uri"
+        } ]
+      }
+    }
+  }, {
+    "id" : "POST /api/v1/CoverPhotos",
+    "method" : "POST",
+    "path" : "/api/v1/CoverPhotos",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "url",
+        "type" : "text",
+        "required" : false,
+        "format" : "uri"
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "url",
+        "type" : "text",
+        "required" : false,
+        "format" : "uri"
+      } ]
+    }
+  }, {
+    "id" : "GET /api/v1/CoverPhotos/books/covers/{idBook}",
+    "method" : "GET",
+    "path" : "/api/v1/CoverPhotos/books/covers/{idBook}",
+    "parameters" : [ {
+      "name" : "idBook",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "idBook",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "url",
+          "type" : "text",
+          "required" : false,
+          "format" : "uri"
+        } ]
+      }
+    }
+  }, {
+    "id" : "GET /api/v1/CoverPhotos/{id}",
+    "method" : "GET",
+    "path" : "/api/v1/CoverPhotos/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "url",
+        "type" : "text",
+        "required" : false,
+        "format" : "uri"
+      } ]
+    }
+  }, {
+    "id" : "PUT /api/v1/CoverPhotos/{id}",
+    "method" : "PUT",
+    "path" : "/api/v1/CoverPhotos/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "url",
+        "type" : "text",
+        "required" : false,
+        "format" : "uri"
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "idBook",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "url",
+        "type" : "text",
+        "required" : false,
+        "format" : "uri"
+      } ]
+    }
+  }, {
+    "id" : "DELETE /api/v1/CoverPhotos/{id}",
+    "method" : "DELETE",
+    "path" : "/api/v1/CoverPhotos/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200"
+  }, {
+    "id" : "GET /api/v1/Users",
+    "method" : "GET",
+    "path" : "/api/v1/Users",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "list",
+      "required" : false,
+      "items" : {
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "id",
+          "type" : "integer",
+          "required" : false,
+          "format" : "int32"
+        }, {
+          "name" : "userName",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "password",
+          "type" : "text",
+          "required" : false
+        } ]
+      }
+    }
+  }, {
+    "id" : "POST /api/v1/Users",
+    "method" : "POST",
+    "path" : "/api/v1/Users",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "userName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "password",
+        "type" : "text",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200"
+  }, {
+    "id" : "GET /api/v1/Users/{id}",
+    "method" : "GET",
+    "path" : "/api/v1/Users/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200"
+  }, {
+    "id" : "PUT /api/v1/Users/{id}",
+    "method" : "PUT",
+    "path" : "/api/v1/Users/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : false,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : false,
+        "format" : "int32"
+      }, {
+        "name" : "userName",
+        "type" : "text",
+        "required" : false
+      }, {
+        "name" : "password",
+        "type" : "text",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200"
+  }, {
+    "id" : "DELETE /api/v1/Users/{id}",
+    "method" : "DELETE",
+    "path" : "/api/v1/Users/{id}",
+    "parameters" : [ {
+      "name" : "id",
+      "in" : "path",
+      "required" : true,
+      "type" : "integer"
+    } ],
+    "responseStatus" : "200"
+  } ],
+  "warnings" : [ ]
+}

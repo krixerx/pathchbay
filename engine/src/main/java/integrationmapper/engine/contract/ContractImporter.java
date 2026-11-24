@@ -22,6 +22,8 @@ import org.springframework.stereotype.Component;
 import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.format.SafeXml;
 import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.OpenApiContract;
+import integrationmapper.engine.model.WsdlContract;
 
 /**
  * Imports a contract by URL, as text or as a ZIP (spec FR-001, FR-004): fetches it, tells an OpenAPI 3 or Swagger 2.0
@@ -100,7 +102,7 @@ public class ContractImporter {
         String sourceFile = id + ".openapi." + (json ? "json" : "yaml");
         removeSources(id);
         store.write(store.root().resolve("contracts").resolve(sourceFile), out -> out.write(text.getBytes(StandardCharsets.UTF_8)));
-        Contract contract = new Contract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), r.servers(),
+        Contract contract = new OpenApiContract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), r.servers(),
                 r.operations(), r.warnings());
         store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), contract);
         return contract;
@@ -205,8 +207,8 @@ public class ContractImporter {
             java.nio.file.Files.createDirectories(target.getParent());
             store.write(target, out -> out.write(e.getValue()));
         }
-        Contract contract = new Contract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), r.servers(),
-                r.operations(), r.warnings(), Contract.WSDL, files);
+        Contract contract = new WsdlContract(id, name, sourceFile, sourceUrl, OffsetDateTime.now(ZoneOffset.UTC).toString(), r.servers(),
+                r.operations(), r.warnings(), files);
         store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), contract);
         return contract;
     }

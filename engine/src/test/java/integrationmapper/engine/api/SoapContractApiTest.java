@@ -29,6 +29,7 @@ import integrationmapper.engine.format.Json;
 import integrationmapper.engine.model.Contract;
 import integrationmapper.engine.model.PayloadDefinition;
 import integrationmapper.engine.model.VersionSnapshot;
+import integrationmapper.engine.model.WsdlContract;
 import integrationmapper.engine.runtime.CompiledIntegration;
 import integrationmapper.engine.testsupport.FakeSoapApi;
 
@@ -89,7 +90,7 @@ class SoapContractApiTest {
         HttpResponse<String> r = send("POST", "/admin/api/contracts", Map.of("name", "Url registry", "url", wsdlUrl()));
 
         assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
-        Contract c = Json.MAPPER.readValue(r.body(), Contract.class);
+        WsdlContract c = (WsdlContract) Json.MAPPER.readValue(r.body(), Contract.class);
         assertThat(c.sourceUrl()).isEqualTo(wsdlUrl());
         assertThat(c.warnings()).noneMatch(w -> w.contains("xsd=1"));
         assertThat(c.files()).containsValues(wsdlUrl(), wsdlUrl().replace("?wsdl", "?xsd=1"));
@@ -106,7 +107,7 @@ class SoapContractApiTest {
         HttpResponse<String> r = send("POST", "/admin/api/contracts", Map.of("name", "Moved registry", "url", url));
 
         assertThat(r.statusCode()).as(r.body()).isEqualTo(200);
-        Contract c = Json.MAPPER.readValue(r.body(), Contract.class);
+        WsdlContract c = (WsdlContract) Json.MAPPER.readValue(r.body(), Contract.class);
         assertThat(c.warnings()).anyMatch(w -> w.contains("xsd=1") && w.contains("redirect"));
         assertThat(c.files()).containsOnlyKeys("moved_wsdl.wsdl");
     }

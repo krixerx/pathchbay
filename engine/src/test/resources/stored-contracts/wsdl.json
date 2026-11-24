@@ -1,0 +1,479 @@
+{
+  "id" : "person-registry",
+  "name" : "Person registry",
+  "sourceFile" : "person-registry.wsdl/person.wsdl",
+  "importedAt" : "2026-11-24T16:19:40.896317800Z",
+  "servers" : [ "http://registry.example/ws/person", "http://registry.example/ws/person-rpc" ],
+  "operations" : [ {
+    "id" : "PersonSoap/GetPerson",
+    "method" : "POST",
+    "path" : "",
+    "summary" : "Finds a person by personal code",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "personCode",
+        "type" : "text",
+        "required" : true
+      }, {
+        "name" : "includeHistory",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "person",
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "firstName",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "lastName",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "birthDate",
+          "type" : "date",
+          "required" : true
+        }, {
+          "name" : "height",
+          "type" : "number",
+          "required" : false
+        }, {
+          "name" : "children",
+          "type" : "integer",
+          "required" : true
+        }, {
+          "name" : "updated",
+          "type" : "datetime",
+          "required" : false
+        }, {
+          "name" : "photo",
+          "type" : "text",
+          "required" : false,
+          "format" : "byte"
+        }, {
+          "name" : "nickname",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "status",
+          "type" : "integer",
+          "required" : true
+        }, {
+          "name" : "address",
+          "type" : "object",
+          "required" : true,
+          "fields" : [ {
+            "name" : "street",
+            "type" : "text",
+            "required" : true
+          }, {
+            "name" : "city",
+            "type" : "text",
+            "required" : true
+          }, {
+            "name" : "postalCode",
+            "type" : "text",
+            "required" : false
+          } ]
+        }, {
+          "name" : "phones",
+          "type" : "list",
+          "required" : false,
+          "items" : {
+            "type" : "text",
+            "required" : false
+          }
+        }, {
+          "name" : "relatives",
+          "type" : "list",
+          "required" : false,
+          "items" : {
+            "type" : "object",
+            "required" : false,
+            "fields" : [ {
+              "name" : "name",
+              "type" : "text",
+              "required" : true
+            }, {
+              "name" : "phones",
+              "type" : "list",
+              "required" : true,
+              "items" : {
+                "type" : "text",
+                "required" : false
+              }
+            } ]
+          }
+        }, {
+          "name" : "manager",
+          "type" : "object",
+          "required" : false,
+          "fields" : [ ]
+        } ]
+      } ]
+    },
+    "protocol" : "soap",
+    "soap" : {
+      "version" : "1.1",
+      "action" : "urn:GetPerson",
+      "body" : {
+        "name" : "GetPerson",
+        "ns" : "urn:example:person"
+      },
+      "address" : "http://registry.example/ws/person",
+      "request" : {
+        "order" : {
+          "body" : [ "personCode", "includeHistory" ]
+        }
+      },
+      "response" : {
+        "element" : "GetPersonResponse",
+        "lists" : [ "person.phones[]", "person.relatives[]", "person.relatives[].phones[]" ]
+      }
+    }
+  }, {
+    "id" : "PersonSoap/SavePerson",
+    "method" : "POST",
+    "path" : "",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : true
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : true
+      }, {
+        "name" : "address",
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "street",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "city",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "postalCode",
+          "type" : "text",
+          "required" : false
+        } ]
+      }, {
+        "name" : "contact",
+        "type" : "object",
+        "required" : true,
+        "fields" : [ {
+          "name" : "email",
+          "type" : "text",
+          "required" : true
+        } ]
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : true
+      } ]
+    },
+    "protocol" : "soap",
+    "soap" : {
+      "version" : "1.1",
+      "action" : "urn:SavePerson",
+      "body" : {
+        "name" : "SavePerson",
+        "ns" : "urn:example:person"
+      },
+      "address" : "http://registry.example/ws/person",
+      "request" : {
+        "ns" : {
+          "body.address.street" : "urn:example:common",
+          "body.address.city" : "urn:example:common",
+          "body.address.postalCode" : "urn:example:common"
+        },
+        "order" : {
+          "body.address" : [ "street", "city", "postalCode" ],
+          "body" : [ "firstName", "lastName", "address", "contact" ]
+        }
+      },
+      "response" : {
+        "element" : "SavePersonResponse"
+      }
+    }
+  }, {
+    "id" : "PersonSoap12/GetPerson",
+    "method" : "POST",
+    "path" : "",
+    "summary" : "Finds a person by personal code",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "personCode",
+        "type" : "text",
+        "required" : true
+      }, {
+        "name" : "includeHistory",
+        "type" : "boolean",
+        "required" : false
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "person",
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "firstName",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "lastName",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "birthDate",
+          "type" : "date",
+          "required" : true
+        }, {
+          "name" : "height",
+          "type" : "number",
+          "required" : false
+        }, {
+          "name" : "children",
+          "type" : "integer",
+          "required" : true
+        }, {
+          "name" : "updated",
+          "type" : "datetime",
+          "required" : false
+        }, {
+          "name" : "photo",
+          "type" : "text",
+          "required" : false,
+          "format" : "byte"
+        }, {
+          "name" : "nickname",
+          "type" : "text",
+          "required" : false
+        }, {
+          "name" : "status",
+          "type" : "integer",
+          "required" : true
+        }, {
+          "name" : "address",
+          "type" : "object",
+          "required" : true,
+          "fields" : [ {
+            "name" : "street",
+            "type" : "text",
+            "required" : true
+          }, {
+            "name" : "city",
+            "type" : "text",
+            "required" : true
+          }, {
+            "name" : "postalCode",
+            "type" : "text",
+            "required" : false
+          } ]
+        }, {
+          "name" : "phones",
+          "type" : "list",
+          "required" : false,
+          "items" : {
+            "type" : "text",
+            "required" : false
+          }
+        }, {
+          "name" : "relatives",
+          "type" : "list",
+          "required" : false,
+          "items" : {
+            "type" : "object",
+            "required" : false,
+            "fields" : [ {
+              "name" : "name",
+              "type" : "text",
+              "required" : true
+            }, {
+              "name" : "phones",
+              "type" : "list",
+              "required" : true,
+              "items" : {
+                "type" : "text",
+                "required" : false
+              }
+            } ]
+          }
+        }, {
+          "name" : "manager",
+          "type" : "object",
+          "required" : false,
+          "fields" : [ ]
+        } ]
+      } ]
+    },
+    "protocol" : "soap",
+    "soap" : {
+      "version" : "1.2",
+      "action" : "urn:GetPerson",
+      "body" : {
+        "name" : "GetPerson",
+        "ns" : "urn:example:person"
+      },
+      "address" : "http://registry.example/ws/person",
+      "request" : {
+        "order" : {
+          "body" : [ "personCode", "includeHistory" ]
+        }
+      },
+      "response" : {
+        "element" : "GetPersonResponse",
+        "lists" : [ "person.phones[]", "person.relatives[]", "person.relatives[].phones[]" ]
+      }
+    }
+  }, {
+    "id" : "PersonSoap12/SavePerson",
+    "method" : "POST",
+    "path" : "",
+    "parameters" : [ ],
+    "requestBody" : {
+      "name" : "body",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "firstName",
+        "type" : "text",
+        "required" : true
+      }, {
+        "name" : "lastName",
+        "type" : "text",
+        "required" : true
+      }, {
+        "name" : "address",
+        "type" : "object",
+        "required" : false,
+        "fields" : [ {
+          "name" : "street",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "city",
+          "type" : "text",
+          "required" : true
+        }, {
+          "name" : "postalCode",
+          "type" : "text",
+          "required" : false
+        } ]
+      }, {
+        "name" : "contact",
+        "type" : "object",
+        "required" : true,
+        "fields" : [ {
+          "name" : "email",
+          "type" : "text",
+          "required" : true
+        } ]
+      } ]
+    },
+    "responseStatus" : "200",
+    "response" : {
+      "name" : "response",
+      "type" : "object",
+      "required" : true,
+      "fields" : [ {
+        "name" : "id",
+        "type" : "integer",
+        "required" : true
+      } ]
+    },
+    "protocol" : "soap",
+    "soap" : {
+      "version" : "1.2",
+      "action" : "urn:SavePerson",
+      "body" : {
+        "name" : "SavePerson",
+        "ns" : "urn:example:person"
+      },
+      "address" : "http://registry.example/ws/person",
+      "request" : {
+        "ns" : {
+          "body.address.street" : "urn:example:common",
+          "body.address.city" : "urn:example:common",
+          "body.address.postalCode" : "urn:example:common"
+        },
+        "order" : {
+          "body.address" : [ "street", "city", "postalCode" ],
+          "body" : [ "firstName", "lastName", "address", "contact" ]
+        }
+      },
+      "response" : {
+        "element" : "SavePersonResponse"
+      }
+    }
+  }, {
+    "id" : "PersonRpc/GetPerson",
+    "method" : "POST",
+    "path" : "",
+    "summary" : "Finds a person by personal code",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "protocol" : "soap",
+    "soap" : {
+      "version" : "1.1",
+      "action" : "urn:GetPerson",
+      "address" : "http://registry.example/ws/person-rpc"
+    },
+    "unsupported" : "RPC style is not supported yet, only document/literal"
+  }, {
+    "id" : "PersonRpc/SavePerson",
+    "method" : "POST",
+    "path" : "",
+    "parameters" : [ ],
+    "responseStatus" : "200",
+    "protocol" : "soap",
+    "soap" : {
+      "version" : "1.1",
+      "action" : "urn:SavePerson",
+      "address" : "http://registry.example/ws/person-rpc"
+    },
+    "unsupported" : "RPC style is not supported yet, only document/literal"
+  } ],
+  "warnings" : [ "PersonSoap/GetPerson: manager refers to itself; it is shown without its inner fields", "PersonSoap/SavePerson: body.contact has a choice of 2 options; the first one is shown", "PersonSoap/SavePerson: body allows any element (xs:any); that part is not shown", "PersonSoap12/GetPerson: manager refers to itself; it is shown without its inner fields", "PersonSoap12/SavePerson: body.contact has a choice of 2 options; the first one is shown", "PersonSoap12/SavePerson: body allows any element (xs:any); that part is not shown", "The ports have different addresses (http://registry.example/ws/person, http://registry.example/ws/person-rpc); one connection gives one base URL, prefilled from the first operation chosen" ],
+  "sourceKind" : "wsdl",
+  "files" : {
+    "person.wsdl" : "person.wsdl",
+    "schemas/common.xsd" : "schemas/common.xsd"
+  }
+}

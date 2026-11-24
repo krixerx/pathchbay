@@ -36,8 +36,8 @@ import org.w3c.dom.Node;
 import org.xml.sax.InputSource;
 
 import integrationmapper.engine.format.SafeXml;
-import integrationmapper.engine.model.Contract;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.SoapOperation;
 import integrationmapper.engine.model.SoapTarget;
 
 /**
@@ -56,7 +56,7 @@ final class WsdlImporter {
     private static final int MAX_DEPTH = 12;
 
     /** The operations, the port addresses and what the import had to skip. */
-    record Result(List<Contract.Operation> operations, List<String> servers, List<String> warnings) {
+    record Result(List<SoapOperation> operations, List<String> servers, List<String> warnings) {
     }
 
     private record Part(String name, QName element, QName type) {
@@ -234,7 +234,7 @@ final class WsdlImporter {
     // ---- operations
 
     private Result operations() {
-        List<Contract.Operation> out = new ArrayList<>();
+        List<SoapOperation> out = new ArrayList<>();
         Set<String> servers = new LinkedHashSet<>();
         for (Port port : ports) {
             Binding b = bindings.get(port.binding());
@@ -261,7 +261,7 @@ final class WsdlImporter {
         return new Result(out, List.copyOf(servers), List.copyOf(new LinkedHashSet<>(warnings)));
     }
 
-    private Contract.Operation operation(Port port, Binding b, PortTypeOp op) {
+    private SoapOperation operation(Port port, Binding b, PortTypeOp op) {
         String id = port.name() + "/" + op.name();
         BindingOp bop = b.operations().get(op.name());
         String unsupported = null;
@@ -307,8 +307,7 @@ final class WsdlImporter {
         SoapTarget soap = new SoapTarget(b.soapVersion() == null ? "1.1" : b.soapVersion(), bop == null ? "" : bop.action(), body,
                 port.address(), ns.isEmpty() && order.isEmpty() ? null : new SoapTarget.Request(ns.isEmpty() ? null : ns, order.isEmpty() ? null : order),
                 responseElement == null ? null : new SoapTarget.Response(responseElement, lists.isEmpty() ? null : lists));
-        return new Contract.Operation(id, "POST", "", op.documentation(), List.of(), request, "200", response, Contract.Operation.SOAP,
-                soap, unsupported);
+        return new SoapOperation(id, op.documentation(), request, response, soap, unsupported);
     }
 
     // ---- XSD to field trees

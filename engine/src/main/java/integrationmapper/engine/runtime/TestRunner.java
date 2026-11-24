@@ -30,8 +30,11 @@ import integrationmapper.engine.format.SoapEnvelope;
 import integrationmapper.engine.mapping.LinkRules;
 import integrationmapper.engine.mapping.MockGenerator;
 import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.Operation;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.RestOperation;
 import integrationmapper.engine.model.ServiceDefinition;
+import integrationmapper.engine.model.SoapOperation;
 
 /**
  * The Test drawer (D-2, OV-7): runs a sample input through the draft with the same validation, mapping scripts and
@@ -191,8 +194,13 @@ public class TestRunner {
         String contentType = "application/json";
         String contentDisposition = null;
         if (!real) {
-            Contract.Operation op = operation(def);
-            status = op == null || op.responseStatus() == null ? 200 : Integer.parseInt(op.responseStatus());
+            Operation op = operation(def);
+            String declared = switch (op) {
+                case null -> null;
+                case RestOperation rest -> rest.responseStatus();
+                case SoapOperation soap -> soap.responseStatus();
+            };
+            status = declared == null ? 200 : Integer.parseInt(declared);
             JsonNode mock = MockGenerator.example(op == null ? null : op.response());
             if (op != null && op.response() != null && "blob".equals(op.response().type())) {
                 // A file answer is mocked as the mapping sees it: the whole answer under $body (D-29).
@@ -290,7 +298,7 @@ public class TestRunner {
         }
     }
 
-    private Contract.Operation operation(ServiceDefinition def) throws IOException {
+    private Operation operation(ServiceDefinition def) throws IOException {
         JsonNode draft = Json.MAPPER.readTree(store.service(def.id()).toFile());
         String contractId = draft.path("contract").asText(null);
         String opId = draft.path("operationId").asText(null);

@@ -20,8 +20,8 @@ import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 
-import integrationmapper.engine.model.Contract;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.RestOperation;
 
 /**
  * Reads an OpenAPI 3 or Swagger 2.0 contract (converted, D-5) into operations with field trees (spec FR-001, FR-004).
@@ -32,7 +32,7 @@ final class OpenApiImporter {
 
     private static final int MAX_DEPTH = 12;
 
-    record Result(List<Contract.Operation> operations, List<String> servers, List<String> warnings) {
+    record Result(List<RestOperation> operations, List<String> servers, List<String> warnings) {
     }
 
     private OpenApiImporter() {
@@ -54,7 +54,7 @@ final class OpenApiImporter {
             warnings.add(0, "Swagger 2.0 file converted to OpenAPI 3");
         }
 
-        List<Contract.Operation> operations = new ArrayList<>();
+        List<RestOperation> operations = new ArrayList<>();
         for (Map.Entry<String, PathItem> p : api.getPaths().entrySet()) {
             for (Map.Entry<PathItem.HttpMethod, io.swagger.v3.oas.models.Operation> o : p.getValue().readOperationsMap().entrySet()) {
                 operations.add(operation(p.getKey(), p.getValue(), o.getKey().name(), o.getValue(), warnings));
@@ -76,10 +76,10 @@ final class OpenApiImporter {
         return url;
     }
 
-    private static Contract.Operation operation(String path, PathItem item, String method, io.swagger.v3.oas.models.Operation op,
+    private static RestOperation operation(String path, PathItem item, String method, io.swagger.v3.oas.models.Operation op,
             List<String> warnings) {
         String label = method + " " + path;
-        List<Contract.Parameter> params = new ArrayList<>();
+        List<RestOperation.Parameter> params = new ArrayList<>();
         List<Parameter> all = new ArrayList<>();
         if (item.getParameters() != null) {
             all.addAll(item.getParameters());
@@ -91,7 +91,7 @@ final class OpenApiImporter {
             if (List.of("path", "query", "header").contains(p.getIn())) {
                 PayloadDefinition.Field f = field(p.getName(), p.getSchema(), Boolean.TRUE.equals(p.getRequired()), label, warnings,
                         Collections.newSetFromMap(new IdentityHashMap<>()), 0);
-                params.add(new Contract.Parameter(p.getName(), p.getIn(), Boolean.TRUE.equals(p.getRequired()) || "path".equals(p.getIn()), f.type()));
+                params.add(new RestOperation.Parameter(p.getName(), p.getIn(), Boolean.TRUE.equals(p.getRequired()) || "path".equals(p.getIn()), f.type()));
             }
         }
         PayloadDefinition.Field body = null;
@@ -117,7 +117,7 @@ final class OpenApiImporter {
             }
         }
         String id = op.getOperationId() != null && !op.getOperationId().isBlank() ? op.getOperationId() : label;
-        return new Contract.Operation(id, method, path, op.getSummary(), params, body, status, response);
+        return new RestOperation(id, method, path, op.getSummary(), params, body, status, response);
     }
 
     /** The JSON schema of a body: application/json, else any +json, else the first media type. */

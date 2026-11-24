@@ -33,6 +33,8 @@ import integrationmapper.engine.config.Connections;
 import integrationmapper.engine.config.PayloadLibrary;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.Operation;
+import integrationmapper.engine.model.RestOperation;
 import integrationmapper.engine.model.ServiceDefinition;
 import integrationmapper.engine.runtime.CallLog;
 import integrationmapper.engine.runtime.IntegrationPublisher;
@@ -128,13 +130,13 @@ public class MappingApiController {
     public ResponseEntity<String> saveHeaders(@PathVariable String slug, @RequestBody String body) throws IOException {
         List<String> headers = read(body, AddedHeaders.class).headers();
         ObjectNode d = draft(slug);
-        Contract.Operation op = operation(d);
+        Operation op = operation(d);
         Set<String> seen = new HashSet<>();
         List<String> kept = new ArrayList<>();
         for (String raw : headers == null ? List.<String>of() : headers) {
             String h = raw == null ? "" : raw.strip();
             Connections.checkHeaderName(h);
-            if (op != null && op.parameters().stream().anyMatch(p -> "header".equals(p.in()) && p.name().equalsIgnoreCase(h))) {
+            if (op instanceof RestOperation rest && rest.parameters().stream().anyMatch(p -> "header".equals(p.in()) && p.name().equalsIgnoreCase(h))) {
                 throw new IllegalArgumentException("The API request already has header " + h);
             }
             if (!seen.add(h.toLowerCase(Locale.ROOT))) {
@@ -231,7 +233,7 @@ public class MappingApiController {
 
     // ---- helpers
 
-    private Contract.Operation operation(JsonNode d) throws IOException {
+    private Operation operation(JsonNode d) throws IOException {
         if (!d.hasNonNull("contract") || !d.hasNonNull("operationId")) {
             return null;
         }

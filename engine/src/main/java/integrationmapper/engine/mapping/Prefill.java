@@ -6,9 +6,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.Operation;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.RestOperation;
 import integrationmapper.engine.model.ServiceDefinition;
+import integrationmapper.engine.model.SoapOperation;
 
 /**
  * "Fill from the API later" (step 1): builds a missing Input or Output definition from the chosen operation, Input
@@ -35,10 +37,14 @@ public final class Prefill {
     }
 
     /** Input: one field per path/query/header parameter, then the request body's fields (a body field with a parameter's name is shared). */
-    public static Result input(String defId, String name, Contract.Operation op) {
+    public static Result input(String defId, String name, Operation op) {
         Prefill p = new Prefill(defId, true);
         List<PayloadDefinition.Field> fields = new ArrayList<>();
-        for (Contract.Parameter param : op.parameters()) {
+        List<RestOperation.Parameter> parameters = switch (op) {
+            case RestOperation rest -> rest.parameters();
+            case SoapOperation soap -> List.of(); // a SOAP request is its body only
+        };
+        for (RestOperation.Parameter param : parameters) {
             String prefix = PARAM_PREFIX.get(param.in());
             if (prefix == null) {
                 p.notes.add("Parameter " + param.name() + " (" + param.in() + ") is not supported and was left out");
@@ -70,7 +76,7 @@ public final class Prefill {
     }
 
     /** Output: the response's fields; a list response becomes one list field {@code items}. */
-    public static Result output(String defId, String name, Contract.Operation op) {
+    public static Result output(String defId, String name, Operation op) {
         Prefill p = new Prefill(defId, false);
         List<PayloadDefinition.Field> fields = new ArrayList<>();
         PayloadDefinition.Field response = op.response();

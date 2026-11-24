@@ -20,7 +20,9 @@ import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.model.Contract;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.SoapOperation;
 import integrationmapper.engine.model.SoapTarget;
+import integrationmapper.engine.model.WsdlContract;
 
 /** WSDL 1.1 import into SOAP operations and field trees (D-30, spec wsdl-contract-import, FR-002, FR-004). */
 public class WsdlImporterTest {
@@ -57,7 +59,7 @@ public class WsdlImporterTest {
         return zip(files);
     }
 
-    public static Contract.Operation op(Contract c, String id) {
+    public static SoapOperation op(WsdlContract c, String id) {
         return c.operations().stream().filter(o -> o.id().equals(id)).findFirst().orElseThrow();
     }
 
@@ -67,14 +69,14 @@ public class WsdlImporterTest {
 
     @Test
     void everySoapPortListsItsOperationsWithPortAndOperationAsId() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
 
         assertThat(c.sourceKind()).isEqualTo("wsdl");
-        assertThat(c.operations()).extracting(Contract.Operation::id).containsExactly(
+        assertThat(c.operations()).extracting(SoapOperation::id).containsExactly(
                 "PersonSoap/GetPerson", "PersonSoap/SavePerson", "PersonSoap12/GetPerson", "PersonSoap12/SavePerson",
                 "PersonRpc/GetPerson", "PersonRpc/SavePerson");
-        Contract.Operation get11 = op(c, "PersonSoap/GetPerson");
-        Contract.Operation get12 = op(c, "PersonSoap12/GetPerson");
+        SoapOperation get11 = op(c, "PersonSoap/GetPerson");
+        SoapOperation get12 = op(c, "PersonSoap12/GetPerson");
         assertThat(get11.protocol()).isEqualTo("soap");
         assertThat(get11.method()).isEqualTo("POST");
         assertThat(get11.summary()).isEqualTo("Finds a person by personal code");
@@ -89,7 +91,7 @@ public class WsdlImporterTest {
 
     @Test
     void portsWithDifferentAddressesGetAWarning() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
 
         assertThat(c.servers()).containsExactly("http://registry.example/ws/person", "http://registry.example/ws/person-rpc");
         assertThat(c.warnings()).anyMatch(w -> w.contains("different addresses") && w.contains("one connection"));
@@ -98,7 +100,7 @@ public class WsdlImporterTest {
 
     @Test
     void rpcAndEncodedOperationsAreListedButUnsupported() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
 
         assertThat(op(c, "PersonRpc/GetPerson").unsupported()).contains("RPC style");
         assertThat(op(c, "PersonRpc/SavePerson").unsupported()).contains("RPC style");
@@ -107,7 +109,7 @@ public class WsdlImporterTest {
 
     @Test
     void xsdTypesBecomeFieldTypes() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
         PayloadDefinition.Field person = field(op(c, "PersonSoap/GetPerson").response(), "person");
 
         assertThat(person.type()).isEqualTo("object");
@@ -133,8 +135,8 @@ public class WsdlImporterTest {
 
     @Test
     void repeatedElementsBecomeListsAndTheirPathsAreKept() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
-        Contract.Operation get = op(c, "PersonSoap/GetPerson");
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
+        SoapOperation get = op(c, "PersonSoap/GetPerson");
         PayloadDefinition.Field person = field(get.response(), "person");
 
         assertThat(field(person, "phones").type()).isEqualTo("list");
@@ -147,7 +149,7 @@ public class WsdlImporterTest {
 
     @Test
     void aTypeThatContainsItselfIsShownWithoutInnerFields() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
         PayloadDefinition.Field manager = field(field(op(c, "PersonSoap/GetPerson").response(), "person"), "manager");
 
         assertThat(manager.type()).isEqualTo("object");
@@ -157,7 +159,7 @@ public class WsdlImporterTest {
 
     @Test
     void choiceTakesTheFirstOptionAndAnyIsLeftOutWithWarnings() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
         PayloadDefinition.Field body = op(c, "PersonSoap/SavePerson").requestBody();
 
         assertThat(field(body, "contact").children()).extracting(PayloadDefinition.Field::name).containsExactly("email");
@@ -168,7 +170,7 @@ public class WsdlImporterTest {
 
     @Test
     void requestNamespacesAndOrderAreRecordedPerElementPath() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
         SoapTarget save = op(c, "PersonSoap/SavePerson").soap();
 
         assertThat(save.requestOrder().get("body")).containsExactly("firstName", "lastName", "address", "contact");
@@ -181,8 +183,8 @@ public class WsdlImporterTest {
 
     @Test
     void unqualifiedLocalElementsHaveNoNamespaceAndBaseTypesComeFirst() throws Exception {
-        Contract c = importer().importContract("orders", "Orders", resource("unqualified.wsdl"), null);
-        Contract.Operation place = op(c, "OrdersSoap/PlaceOrder");
+        WsdlContract c = (WsdlContract) importer().importContract("orders", "Orders", resource("unqualified.wsdl"), null);
+        SoapOperation place = op(c, "OrdersSoap/PlaceOrder");
 
         assertThat(place.soap().body()).isEqualTo(new SoapTarget.Element("PlaceOrder", "urn:example:order"));
         assertThat(place.requestBody().children()).extracting(PayloadDefinition.Field::name).containsExactly("id", "total", "lines");
@@ -194,7 +196,7 @@ public class WsdlImporterTest {
 
     @Test
     void aSingleUploadedWsdlWithoutItsSchemasWarnsAndShowsText() throws Exception {
-        Contract c = importer().importContract("person-registry", "Person registry", resource("person/person.wsdl"), null);
+        WsdlContract c = (WsdlContract) importer().importContract("person-registry", "Person registry", resource("person/person.wsdl"), null);
         PayloadDefinition.Field person = field(op(c, "PersonSoap/GetPerson").response(), "person");
 
         assertThat(c.warnings()).anyMatch(w -> w.contains("schemas/common.xsd"));
@@ -204,7 +206,7 @@ public class WsdlImporterTest {
 
     @Test
     void zipImportStoresEveryOriginalFileAndReimportReplacesThemAll() throws Exception {
-        Contract c = importer().importZip("person-registry", "Person registry", personZip());
+        WsdlContract c = (WsdlContract) importer().importZip("person-registry", "Person registry", personZip());
         Path folder = dir.resolve("contracts/person-registry.wsdl");
 
         assertThat(c.sourceFile()).isEqualTo("person-registry.wsdl/person.wsdl");
@@ -212,7 +214,7 @@ public class WsdlImporterTest {
         assertThat(Files.readString(folder.resolve("schemas/common.xsd"))).isEqualTo(resource("person/schemas/common.xsd"));
         assertThat(c.files()).containsOnlyKeys("person.wsdl", "schemas/common.xsd");
 
-        Contract again = importer().importZip("person-registry", "Person registry", zip(Map.of("person.wsdl", resource("person/person.wsdl"))));
+        WsdlContract again = (WsdlContract) importer().importZip("person-registry", "Person registry", zip(Map.of("person.wsdl", resource("person/person.wsdl"))));
         assertThat(Files.exists(folder.resolve("schemas/common.xsd"))).isFalse();
         assertThat(again.files()).containsOnlyKeys("person.wsdl");
         assertThat(Json.MAPPER.readValue(dir.resolve("contracts/person-registry.json").toFile(), Contract.class).operations())

@@ -36,8 +36,11 @@ import integrationmapper.engine.contract.ContractImporter;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.mapping.Prefill;
 import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.Operation;
 import integrationmapper.engine.model.PayloadDefinition;
+import integrationmapper.engine.model.RestOperation;
 import integrationmapper.engine.model.ServiceDefinition;
+import integrationmapper.engine.model.SoapOperation;
 import integrationmapper.engine.runtime.CompiledIntegration;
 import integrationmapper.engine.runtime.IntegrationPublisher;
 import integrationmapper.engine.runtime.IntegrationRegistry;
@@ -188,15 +191,14 @@ public class ContractApiController {
             // The importer replaces every original file of the contract, so nothing of the old one stays behind.
             updated = importer.importZip(id, name, zipBytes(req));
         } else if (text == null) {
-            updated = new Contract(id, name, old.sourceFile(), old.sourceUrl(), old.importedAt(), old.servers(), old.operations(),
-                    old.warnings(), old.sourceKind(), old.files());
+            updated = old.withName(name);
             store.writeJson(store.root().resolve("contracts").resolve(id + ".json"), updated);
         } else {
             updated = importer.importContract(id, name, text, url);
         }
         ObjectNode out = Json.MAPPER.valueToTree(updated);
         ArrayNode notes = out.putArray("notes");
-        Set<String> ops = updated.operations().stream().map(Contract.Operation::id).collect(Collectors.toSet());
+        Set<String> ops = updated.operations().stream().map(Operation::id).collect(Collectors.toSet());
         for (String slug : usedBy(id)) {
             ObjectNode d = draft(slug);
             String opId = d.path("operationId").asText(null);
@@ -206,8 +208,8 @@ public class ContractApiController {
             } else if (opId != null && d.path("target").isObject()) {
                 // A SOAP draft takes the new namespaces, action and order at once; its live version keeps the old ones
                 // until it is published again (D-30).
-                Contract.Operation op = updated.operations().stream().filter(o -> o.id().equals(opId)).findFirst().orElseThrow();
-                JsonNode now = op.isSoap() && op.unsupported() == null ? Json.MAPPER.valueToTree(op.soap()) : null;
+                Operation op = updated.operations().stream().filter(o -> o.id().equals(opId)).findFirst().orElseThrow();
+                JsonNode now = op instanceof SoapOperation soap && soap.unsupported() == null ? Json.MAPPER.valueToTree(soap.soap()) : null;
                 if (now != null && !now.equals(d.path("target").path("soap"))) {
                     ((ObjectNode) d.get("target")).set("soap", now);
                     store.writeJson(store.service(slug), d);
@@ -307,23 +309,33 @@ public class ContractApiController {
     public ResponseEntity<String> chooseOperation(@PathVariable String slug, @RequestBody String body) throws IOException {
         OperationChoice req = read(body, OperationChoice.class);
         Contract c = readContract(req.contract());
-        Contract.Operation op = c.operations().stream().filter(o -> o.id().equals(req.operationId())).findFirst()
+        Operation op = c.operations().stream().filter(o -> o.id().equals(req.operationId())).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Contract " + c.id() + " has no operation " + req.operationId()));
         ObjectNode d = draft(slug);
-        if (op.unsupported() != null) {
-            throw new IllegalArgumentException("Operation " + op.id() + " can't be used: " + op.unsupported());
+        if (op instanceof SoapOperation s && s.unsupported() != null) {
+            throw new IllegalArgumentException("Operation " + op.id() + " can't be used: " + s.unsupported());
         }
         d.put("contract", c.id());
         d.put("operationId", op.id());
         ObjectNode target = d.has("target") && d.get("target").isObject() ? (ObjectNode) d.get("target") : d.putObject("target");
-        target.put("method", op.method());
-        target.put("path", op.path());
+        SoapOperation soap = switch (op) {
+            case RestOperation rest -> {
+                target.put("method", rest.method());
+                target.put("path", rest.path());
+                yield null;
+            }
+            case SoapOperation s -> {
+                target.put("method", s.method());
+                target.put("path", s.path());
+                yield s;
+            }
+        };
         target.put("connection", c.id());
         target.remove("baseUrl");
         // A SOAP operation brings its envelope details and the soap request format; any other drops them (D-30).
         ObjectNode formats = d.has("formats") && d.get("formats").isObject() ? (ObjectNode) d.get("formats") : null;
-        if (op.isSoap()) {
-            target.set("soap", Json.MAPPER.valueToTree(op.soap()));
+        if (soap != null) {
+            target.set("soap", Json.MAPPER.valueToTree(soap.soap()));
             if (formats == null) {
                 formats = d.putObject("formats");
             }
@@ -335,7 +347,7 @@ public class ContractApiController {
                 formats.remove("request");
             }
         }
-        String address = op.isSoap() && op.soap().address() != null && op.soap().address().matches("https?://.+") ? op.soap().address() : null;
+        String address = soap != null && soap.soap().address() != null && soap.soap().address().matches("https?://.+") ? soap.soap().address() : null;
         if (connections.baseUrl(c.id()) == null) {
             String first = address != null ? address
                     : c.servers().stream().filter(s -> s.startsWith("http://") || s.startsWith("https://")).findFirst().orElse(null);

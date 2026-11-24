@@ -1,60 +1,41 @@
 package integrationmapper.engine.model;
 
 import java.util.List;
-import java.util.Map;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 /**
  * An imported contract as stored in {@code config/contracts/<id>.json}: the operations normalized into field trees
- * (spec FR-004). The original file sits next to it unchanged (FR-005): {@code <id>.openapi.json|yaml} for OpenAPI, or
- * for a WSDL (D-30) the folder {@code <id>.wsdl/} with the WSDL and every XSD it used, {@code sourceFile} naming the
- * WSDL inside it. {@code sourceKind} is {@code wsdl} for those and missing for OpenAPI. {@code files} maps each file
- * in the folder to where it came from (a URL, or its path in the uploaded ZIP).
- * {@code sourceUrl} is where the file was fetched from, null for an uploaded file; the edit form offers it again.
+ * (spec FR-004). The original file sits next to it unchanged (FR-005). There is one record per kind of contract; a
+ * kind's operations are all of one kind too. {@code sourceUrl} is where the file was fetched from, null for an
+ * uploaded file; the edit form offers it again.
+ *
+ * <p>The stored JSON is the same as before the kinds had types of their own: {@code sourceKind} names the kind, and a
+ * file without it is OpenAPI. The console, exported packages and older engines read these files, so a new kind must
+ * keep that rule ({@code StoredContractJsonTest}).
  */
-@JsonInclude(JsonInclude.Include.NON_NULL)
-public record Contract(String id, String name, String sourceFile, String sourceUrl, String importedAt, List<String> servers,
-        List<Operation> operations, List<String> warnings, String sourceKind, Map<String, String> files) {
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.EXISTING_PROPERTY, property = "sourceKind", visible = true,
+        defaultImpl = OpenApiContract.class)
+@JsonSubTypes({@JsonSubTypes.Type(value = WsdlContract.class, name = WsdlContract.KIND)})
+public sealed interface Contract permits OpenApiContract, WsdlContract {
 
-    public Contract(String id, String name, String sourceFile, String sourceUrl, String importedAt, List<String> servers,
-            List<Operation> operations, List<String> warnings) {
-        this(id, name, sourceFile, sourceUrl, importedAt, servers, operations, warnings, null, null);
-    }
+    String id();
 
-    public static final String WSDL = "wsdl";
+    String name();
 
-    @JsonIgnore
-    public boolean isWsdl() {
-        return WSDL.equals(sourceKind);
-    }
+    String sourceFile();
 
-    /**
-     * One callable operation. {@code id} is the OpenAPI operationId, or "METHOD path" when there is none; for SOAP
-     * it is {@code <port>/<operation>}. Request and response bodies are field trees in the same shape as payload
-     * definitions, without field ids. A SOAP operation has {@code protocol} {@code soap} and its {@code soap}
-     * details; {@code unsupported} says why one can't be chosen (RPC style, encoded use, ...).
-     */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Operation(String id, String method, String path, String summary, List<Parameter> parameters,
-            PayloadDefinition.Field requestBody, String responseStatus, PayloadDefinition.Field response,
-            String protocol, SoapTarget soap, String unsupported) {
+    String sourceUrl();
 
-        public Operation(String id, String method, String path, String summary, List<Parameter> parameters,
-                PayloadDefinition.Field requestBody, String responseStatus, PayloadDefinition.Field response) {
-            this(id, method, path, summary, parameters, requestBody, responseStatus, response, null, null, null);
-        }
+    String importedAt();
 
-        public static final String SOAP = "soap";
+    List<String> servers();
 
-        @JsonIgnore
-        public boolean isSoap() {
-            return SOAP.equals(protocol);
-        }
-    }
+    List<? extends Operation> operations();
 
-    /** A path, query or header parameter. */
-    public record Parameter(String name, String in, boolean required, String type) {
-    }
+    List<String> warnings();
+
+    /** The same contract under another display name. */
+    Contract withName(String name);
 }

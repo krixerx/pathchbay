@@ -29,10 +29,12 @@ import org.springframework.stereotype.Component;
 import integrationmapper.engine.contract.ContractImporter;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.model.Contract;
+import integrationmapper.engine.model.OpenApiContract;
 import integrationmapper.engine.model.PayloadDefinition;
 import integrationmapper.engine.model.ServiceDefinition;
 import integrationmapper.engine.model.Version;
 import integrationmapper.engine.model.VersionSnapshot;
+import integrationmapper.engine.model.WsdlContract;
 import integrationmapper.engine.runtime.CompiledIntegration;
 import integrationmapper.engine.runtime.IntegrationRegistry;
 
@@ -125,19 +127,24 @@ public class Packages {
             files.put("contracts/" + id + ".json", Files.readAllBytes(file));
             Contract c = Json.MAPPER.readValue(file.toFile(), Contract.class);
             Path source = c.sourceFile() == null ? null : store.root().resolve("contracts").resolve(c.sourceFile());
-            if (c.isWsdl()) {
-                // Every file of the WSDL's folder, so the package imports without fetching anything (D-30).
-                Path dir = store.root().resolve("contracts").resolve(id + ContractImporter.WSDL_DIR);
-                if (Files.isDirectory(dir)) {
-                    try (var walk = Files.walk(dir)) {
-                        for (Path p : walk.filter(Files::isRegularFile).sorted().toList()) {
-                            files.put("contracts/" + id + ContractImporter.WSDL_DIR + "/" + dir.relativize(p).toString().replace('\\', '/'),
-                                    Files.readAllBytes(p));
+            switch (c) {
+                case WsdlContract wsdl -> {
+                    // Every file of the WSDL's folder, so the package imports without fetching anything (D-30).
+                    Path dir = store.root().resolve("contracts").resolve(id + ContractImporter.WSDL_DIR);
+                    if (Files.isDirectory(dir)) {
+                        try (var walk = Files.walk(dir)) {
+                            for (Path p : walk.filter(Files::isRegularFile).sorted().toList()) {
+                                files.put("contracts/" + id + ContractImporter.WSDL_DIR + "/" + dir.relativize(p).toString().replace('\\', '/'),
+                                        Files.readAllBytes(p));
+                            }
                         }
                     }
                 }
-            } else if (source != null && Files.isRegularFile(source)) {
-                files.put("contracts/" + c.sourceFile(), Files.readAllBytes(source));
+                case OpenApiContract openApi -> {
+                    if (source != null && Files.isRegularFile(source)) {
+                        files.put("contracts/" + c.sourceFile(), Files.readAllBytes(source));
+                    }
+                }
             }
         }
         Map<String, Object> manifest = new LinkedHashMap<>();
