@@ -26,37 +26,12 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * The engine's INBOUND_API_KEY, typed once per browser tab when the engine asks for it (401). Kept in
- * sessionStorage, so it is gone when the tab closes; storage may be blocked, then it lives until a reload.
- */
-const KEY_STORAGE = 'mapper.inboundKey';
-let inboundKey: string | null = null;
-try {
-  inboundKey = sessionStorage.getItem(KEY_STORAGE);
-} catch {
-  // storage blocked: ask again after a reload
-}
-
-export function setInboundKey(key: string) {
-  inboundKey = key;
-  try {
-    sessionStorage.setItem(KEY_STORAGE, key);
-  } catch {
-    // storage blocked: the key lives until a reload
-  }
-}
-
 /** What every page says when a request never reaches the engine (it is stopped, restarting or the network is down). */
 export const UNREACHABLE = "Patchbay can't be reached. Check that it is running, then try again.";
-
-/** Fired when the engine answers 401; KeyPrompt listens for it. */
-export const UNAUTHORIZED_EVENT = 'mapper:unauthorized';
 
 async function request(method: string, path: string, body?: BodyInit, contentType?: string): Promise<Response> {
   const headers: Record<string, string> = {};
   if (contentType) headers['Content-Type'] = contentType;
-  if (inboundKey) headers['X-API-Key'] = inboundKey;
   let res: Response;
   try {
     res = await fetch(`/admin/api${path}`, { method, headers, body });
@@ -64,7 +39,6 @@ async function request(method: string, path: string, body?: BodyInit, contentTyp
     // fetch only rejects when no answer came back at all; the browser's own text ("Failed to fetch") says nothing.
     throw new ApiError(UNREACHABLE);
   }
-  if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
   if (!res.ok) {
     const text = await res.text();
     let data: { detail?: string; problems?: string[] } | null = null;
@@ -85,7 +59,17 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return (text ? JSON.parse(text) : null) as T;
 }
 
+/** Whether the admin login still has to be created (first start), and the shortest password the engine takes. */
+export interface SetupStatus {
+  needed: boolean;
+  minPasswordLength: number;
+}
+
 export const api = {
+  setupStatus: () => call<SetupStatus>('GET', '/setup'),
+  createLogin: (code: string, user: string, password: string) =>
+    call<{ needed: boolean }>('POST', '/setup', { code, user, password }),
+
   definitions: () => call<DefinitionSummary[]>('GET', '/definitions'),
   definition: (id: string) => call<{ definition: PayloadDefinition; usedBy: string[] }>('GET', `/definitions/${id}`),
   saveDefinition: (def: PayloadDefinition) =>

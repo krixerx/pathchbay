@@ -18,6 +18,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.format.Json;
 
 /** The console's API over HTTP, against a real config folder. */
@@ -48,7 +49,7 @@ class ConsoleApiTest {
     final HttpClient http = HttpClient.newHttpClient();
 
     HttpResponse<String> send(String method, String path, String body) throws Exception {
-        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api" + path))
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api" + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json");
         return http.send(b.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body)).build(),
                 HttpResponse.BodyHandlers.ofString());

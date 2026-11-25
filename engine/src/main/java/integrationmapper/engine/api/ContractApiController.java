@@ -159,7 +159,7 @@ public class ContractApiController {
     }
 
     /** Import from pasted/uploaded text, or from a URL fetched by the engine. Same name = re-import (replaces). */
-    @PostMapping("/contracts")
+    @PostMapping(value = "/contracts", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> importContract(@RequestBody String body) throws IOException {
         ImportRequest req = read(body, ImportRequest.class);
         String id = ConsoleApiController.slugify(req.name());
@@ -182,7 +182,7 @@ public class ContractApiController {
      * integrations keep pointing at it; live versions are not touched. The response lists, as transient
      * {@code notes}, integrations whose operation is not in the new file.
      */
-    @PutMapping("/contracts/{id}")
+    @PutMapping(value = "/contracts/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> updateContract(@PathVariable String id, @RequestBody String body) throws IOException {
         Contract old = readContract(id);
         ImportRequest req = read(body, ImportRequest.class);
@@ -252,7 +252,7 @@ public class ContractApiController {
     record ConnectionUpdate(String baseUrl, List<Connections.HeaderUpdate> headers) {
     }
 
-    @PutMapping("/connections/{id}")
+    @PutMapping(value = "/connections/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> saveConnection(@PathVariable String id, @RequestBody String body) throws Exception {
         checkConnectionId(id);
         ConnectionUpdate req = read(body, ConnectionUpdate.class);
@@ -310,7 +310,7 @@ public class ContractApiController {
      * empty in step 1 ("fill from the API later") is created from the operation, already linked (see {@link Prefill}).
      * The response is the draft plus {@code notes} about the prefill; the notes are not stored.
      */
-    @PutMapping("/integrations/{slug}/operation")
+    @PutMapping(value = "/integrations/{slug}/operation", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> chooseOperation(@PathVariable String slug, @RequestBody String body) throws IOException {
         OperationChoice req = read(body, OperationChoice.class);
         Contract c = readContract(req.contract());
@@ -430,7 +430,7 @@ public class ContractApiController {
     record SettingsUpdate(String baseUrl, JsonNode auth, String secret, Boolean removeSecret) {
     }
 
-    @PutMapping("/integrations/{slug}/settings")
+    @PutMapping(value = "/integrations/{slug}/settings", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> saveSettings(@PathVariable String slug, @RequestBody String body) throws IOException {
         SettingsUpdate req = read(body, SettingsUpdate.class);
         try (Drafts.Lock locked = drafts.lock(slug)) {

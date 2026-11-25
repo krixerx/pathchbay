@@ -77,7 +77,7 @@ public class ConsoleApiController {
     }
 
     /** Creates or replaces a definition. Live versions keep their own copy (D-9); drafts see the change. */
-    @PutMapping("/definitions/{id}")
+    @PutMapping(value = "/definitions/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> saveDefinition(@PathVariable String id, @RequestBody String body) throws IOException {
         if (!id.matches(SLUG)) {
             throw new IllegalArgumentException("Definition id must be lower-case letters, digits and dashes: " + id);
@@ -95,7 +95,7 @@ public class ConsoleApiController {
     record InferRequest(String id, String name, JsonNode sample) {
     }
 
-    @PostMapping("/definitions/infer")
+    @PostMapping(value = "/definitions/infer", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> infer(@RequestBody String body) throws IOException {
         InferRequest req = read(body, InferRequest.class);
         SampleInference.Result r = SampleInference.infer(req.id(), req.name(), req.sample());
@@ -131,7 +131,7 @@ public class ConsoleApiController {
     }
 
     /** "New integration": the slug comes from the name the user types (D-1). */
-    @PostMapping("/integrations")
+    @PostMapping(value = "/integrations", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> create(@RequestBody String body) throws IOException {
         NewIntegration req = read(body, NewIntegration.class);
         String slug = slugify(req.name());
@@ -154,7 +154,7 @@ public class ConsoleApiController {
     }
 
     /** Step 1: which Input and Output definitions the integration uses (D-9). Autosaved by the console (D-1). */
-    @PutMapping("/integrations/{slug}/payloads")
+    @PutMapping(value = "/integrations/{slug}/payloads", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> setPayloads(@PathVariable String slug, @RequestBody String body) throws IOException {
         Payloads req = read(body, Payloads.class);
         try (Drafts.Lock locked = drafts.lock(slug)) {

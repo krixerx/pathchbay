@@ -22,6 +22,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.config.Packages;
 import integrationmapper.engine.config.PackagesTest;
 import integrationmapper.engine.contract.WsdlImporterTest;
@@ -68,14 +69,14 @@ class SoapContractApiTest {
 
     HttpResponse<String> send(String method, String path, Object body) throws Exception {
         String json = body == null ? null : body instanceof String s ? s : Json.MAPPER.writeValueAsString(body);
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, json == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(json))
                 .build(), HttpResponse.BodyHandlers.ofString());
     }
 
     HttpResponse<byte[]> sendForBytes(String path, Object body) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(Json.MAPPER.writeValueAsString(body))).build(),
                 HttpResponse.BodyHandlers.ofByteArray());

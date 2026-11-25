@@ -22,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.contract.ContractImporterTest;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.testsupport.FakeBooksApi;
@@ -66,7 +67,7 @@ class HeaderDefinitionsTest {
 
     HttpResponse<String> call(String method, String path, Object body) throws Exception {
         String json = body == null ? null : body instanceof String s ? s : Json.MAPPER.writeValueAsString(body);
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, json == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(json))
                 .build(), HttpResponse.BodyHandlers.ofString());

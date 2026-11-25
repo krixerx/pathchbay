@@ -6,7 +6,6 @@ import { IntegrationPage } from './pages/IntegrationPage';
 import { DefinitionsPage } from './pages/DefinitionsPage';
 import { DefinitionEditorPage } from './pages/DefinitionEditorPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { KeyPrompt } from './components/KeyPrompt';
 import { ConfigurationPage } from './pages/ConfigurationPage';
 import { NotFoundPage, RouteErrorPage } from './components/ErrorPage';
 
@@ -35,7 +34,6 @@ function Layout() {
       <AppShell.Main>
         <Outlet />
       </AppShell.Main>
-      <KeyPrompt />
     </AppShell>
   );
 }

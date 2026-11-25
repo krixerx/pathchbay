@@ -18,6 +18,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.runtime.EngineSkeletonTest;
 
@@ -50,7 +51,7 @@ class XmlFormatsApiTest {
     final HttpClient http = HttpClient.newHttpClient();
 
     HttpResponse<String> send(String method, String path, String body) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api/integrations/xml-book" + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api/integrations/xml-book" + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
                 .build(), HttpResponse.BodyHandlers.ofString());

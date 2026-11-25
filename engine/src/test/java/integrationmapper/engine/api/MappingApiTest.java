@@ -22,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.contract.ContractImporterTest;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.testsupport.FakeBooksApi;
@@ -66,7 +67,7 @@ class MappingApiTest {
 
     JsonNode send(String method, String path, Object body) throws Exception {
         String json = body == null ? null : body instanceof String s ? s : Json.MAPPER.writeValueAsString(body);
-        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api" + path))
+        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api" + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, json == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(json))
                 .build(), HttpResponse.BodyHandlers.ofString());
@@ -144,7 +145,7 @@ class MappingApiTest {
         send("PUT", "/integrations/add-book/links", """
                 {"request":[{"from":"nb-gone","to":"body.title"}],"response":[]}""");
         HttpResponse<String> refused = http.send(HttpRequest.newBuilder(
-                URI.create("http://localhost:" + port + "/admin/api/integrations/add-book/publish"))
+                URI.create("http://localhost:" + port + "/admin/api/integrations/add-book/publish")).header("Authorization", Admin.AUTHORIZATION)
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(refused.statusCode()).isEqualTo(400);
         assertThat(refused.body()).contains("nb-gone");
@@ -152,7 +153,7 @@ class MappingApiTest {
 
         // D-22: live calls are kept, newest first, with the four parts and the API key as ***.
         for (String body : List.of("{\"title\":\"Live\",\"pages\":3}", "{\"pages\":\"many\"}")) {
-            http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/integrations/add-book"))
+            http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/v1/integrations/add-book")).header("Authorization", Admin.AUTHORIZATION)
                     .header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body)).build(),
                     HttpResponse.BodyHandlers.discarding());
         }
@@ -173,7 +174,7 @@ class MappingApiTest {
         assertThat(log.toString()).doesNotContain("k-123");
 
         // D-23: the live version is described as OpenAPI, and that document imports like any external system's.
-        HttpResponse<String> doc = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/openapi.json")).build(),
+        HttpResponse<String> doc = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/openapi.json")).header("Authorization", Admin.AUTHORIZATION).build(),
                 HttpResponse.BodyHandlers.ofString());
         JsonNode post = Json.MAPPER.readTree(doc.body()).path("paths").path("/api/v1/integrations/add-book").path("post");
         assertThat(post.path("description").asText()).startsWith("Live version 1.0.0.");
@@ -262,7 +263,7 @@ class MappingApiTest {
     }
 
     int status(String method, String path) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, HttpRequest.BodyPublishers.ofString("POST".equals(method) ? "{}" : ""))
                 .build(), HttpResponse.BodyHandlers.discarding()).statusCode();
