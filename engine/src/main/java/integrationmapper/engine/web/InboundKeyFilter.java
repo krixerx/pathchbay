@@ -19,9 +19,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import integrationmapper.engine.format.Json;
 
 /**
- * The optional inbound key (slice plan "Inbound access"): when the environment variable {@code INBOUND_API_KEY} is
- * set, every request answers 401 unless it carries the same value in {@code X-API-Key}, except the console's page and
- * static files (so it can ask for the key) and the published OpenAPI documents. Deny by default, decided on the path
+ * The optional inbound key of integration callers (slice plan "Inbound access"): when the environment variable
+ * {@code INBOUND_API_KEY} is set, every request answers 401 unless it carries the same value in {@code X-API-Key},
+ * except the console's page and static files, the admin API (both behind the admin login, {@link AdminRequestFilter}),
+ * the published OpenAPI documents and the health probes. Deny by default, decided on the path
  * the router sees ({@link RequestPaths}), so an encoded or {@code ;}-parameter path can't slip past. Without the
  * variable nothing is checked (closed Docker network). The header never reaches the external system: the routes
  * remove all inbound headers before the outbound call (OV-8).
@@ -48,8 +49,15 @@ public class InboundKeyFilter extends OncePerRequestFilter {
             return true;
         }
         String path = RequestPaths.of(request);
+        if (RequestPaths.hasDotSegment(path)) {
+            return false;
+        }
+        // The console and the admin API have their own login (AdminRequestFilter): callers' key never opens them.
+        if (AdminRequestFilter.isAdmin(path)) {
+            return true;
+        }
         boolean read = "GET".equals(request.getMethod()) || "HEAD".equals(request.getMethod());
-        return read && OPEN.matcher(path).matches() && !RequestPaths.hasDotSegment(path);
+        return read && OPEN.matcher(path).matches();
     }
 
     @Override

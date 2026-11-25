@@ -60,7 +60,8 @@ public class Packages {
     /** A file of a WSDL contract's folder (D-30): the WSDL or an XSD, in subfolders as the WSDL refers to them. */
     private static final Pattern CONTRACT_WSDL_FILE = Pattern.compile("contracts/(" + SLUG + ")\\.wsdl/((?:[A-Za-z0-9_=() +-][A-Za-z0-9._=() +-]*/)*[A-Za-z0-9_=() +-][A-Za-z0-9._=() +-]*)");
     private static final int MAX_ENTRIES = 2000;
-    private static final long MAX_BYTES = 50L * 1024 * 1024;
+    /** The largest package ZIP; the admin filter stops reading an import body there. */
+    public static final long MAX_BYTES = 50L * 1024 * 1024;
 
     private final ConfigStore store;
     private final PayloadLibrary library;

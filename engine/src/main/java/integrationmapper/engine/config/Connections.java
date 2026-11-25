@@ -283,7 +283,9 @@ public class Connections {
 
     /**
      * The base URL an integration calls: its connection's, or the literal one of files from before connections.
-     * Throws naming both places a connection's URL can come from.
+     * Throws naming both places a connection's URL can come from. Whatever the source (connection file, variable or a
+     * literal in an older draft or version), the address must pass {@link #check}: it becomes a Camel endpoint, so a
+     * {@code file:} URI or a {@code {{...}}} placeholder must never get there.
      */
     public String resolve(ServiceDefinition def) {
         ServiceDefinition.Target t = def.target();
@@ -291,12 +293,21 @@ public class Connections {
             if (t.baseUrl() == null || t.baseUrl().isBlank()) {
                 throw new IllegalArgumentException("Integration " + def.id() + " has no connection and no base URL");
             }
-            return t.baseUrl();
+            return checked(t.baseUrl().strip(), "Integration " + def.id() + "'s base URL");
         }
         String url = baseUrl(t.connection());
         if (url == null) {
             throw new IllegalArgumentException("Connection " + t.connection() + " has no base URL: set it under Configuration or set "
                     + envName(t.connection()));
+        }
+        return checked(url, "The base URL of connection " + t.connection() + (fromEnv(t.connection()) != null ? " (" + envName(t.connection()) + ")" : ""));
+    }
+
+    private static String checked(String url, String what) {
+        try {
+            check(url);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException(what + " is refused: " + e.getMessage(), e);
         }
         return url;
     }

@@ -154,7 +154,7 @@ public class ContractImporter {
 
     static final String NOT_A_CONTRACT = "Not a contract Patchbay can read: give an OpenAPI 3, Swagger 2.0 or WSDL 1.1 file";
     static final int MAX_ZIP_ENTRIES = 500;
-    static final long MAX_ZIP_BYTES = 20L * 1024 * 1024;
+    public static final long MAX_ZIP_BYTES = 20L * 1024 * 1024;
 
     /**
      * Imports a WSDL contract from a ZIP holding the WSDL and the XSD files it imports (D-30). The WSDL is the one

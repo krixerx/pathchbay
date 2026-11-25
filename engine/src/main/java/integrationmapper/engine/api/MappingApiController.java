@@ -82,7 +82,7 @@ public class MappingApiController {
      * Saves the links as they are, including red or broken ones (they stay visible with their warning, D-6, D-7);
      * publishing refuses them (R8).
      */
-    @PutMapping("/links")
+    @PutMapping(value = "/links", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> saveLinks(@PathVariable String slug, @RequestBody String body) throws IOException {
         Links links = read(body, Links.class);
         try (Drafts.Lock locked = drafts.lock(slug)) {
@@ -99,7 +99,7 @@ public class MappingApiController {
      * as they were. Root elements are kept only for XML. The request format of a SOAP operation is always soap, and
      * soap only goes with a SOAP operation (D-30): it is set by choosing the operation, not here.
      */
-    @PutMapping("/formats")
+    @PutMapping(value = "/formats", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> saveFormats(@PathVariable String slug, @RequestBody String body) throws IOException {
         ServiceDefinition.Formats f = read(body, ServiceDefinition.Formats.class);
         f.check(slug);
@@ -133,7 +133,7 @@ public class MappingApiController {
      * Saves the headers added on the board for the external call (D-27): request link targets like any contract
      * header. Links to a header that is no longer listed are removed with it.
      */
-    @PutMapping("/headers")
+    @PutMapping(value = "/headers", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> saveHeaders(@PathVariable String slug, @RequestBody String body) throws IOException {
         List<String> headers = read(body, AddedHeaders.class).headers();
         try (Drafts.Lock locked = drafts.lock(slug)) {
@@ -180,7 +180,7 @@ public class MappingApiController {
     record TestRequest(JsonNode input, boolean real) {
     }
 
-    @PostMapping("/test")
+    @PostMapping(value = "/test", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> test(@PathVariable String slug, @RequestBody String body) throws IOException {
         TestRequest req = read(body, TestRequest.class);
         draft(slug); // 400 for an unknown integration

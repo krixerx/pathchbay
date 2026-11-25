@@ -8,9 +8,11 @@ How to install, run and configure it (Docker or not, all variables): see `../REA
 
 Startup loads the payload library `config/entities/*.json`, then serves the **active version** of every `config/services/*.json` from its version file. A draft that was never published is not served. The repository's `config/` folder (not part of the image; use it with "Run it without Docker" or mount a copy) has three book examples, already published (version 1.0.0), that call the public [FakeRESTApi](https://fakerestapi.azurewebsites.net/index.html):
 
+Calls under `/admin` need the admin login (see "Admin login" in `../README.md`). The examples use `-u admin:$PATCHBAY_PASSWORD`; set `PATCHBAY_PASSWORD` to your password first, or use the user and password from `MAPPER_ADMIN_USER` and `MAPPER_ADMIN_PASSWORD`.
+
 ```bash
 # What is live
-curl localhost:8080/admin/integrations
+curl -u admin:$PATCHBAY_PASSWORD localhost:8080/admin/integrations
 
 # create-book: POST with a JSON body (your field names → FakeRESTApi's)
 curl -X POST localhost:8080/api/v1/integrations/create-book \
@@ -35,9 +37,9 @@ curl -i -X POST localhost:8080/api/v1/integrations/create-book \
 The service file `config/services/<slug>.json` is the draft you edit; its `activeVersion` says which version is live. Publishing takes the current draft and writes an immutable, self-contained version file `config/services/<slug>.versions/<version>.json` with copies of the Input and Output definitions, so later edits to the draft or the library never change a published version, also after a restart.
 
 ```bash
-curl -X POST localhost:8080/admin/integrations/get-book/publish                    # next minor: 1.0.0, 1.1.0, …
-curl localhost:8080/admin/integrations/get-book/versions                           # stored versions and the live one
-curl -X POST localhost:8080/admin/integrations/get-book/versions/1.0.0/activate    # make an older version live again
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/integrations/get-book/publish                    # next minor: 1.0.0, 1.1.0, …
+curl -u admin:$PATCHBAY_PASSWORD localhost:8080/admin/integrations/get-book/versions                           # stored versions and the live one
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/integrations/get-book/versions/1.0.0/activate    # make an older version live again
 ```
 
 Order of a publish (R9): build and compile first; only if that works, write the version file, set `activeVersion`, swap the route. A publish that fails (broken link, missing secret, …) answers 400 with every problem and changes nothing. At startup an integration whose files are broken is skipped and listed under `broken` in `/admin/integrations`; the others start (R10). Every file is saved through a temp file and a rename, retried if Windows holds a lock, so a crash never leaves a half-written file (R4).
@@ -49,9 +51,9 @@ When editing a draft by hand, keep its `activeVersion` line: without it the inte
 A package (D-28) is a ZIP laid out like the config folder: `manifest.json`, and per integration its draft (without `activeVersion`) and every version file, plus the payload definitions and Swagger configurations its draft uses. Connections and secrets are never in it.
 
 ```bash
-curl -X POST localhost:8080/admin/api/export -H 'Content-Type: application/json' \
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/api/export -H 'Content-Type: application/json' \
      -d '{"integrations":["get-book","create-book"]}' -o package.zip
-curl -X POST localhost:8080/admin/api/import -H 'Content-Type: application/zip' --data-binary @package.zip
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/api/import -H 'Content-Type: application/zip' --data-binary @package.zip
 ```
 
 Import checks every file first and writes nothing if anything is wrong; the answer then lists every problem. A version that exists with other content is refused, because published versions never change. Versions already there are skipped, payload definitions and Swagger configurations are replaced, drafts are replaced but keep this environment's `activeVersion`. Nothing goes live: the answer lists per integration what this environment still needs (base URL, secret, header values) and which version was live where the package came from; `versions/<version>/activate` makes it live.
@@ -87,7 +89,7 @@ The `create-user` example calls [GoREST](https://gorest.co.in) with a bearer tok
 
 ```bash
 MAPPER_SECRET_CREATE_USER=<your token> java -jar target/engine-0.0.1-SNAPSHOT.jar --mapper.config-dir=config
-curl -X POST localhost:8080/admin/integrations/create-user/publish
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/integrations/create-user/publish
 curl -X POST localhost:8080/api/v1/integrations/create-user -H 'Content-Type: application/json' \
   -d '{"fullName":"Mari Tamm","email":"mari.tamm.12345@example.com","gender":"female"}'
 ```
@@ -181,11 +183,11 @@ A SOAP service is imported from its WSDL 1.1 contract and published as an ordina
 
 ```bash
 # By URL; schemas on the same scheme, host and port (e.g. ?xsd=1) are fetched too
-curl -X POST localhost:8080/admin/api/contracts -H 'Content-Type: application/json' \
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/api/contracts -H 'Content-Type: application/json' \
   -d '{"name":"Person registry","url":"https://registry.example/ws/person?wsdl"}'
 
 # A ZIP with the WSDL and its XSD files, as base64; the WSDL is the one .wsdl file nearest the top
-curl -X POST localhost:8080/admin/api/contracts -H 'Content-Type: application/json' \
+curl -u admin:$PATCHBAY_PASSWORD -X POST localhost:8080/admin/api/contracts -H 'Content-Type: application/json' \
   -d "{\"name\":\"Person registry\",\"zip\":\"$(base64 -w0 person-registry.zip)\"}"
 ```
 

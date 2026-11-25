@@ -34,7 +34,7 @@ public class PackageApiController {
     }
 
     /** The picked integrations as a ZIP download. */
-    @PostMapping("/export")
+    @PostMapping(value = "/export", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<byte[]> export(@RequestBody String body) throws Exception {
         ExportRequest req;
         try {
@@ -49,7 +49,7 @@ public class PackageApiController {
     }
 
     /** Stores a package sent as the raw ZIP body; nothing goes live (Make active per integration does that). */
-    @PostMapping("/import")
+    @PostMapping(value = "/import", consumes = "application/zip")
     public ResponseEntity<String> importPackage(@RequestBody byte[] zip) throws Exception {
         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(Json.MAPPER.writeValueAsString(packages.importZip(zip)));
     }

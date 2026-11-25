@@ -18,6 +18,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.contract.ContractImporterTest;
 import integrationmapper.engine.format.Json;
 
@@ -47,7 +48,7 @@ class ContractApiTest {
 
     HttpResponse<String> send(String method, String path, Object body) throws Exception {
         String json = body == null ? null : body instanceof String s ? s : Json.MAPPER.writeValueAsString(body);
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api" + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/admin/api" + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, json == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(json))
                 .build(), HttpResponse.BodyHandlers.ofString());

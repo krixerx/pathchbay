@@ -9,12 +9,15 @@ import { createRoot } from 'react-dom/client';
 import { MantineProvider } from '@mantine/core';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './App';
+import { SetupGate } from './components/SetupPage';
 import { cssVariablesResolver, theme } from './theme';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <MantineProvider theme={theme} cssVariablesResolver={cssVariablesResolver} defaultColorScheme="light">
-      <RouterProvider router={router} />
+      <SetupGate>
+        <RouterProvider router={router} />
+      </SetupGate>
     </MantineProvider>
   </StrictMode>,
 );

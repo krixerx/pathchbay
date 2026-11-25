@@ -20,6 +20,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.config.PackagesTest;
 import integrationmapper.engine.contract.ContractImporterTest;
 import integrationmapper.engine.format.Json;
@@ -52,7 +53,7 @@ class PackageApiTest {
     final HttpClient http = HttpClient.newHttpClient();
 
     HttpResponse<byte[]> call(String method, String path, String contentType, byte[] body) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", contentType)
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofByteArray(body))
                 .build(), HttpResponse.BodyHandlers.ofByteArray());

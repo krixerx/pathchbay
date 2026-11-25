@@ -22,6 +22,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.config.ConfigStore;
 import integrationmapper.engine.config.Drafts;
 import integrationmapper.engine.format.Json;
@@ -80,6 +81,9 @@ class VersionLifecycleTest {
     @Autowired
     FakeBooksApi fake;
 
+    @Autowired
+    org.apache.camel.CamelContext camel;
+
     final HttpClient http = HttpClient.newHttpClient();
 
     static final String NEW_BOOK = """
@@ -133,7 +137,7 @@ class VersionLifecycleTest {
     }
 
     HttpResponse<String> call(String method, String slug, String body) throws Exception {
-        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slug))
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slug)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json");
         b = body == null ? b.method(method, HttpRequest.BodyPublishers.noBody()) : b.method(method, HttpRequest.BodyPublishers.ofString(body));
         return http.send(b.build(), HttpResponse.BodyHandlers.ofString());
@@ -282,7 +286,7 @@ class VersionLifecycleTest {
         long t0 = System.nanoTime();
         List<java.util.concurrent.CompletableFuture<HttpResponse<String>>> sent = new java.util.ArrayList<>();
         for (int i = 0; i < calls; i++) {
-            sent.add(http.sendAsync(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/pause-book")).GET().build(),
+            sent.add(http.sendAsync(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/pause-book")).header("Authorization", Admin.AUTHORIZATION).GET().build(),
                     HttpResponse.BodyHandlers.ofString()));
         }
         for (var f : sent) {
@@ -301,7 +305,7 @@ class VersionLifecycleTest {
         write("services/drain-book.json", v1);
         publisher.publishDraft("drain-book");
 
-        var inFlight = http.sendAsync(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/drain-book")).GET().build(),
+        var inFlight = http.sendAsync(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/drain-book")).header("Authorization", Admin.AUTHORIZATION).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         Thread.sleep(200); // the call now waits for the external system (0.5 s)
         assertThat(gate.inFlight("drain-book")).as("the gate counts the call until it ends, not until the filter returns").isEqualTo(1);
@@ -372,12 +376,12 @@ class VersionLifecycleTest {
         String big = "{\"title\":\"" + "x".repeat(30_000) + "\"}";
         URI uri = URI.create("http://localhost:" + PORT + "/api/v1/integrations/size-book");
 
-        HttpResponse<String> declared = http.send(HttpRequest.newBuilder(uri).header("Content-Type", "application/json")
+        HttpResponse<String> declared = http.send(HttpRequest.newBuilder(uri).header("Authorization", Admin.AUTHORIZATION).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(big)).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(declared.statusCode()).as(declared.body()).isEqualTo(413);
         assertThat(declared.body()).contains("payload-too-large").contains("more than the limit of 20000 bytes");
 
-        HttpResponse<String> chunked = http.send(HttpRequest.newBuilder(uri).header("Content-Type", "application/json")
+        HttpResponse<String> chunked = http.send(HttpRequest.newBuilder(uri).header("Authorization", Admin.AUTHORIZATION).header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofInputStream(() -> new java.io.ByteArrayInputStream(big.getBytes(java.nio.charset.StandardCharsets.UTF_8))))
                 .build(), HttpResponse.BodyHandlers.ofString());
         assertThat(chunked.statusCode()).as(chunked.body()).isEqualTo(413);
@@ -411,13 +415,13 @@ class VersionLifecycleTest {
                 .isEqualTo("{\"fileName\":\"a.txt\",\"data\":\"QUJD\",\"size\":3,\"contentType\":\"application/octet-stream\"}");
 
         // The call log (D-22) shows the file's size, never its data.
-        String calls = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/admin/api/integrations/upload-book/calls"))
+        String calls = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/admin/api/integrations/upload-book/calls")).header("Authorization", Admin.AUTHORIZATION)
                 .build(), HttpResponse.BodyHandlers.ofString()).body();
         assertThat(calls).contains("<3 bytes, base64>").doesNotContain("QUJD");
     }
 
     HttpResponse<String> callRaw(String method, String slugAndQuery, String contentType, byte[] body, String... headers) throws Exception {
-        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slugAndQuery))
+        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slugAndQuery)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", contentType).method(method, HttpRequest.BodyPublishers.ofByteArray(body));
         for (int i = 0; i < headers.length; i += 2) {
             b.header(headers[i], headers[i + 1]);
@@ -492,7 +496,7 @@ class VersionLifecycleTest {
     }
 
     HttpResponse<byte[]> get(String slugAndQuery) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slugAndQuery)).build(),
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/" + slugAndQuery)).header("Authorization", Admin.AUTHORIZATION).build(),
                 HttpResponse.BodyHandlers.ofByteArray());
     }
 
@@ -555,7 +559,7 @@ class VersionLifecycleTest {
     void anUnexpectedFailureIsLoggedAndTheCallerGetsTheRequestId(org.springframework.boot.test.system.CapturedOutput output) throws Exception {
         publishFileGet("file-get-odd", "/files/{id}/content", "stored", false, "{\"from\":\"documentId\",\"to\":\"st-id\"}");
 
-        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/file-get-odd?documentId=x"))
+        HttpResponse<String> r = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/file-get-odd?documentId=x")).header("Authorization", Admin.AUTHORIZATION)
                 .header("X-Request-Id", "case-4711").build(), HttpResponse.BodyHandlers.ofString());
 
         assertThat(r.statusCode()).isEqualTo(500);
@@ -572,7 +576,7 @@ class VersionLifecycleTest {
         assertThat(output.getOut()).containsPattern("Call file-get-odd 1\\.0\\.0 GET -> 500 \\(\\w+\\) \\d+ ms, request case-4711");
 
         // An id that isn't a plain token is replaced, not echoed.
-        HttpResponse<String> odd = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/nothing"))
+        HttpResponse<String> odd = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + PORT + "/api/v1/integrations/nothing")).header("Authorization", Admin.AUTHORIZATION)
                 .header("X-Request-Id", "a b<script>").build(), HttpResponse.BodyHandlers.ofString());
         assertThat(odd.headers().firstValue("X-Request-Id")).hasValueSatisfying(id -> assertThat(id).matches("[0-9a-f-]{36}"));
     }
@@ -659,16 +663,27 @@ class VersionLifecycleTest {
     void adminPublishAndVersionsOverHttp() throws Exception {
         write("services/admin-book.json", service("admin-book", "POST", "/api/v1/Books", "body.title", null));
         HttpResponse<String> pub = http.send(HttpRequest.newBuilder(
-                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/publish"))
+                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/publish")).header("Authorization", Admin.AUTHORIZATION)
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(pub.statusCode()).isEqualTo(200);
         assertThat(pub.body()).contains("\"activeVersion\":\"1.0.0\"");
 
         HttpResponse<String> bad = http.send(HttpRequest.newBuilder(
-                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/versions/9.9.9/activate"))
+                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/versions/9.9.9/activate")).header("Authorization", Admin.AUTHORIZATION)
                 .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(bad.statusCode()).isEqualTo(400);
         assertThat(bad.body()).contains("has no version 9.9.9").contains("\"integration\":\"admin-book\"");
+
+        // A stored version whose literal base URL is not http(s) never becomes a route (harden-admin-surface).
+        String version = Files.readString(CONFIG.resolve("services/admin-book.versions/1.0.0.json"));
+        write("services/admin-book.versions/2.0.0.json", version.replace("\"1.0.0\"", "\"2.0.0\"")
+                .replace("http://localhost:" + PORT + "/fake", "file:/tmp/patchbay-probe"));
+        HttpResponse<String> file = http.send(HttpRequest.newBuilder(
+                URI.create("http://localhost:" + PORT + "/admin/integrations/admin-book/versions/2.0.0/activate")).header("Authorization", Admin.AUTHORIZATION)
+                .POST(HttpRequest.BodyPublishers.noBody()).build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(file.statusCode()).as(file.body()).isEqualTo(400);
+        assertThat(file.body()).contains("base URL is refused");
+        assertThat(registry.activeVersions()).containsEntry("admin-book", "1.0.0");
     }
 
     /** R9: a route that can't be added leaves the previous version serving and nothing changed on disk. */
@@ -676,13 +691,22 @@ class VersionLifecycleTest {
     void failedRouteSwapKeepsTheLiveVersionAndChangesNoFiles() throws Exception {
         write("services/swap-book.json", service("swap-book", "POST", "/api/v1/Books", "body.title", null));
         publisher.publishDraft("swap-book");
-        String published = Files.readString(store.service("swap-book"));
 
-        // A literal base URL (files from before connections are not checked) whose scheme no Camel component has:
-        // compiling works, adding the route fails inside Camel.
-        write("services/swap-book.json", published.replace("http://localhost:" + PORT + "/fake", "nosuchscheme://localhost/fake"));
+        // Compiling works, adding the new route fails inside Camel, once. (This used to be a literal base URL with an
+        // unknown scheme; since harden-admin-surface every base URL must be http(s) before a route is built, and Camel
+        // accepts every such address, so the failure is injected where Camel adds the route.)
         String draft = Files.readString(store.service("swap-book"));
-        assertThatThrownBy(() -> publisher.publishDraft("swap-book")).hasMessageContaining("nosuchscheme");
+        java.util.concurrent.atomic.AtomicBoolean failOnce = new java.util.concurrent.atomic.AtomicBoolean(true);
+        camel.addLifecycleStrategy(new org.apache.camel.support.LifecycleStrategySupport() {
+            @Override
+            public void onRoutesAdd(java.util.Collection<org.apache.camel.Route> routes) {
+                if (routes.stream().anyMatch(r -> r.getRouteId().equals("int-swap-book")) && failOnce.getAndSet(false)) {
+                    throw new IllegalStateException("route swap-book can't be added");
+                }
+            }
+        });
+        assertThatThrownBy(() -> publisher.publishDraft("swap-book")).hasMessageContaining("can't be added");
+        assertThat(failOnce).as("the injected failure was hit").isFalse();
 
         assertThat(Files.readString(store.service("swap-book"))).as("activeVersion still 1.0.0").isEqualTo(draft);
         assertThat(store.versions("swap-book")).containsExactly("1.0.0");

@@ -22,6 +22,7 @@ import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import integrationmapper.engine.testsupport.Admin;
 import integrationmapper.engine.format.Json;
 import integrationmapper.engine.model.ServiceDefinition;
 import integrationmapper.engine.runtime.EngineSkeletonTest;
@@ -88,7 +89,7 @@ class ConnectionsTest {
     final HttpClient http = HttpClient.newHttpClient();
 
     HttpResponse<String> send(String method, String path, String body) throws Exception {
-        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + localPort + path))
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + localPort + path)).header("Authorization", Admin.AUTHORIZATION)
                 .header("Content-Type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
                 .build(), HttpResponse.BodyHandlers.ofString());
