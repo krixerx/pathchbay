@@ -1,0 +1,15 @@
+# Accepted Trivy findings for the engine: the image (trivy-image in .github/workflows/security.yml) and
+# engine/pom.xml and engine/console/package-lock.json in the filesystem scan (trivy-fs).
+#
+# Every entry is scoped to the path the finding sits in and expires, so the build turns red again on expiry and
+# someone checks for a fix:
+#
+#   vulnerabilities:
+#     - id: CVE-YYYY-NNNNN
+#       paths: ["app/app.jar"]
+#       statement: why it is accepted
+#       expired_at: YYYY-MM-DD
+#
+# Empty: the dependency upgrades of 2026-11-25 fixed every finding with a fix available.
+
+vulnerabilities: []

@@ -22,7 +22,12 @@ RUN mvn -q -B package -DskipTests
 
 # 3. Runtime: a JRE, a non-root user, and /config as the only state (ADR-004, R4).
 FROM eclipse-temurin:21.0.12_8-jre-noble
-RUN useradd --system --uid 10001 --home-dir /app mapper \
+# The base image lags Ubuntu's security pocket, so every package is upgraded (apt CVE-2026-109518, brotli and openssl
+# failed the Trivy image scan, 2026-11-25).
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 10001 --home-dir /app mapper \
     && mkdir -p /app /config \
     && chown mapper /config
 WORKDIR /app

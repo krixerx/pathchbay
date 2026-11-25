@@ -1,0 +1,72 @@
+# Dependency, secret and image scanning (spec, "Release": GitHub Actions builds, tests, scans with Trivy).
+#
+# A newly published advisory turns this red on the weekly run, so a red run does not always mean the change at hand
+# broke something.
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: npm audit (engine/console)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: engine/console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: npm audit --audit-level=high
+
+  trivy-fs:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Covers the Maven poms and the npm lock file, plus committed secrets.
+      # OS packages of the base image are the image scan's job.
+      # Pinned to a commit: trivy-action's tags have been re-pointed before.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+          skip-dirs: "**/node_modules,**/target,**/dist"
+          # Accepted findings, each with a reason, a path scope and an expiry.
+          trivyignores: engine/.trivyignore.yaml
+
+  trivy-image:
+    name: Trivy image scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The image that ships: the engine jar with the console inside, on the JRE base image.
+      - name: Build image
+        run: docker build -t scan/patchbay:${{ github.sha }} engine
+      # Fails on HIGH/CRITICAL vulnerabilities that have a fix available.
+      # Accepted findings go in engine/.trivyignore.yaml with a reason, a path
+      # scope and an expiry, not in this file.
+      - name: Scan image (Trivy)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: scan/patchbay:${{ github.sha }}
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+          trivyignores: engine/.trivyignore.yaml
