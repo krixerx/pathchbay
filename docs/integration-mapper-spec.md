@@ -487,7 +487,7 @@ Fields: timestamp, correlation ID (from `X-Correlation-Id` or generated), integr
 
 ## Docker configuration reference
 
-One public image (working name `integrationmapper/integration-mapper` on Docker Hub, multi-arch amd64 + arm64, non-root user, Eclipse Temurin JRE 21 base) is configured entirely by env variables and mounted folders.
+One public image (`krixerx/patchbay` on Docker Hub, slice plan D-33, multi-arch amd64 + arm64, non-root user, Eclipse Temurin JRE 21 base) is configured entirely by env variables and mounted folders.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -645,7 +645,7 @@ v1 delivers REST and SOAP one-to-one integrations end to end; protocols and orch
 - [ ] OQ-003 — Resolved: plain JSON files, one per configuration item, linked from one main JSON file (opencode-style). Promotion = copy the folder; Git is optional.
 - [ ] OQ-004 — Resolved: performance goal is "as fast as possible"; the engine is designed for minimum overhead (see Performance design principles), and the NFR numbers are minimum gates checked in CI, not the goal.
 - [ ] OQ-005 — Deferred: v1 inbound is synchronous REST only; async services moved to the TODO list below for later discussion.
-- [ ] OQ-006 — Resolved for the name: **Patchbay** (user decision 2026-10-22, slice plan D-25). Still open: the Docker Hub organisation, and a trademark and registry check of the name (Docker Hub, GitHub, npm, Maven Central, domains). Original question: final product name and Docker Hub organisation. "EasyLink" proposed but not recommended (existing EasyLink integration/messaging brand, see Product name); pick from the candidates after a Docker Hub, GitHub, Maven Central, npm and trademark check.
+- [ ] OQ-006 — Resolved for the name: **Patchbay** (user decision 2026-10-22, slice plan D-25). Docker Hub repository decided: `krixerx/patchbay` (user decision 2026-11-26, slice plan D-33). Still open: a trademark and registry check of the name (Docker Hub, GitHub, npm, Maven Central, domains). Original question: final product name and Docker Hub organisation. "EasyLink" proposed but not recommended (existing EasyLink integration/messaging brand, see Product name); pick from the candidates after a Docker Hub, GitHub, Maven Central, npm and trademark check.
 
 **TODO — to discuss later**
 
