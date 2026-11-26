@@ -4,6 +4,8 @@
 
 <p align="center"><b>Draw lines between two APIs. Get a live endpoint.</b></p>
 
+<p align="center">Free and open source under the <a href="LICENSE">Apache License 2.0</a>. Docker image: <a href="https://hub.docker.com/r/krixerx/patchbay"><code>krixerx/patchbay</code></a></p>
+
 Connect your own data model to an external REST or SOAP API without writing code. Import the API's OpenAPI (Swagger) or WSDL file, draw lines from your fields to theirs in the browser, and press **Publish**. The result is a live, versioned REST endpoint that callers can use, served by the same container.
 
 ![The mapping board: the external API's response on the left, your Output on the right, a line for every link](docs/images/mapping-board.png)
@@ -60,11 +62,13 @@ No database or other service is needed. Everything is stored as JSON files in on
 
 ## Run it with Docker
 
+The image is public on Docker Hub, for amd64 and arm64 (for example Apple silicon or AWS Graviton). Pulling it needs no Docker Hub account.
+
 ```bash
-cd engine
-docker build -t patchbay .
-docker run -p 8080:8080 -v mapper-config:/config patchbay
+docker run -p 8080:8080 -v mapper-config:/config krixerx/patchbay
 ```
+
+`latest` is the newest release. Pin a version for anything that should not change under you, for example `krixerx/patchbay:0.1.0`; the tags are listed on [Docker Hub](https://hub.docker.com/r/krixerx/patchbay/tags).
 
 This publishes the port on every address of your computer, which is fine for trying Patchbay on a laptop. Anywhere else, follow [Run it inside an internal network](#run-it-inside-an-internal-network).
 
@@ -77,7 +81,15 @@ docker run -p 8080:8080 -v mapper-config:/config \
   -e MAPPER_ADMIN_USER=admin -e MAPPER_ADMIN_PASSWORD=choose-a-long-password \
   -e INBOUND_API_KEY=choose-a-long-random-value \
   -e MAPPER_SECRET_CREATE_USER=your-gorest-token \
-  patchbay
+  krixerx/patchbay
+```
+
+To build the image yourself from this repository instead:
+
+```bash
+cd engine
+docker build -t patchbay .
+docker run -p 8080:8080 -v mapper-config:/config patchbay
 ```
 
 ## Admin login
@@ -104,7 +116,7 @@ docker network create patchbay-net
 docker run -d --name patchbay --network patchbay-net \
   -p 127.0.0.1:8080:8080 -v mapper-config:/config \
   -e INBOUND_API_KEY=choose-a-long-random-value \
-  patchbay
+  krixerx/patchbay
 docker logs patchbay   # the setup code for the admin login, on the first start
 # a caller in the same network reaches it by name (the OpenAPI document needs no key)
 docker run --rm --network patchbay-net curlimages/curl http://patchbay:8080/api/openapi.json
@@ -179,6 +191,19 @@ Authentication (bearer token, Basic user and password, or API key) and the secre
 Integrations and their versions never contain an address or a secret: they name a connection, and each environment sets that connection's base URL (`MAPPER_URL_<ID>` or **Connection** under Configuration) and the integrations' secrets (`MAPPER_SECRET_<SLUG>` or Settings). So the same version file can run in DEV, TEST and LIVE. The folders `connections/` and `secrets/` in the configuration folder belong to their environment and are not copied along. Integrations published before connections existed keep their literal base URL in those older version files until they are published again.
 
 To move integrations, tick them on the Integrations list and click **Export**: you get a ZIP with their drafts, all their versions, and the payload definitions and Swagger or WSDL configurations they use (a WSDL with its XSD files). In the other environment, **Import** stores it and shows per integration what that environment still needs (a base URL, a secret, header values). Nothing goes live until you click **Make active** there.
+
+## Releases
+
+Pushing a tag such as `v0.1.0` runs `.github/workflows/release.yml`: the engine and console tests, a Trivy scan of the image, and then the push of `krixerx/patchbay:0.1.0`, `:0.1` and `:latest` for amd64 and arm64. A tag with a suffix (`v0.2.0-rc.1`) gets only its own tag, not `latest`. The workflow needs the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a Docker Hub access token with Read & Write).
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+## License
+
+Patchbay is free and open source under the [Apache License 2.0](LICENSE). You may use, change and share it, also commercially, as long as you keep the license and the [NOTICE](NOTICE) file. Every dependency is under an open source license compatible with Apache-2.0 (spec NFR-009). Contributions are accepted under the same license.
 
 ## More
 

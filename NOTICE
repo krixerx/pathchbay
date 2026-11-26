@@ -1,0 +1,7 @@
+Patchbay
+Copyright 2026 The Patchbay contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The Docker image also contains third-party software (Apache Camel, Spring Boot, DataSonnet, the Eclipse Temurin
+JRE and others), each under its own open source license.
